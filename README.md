@@ -133,6 +133,13 @@ legfeljebb egy stacket vesz fel, majd visszamegy a mentett munkapontra. Ez a
 funkcio kiserleti: eloszor rovid alaguttal vagy kis terulettel probald ki,
 mert egyes modolt faklyak elhelyezesi szabalyai elterhetnek.
 
+## Inditasi naplo
+
+Az `action_log.lua` modul az `action_log.txt` fajlba minden programinditasnal
+egyetlen sort fuz. A sor az idopontot, az elinditott banyaszati modot es az
+indulaskori fuel-szintet tartalmazza. Mozgast, fordulast, koordinatat vagy mas
+reszletes esemenyt nem naploz.
+
 ## Folytatasi mod
 
 A `Meglevo alagutban eloremegyek` modban add meg, hany blokk hosszu a mar
@@ -179,6 +186,7 @@ downloader                 # minden komponens
 downloader main            # csak a banyaszprogram
 downloader excavator       # csak a teruletkitore program
 downloader torch           # csak a kiserleti faklyakezelo modul
+downloader actionlog       # csak az inditasi naplo modul
 downloader downloader      # csak a downloader
 ```
 

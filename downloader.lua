@@ -42,9 +42,14 @@ local links = {
         githubPath = "torch_manager.lua",
         fileName = "torch_manager.lua",
     },
+    actionlog = {
+        pastebinID = "",
+        githubPath = "action_log.lua",
+        fileName = "action_log.lua",
+    },
 }
 
-local downloadOrder = { "main", "excavator", "torch", "downloader" }
+local downloadOrder = { "main", "excavator", "torch", "actionlog", "downloader" }
 
 local function delTerm()
     if not DEBUG then sleep(2) end
@@ -214,6 +219,9 @@ local fileMap = {
     excavator = "excavator",
     t = "torch",
     torch = "torch",
+    l = "actionlog",
+    log = "actionlog",
+    actionlog = "actionlog",
 }
 
 delTerm()
@@ -223,7 +231,7 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or "all"
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|excavator|torch|downloader]")
+    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|downloader]")
 elseif requested == "all" then
     if downloadAll() then print("Minden komponens frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end

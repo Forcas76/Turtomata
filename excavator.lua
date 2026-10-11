@@ -13,6 +13,8 @@ local STATE_FILE = "excavator_state.txt"
 local STATE_TEMP_FILE = ".excavator_state.tmp"
 local torchModuleOk, torchManager = pcall(require, "torch_manager")
 if not torchModuleOk then torchManager = nil end
+local actionLogOk, actionLogger = pcall(require, "action_log")
+if not actionLogOk then actionLogger = nil end
 local runtime = {
     active = false,
     activity = "menu",
@@ -627,6 +629,11 @@ end
 
 local function runExcavation()
     persistenceEnabled = true
+    if actionLogger then
+        actionLogger.log(config.autoResume
+            and "Terulet asas - auto folytatas"
+            or "Terulet asas - uj munka")
+    end
     local total = config.width * config.depth * config.height
     local baseTotal = config.width * config.depth * math.ceil(config.height / 2)
 

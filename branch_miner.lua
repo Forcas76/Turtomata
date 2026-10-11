@@ -6,6 +6,8 @@ local heading = 0
 local returningHome = false
 local torchModuleOk, torchManager = pcall(require, "torch_manager")
 if not torchModuleOk then torchManager = nil end
+local actionLogOk, actionLogger = pcall(require, "action_log")
+if not actionLogOk then actionLogger = nil end
 
 local headings = {
     [0] = { x = 0, z = 1, name = "elore (+Z)" },
@@ -757,6 +759,12 @@ end
 
 local function runMining()
     persistenceEnabled = true
+    if actionLogger then
+        local modeNames = { "Branch 1x2", "Branch 1x3", "Egyenes 3x3" }
+        local startType = config.autoResume and "auto folytatas"
+            or (config.startMode == 2 and "kezi folytatas" or "uj munka")
+        actionLogger.log(modeNames[config.tunnelMode] .. " - " .. startType)
+    end
     print("Branch miner indul.")
     local checkpoint
 
