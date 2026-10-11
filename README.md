@@ -125,13 +125,19 @@ varatlan leallas utan nem szabad kezzel elmozditani vagy elforgatni.
 A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
 beallitasakor a faklyazas opcionalisan bekapcsolhato. Branch miningnal a
 foutvonal beasasainak gyakorisaga es az oldalagi blokk-tavolsag kulon adhato
-meg. A bal es jobb oldalagat kozos oldalagi szamlalot hasznal.
+meg. Minden oldalagat sajat tavolsagszamlalast kezd. Az agat eloszor teljesen
+kiassa, feljegyzi a kijelolt pontokat, majd visszafele rakja le a faklyakat.
+A foutvonalon is eloszor befejezi a teljes kijelolt szakaszt es az oldalagat,
+majd a vegso hazauton helyezi el a kiszamitott faklyakat. Ha egy fej folotti
+faklya elagazasi pontra esne, a kovetkezo ep oldalfalu pontig halasztja.
 
 Ket lerakasi mod valaszthato:
 
 - `Oldalt`: elfordul, kiut egy oldalso blokkot, majd a helyere teszi a faklyat.
 - `Fej folott`: a kiserleti `placeUp` muvelettel a turtle feletti szabad
-  mezobe probalja rakni; a jatek donti el, talal-e megfelelo tapadasi feluletet.
+  mezobe probalja rakni. Eloszor a jobb, majd a bal oldalfal fele fordul, hogy
+  ne a kovetkezo kibontando blokkhoz tapadjon, utana visszaall az eredeti
+  iranyba. A jatek donti el, talal-e megfelelo tapadasi feluletet.
 
 Teruletkitoresnel az oldalso mod csak a kijelolt terulet kulso peremen rak.
 A fej folotti mod a megadott cellatavolsagot hasznalja, ezert a kitermelt

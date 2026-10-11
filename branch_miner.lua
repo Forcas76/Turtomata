@@ -27,8 +27,6 @@ local runtime = {
     activity = "menu",
     mainCompleted = 0,
     branchesCompletedAt = 0,
-    mainTorchSteps = 0,
-    branchTorchSteps = 0,
 }
 
 local function saveState()
@@ -39,8 +37,6 @@ local function saveState()
         activity = runtime.activity,
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
-        mainTorchSteps = runtime.mainTorchSteps,
-        branchTorchSteps = runtime.branchTorchSteps,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         config = config,
@@ -145,8 +141,6 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.mainCompleted = saved.mainCompleted or 0
         runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
-        runtime.mainTorchSteps = saved.mainTorchSteps or saved.torchSteps or 0
-        runtime.branchTorchSteps = saved.branchTorchSteps or 0
     else
         config.tunnelMode = taskMode
         config.autoResume = false
@@ -634,17 +628,7 @@ local function serviceAndResume(reasonText)
     return true
 end
 
-local function processTorchStep(route, placementAllowed)
-    if not config.torchEnabled or returningHome then return true end
-    local counterName = route == "branch" and "branchTorchSteps" or "mainTorchSteps"
-    local interval = route == "branch"
-        and config.branchTorchInterval or config.mainTorchInterval
-    runtime[counterName] = (runtime[counterName] or 0) + 1
-    saveState()
-    if runtime[counterName] < interval or placementAllowed == false then
-        return true
-    end
-
+local function placeTorchNow()
     if inventoryFull() then
         local resumed, reason = serviceAndResume("Az inventory megtelt.")
         if not resumed then return false, reason end
@@ -657,7 +641,10 @@ local function processTorchStep(route, placementAllowed)
 
     local placed, placeReason
     if config.torchPlacementMode == 2 then
-        placed, placeReason = torchManager.placeAbove()
+        placed, placeReason = torchManager.placeAbove(
+            function() return heading end,
+            face
+        )
     else
         placed, placeReason = torchManager.placeInDirection(
             (heading + 1) % 4,
@@ -666,8 +653,6 @@ local function processTorchStep(route, placementAllowed)
         )
     end
     if not placed then return false, placeReason end
-    runtime[counterName] = 0
-    saveState()
 
     if not torchManager.hasTorch() then
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
@@ -676,7 +661,7 @@ local function processTorchStep(route, placementAllowed)
     return true
 end
 
-local function mineForward(steps, label, carveCrossSection, torchPlacementAllowed, torchRoute)
+local function mineForward(steps, label, carveCrossSection)
     if carveCrossSection == nil then carveCrossSection = true end
     local step = 1
     while step <= steps do
@@ -710,11 +695,6 @@ local function mineForward(steps, label, carveCrossSection, torchPlacementAllowe
             if carveCrossSection then
                 local cleared, clearReason = clearTunnelCrossSection()
                 if not cleared then return false, clearReason end
-                local torchOk, torchReason = processTorchStep(
-                    torchRoute or "main",
-                    torchPlacementAllowed
-                )
-                if not torchOk then return false, torchReason end
             end
             if step == 1 or step % 8 == 0 or step == steps then
                 status(label .. " " .. step .. "/" .. steps)
@@ -730,17 +710,44 @@ local function mineBranch(turnFunction, sideName)
     local completed, reason = mineForward(
         config.branchLength,
         sideName .. " agat",
-        true,
-        true,
-        "branch"
+        true
     )
     if not completed then return false, reason end
     turnAround()
     local previousReturningState = returningHome
     returningHome = true
-    local returned, returnReason = mineForward(
-        config.branchLength, sideName .. " vissza", false
-    )
+
+    local function placePlannedTorch(branchStep)
+        if not config.torchEnabled
+            or branchStep <= 0
+            or branchStep % config.branchTorchInterval ~= 0 then
+            return true
+        end
+        -- Az ag mar teljesen kesz. A lerakashoz ideiglenesen munkaallapotot
+        -- hasznalunk, hogy ures slot eseten haza tudjon menni faklyaert.
+        returningHome = false
+        local placed, placeReason = placeTorchNow()
+        returningHome = true
+        return placed, placeReason
+    end
+
+    local torchOk, torchReason = placePlannedTorch(config.branchLength)
+    if not torchOk then
+        returningHome = previousReturningState
+        return false, torchReason
+    end
+
+    local returned, returnReason = true, nil
+    for returnStep = 1, config.branchLength do
+        returned, returnReason = mineForward(1, sideName .. " vissza", false)
+        if not returned then break end
+        local outboundStep = config.branchLength - returnStep
+        torchOk, torchReason = placePlannedTorch(outboundStep)
+        if not torchOk then
+            returned, returnReason = false, torchReason
+            break
+        end
+    end
     returningHome = previousReturningState
     if not returned then return false, returnReason end
     if sideName == "Bal" then turnLeft() else turnRight() end
@@ -789,6 +796,68 @@ local function minePendingBranches(absoluteStep)
     runtime.branchesCompletedAt = absoluteStep
     setActivity("agak_keszen")
     return true
+end
+
+local function plannedMainTorchPoints(completed)
+    local points = {}
+    if not config.torchEnabled then return points end
+
+    local sinceLast = 0
+    for localStep = 1, completed do
+        sinceLast = sinceLast + 1
+        local absoluteStep = config.startOffset + localStep
+        local branchPoint = config.tunnelMode ~= 3
+            and absoluteStep % config.branchSpacing == 0
+        local stableWall = config.torchPlacementMode ~= 2 or not branchPoint
+        if sinceLast >= config.mainTorchInterval and stableWall then
+            points[localStep] = true
+            sinceLast = 0
+        end
+    end
+    return points
+end
+
+local function returnHomeWithMainTorches()
+    local workY = config.tunnelMode == 3 and 1 or 0
+    local expectedZ = config.startOffset + runtime.mainCompleted
+    if not config.torchEnabled
+        or position.x ~= 0
+        or position.y ~= workY
+        or position.z ~= expectedZ then
+        return returnHome()
+    end
+
+    local points = plannedMainTorchPoints(runtime.mainCompleted)
+    returningHome = true
+    setActivity("fotengely_faklyazas_hazafele")
+    face(2)
+
+    for localStep = runtime.mainCompleted, 1, -1 do
+        if points[localStep] then
+            -- Az egesz foutvonal es minden eddigi oldalagat kesz. Ha faklyaert
+            -- kell hazamenni, a kiszolgalas utan ugyanide navigal vissza.
+            returningHome = false
+            local placed, placeReason = placeTorchNow()
+            returningHome = true
+            if not placed then
+                returningHome = false
+                return false, placeReason
+            end
+        end
+
+        local moved, _, moveReason = forward()
+        if not moved then
+            returningHome = false
+            return false, moveReason
+        end
+    end
+
+    local ok, reason = moveAxis(0, "z", 0, 2)
+    if ok then ok, reason = moveVerticalTo(0) end
+    if ok then face(0) end
+    returningHome = false
+    if ok then status("Hazaertem") end
+    return ok, reason
 end
 
 local function returnAndService()
@@ -843,8 +912,6 @@ local function runMining()
         runtime.activity = "indulas"
         runtime.mainCompleted = 0
         runtime.branchesCompletedAt = 0
-        runtime.mainTorchSteps = 0
-        runtime.branchTorchSteps = 0
         saveState()
 
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, config.startOffset))
@@ -872,15 +939,10 @@ local function runMining()
         if stopRequested then stopReason = "Felhasznaloi leallitas." break end
         local absoluteStep = config.startOffset + localStep
         setActivity("fotengely")
-        local torchAllowed = config.torchPlacementMode == 2
-            or config.tunnelMode == 3
-            or absoluteStep % config.branchSpacing ~= 0
         local moved, reason = mineForward(
             1,
             "Fotengely " .. localStep .. "/" .. config.mainLength,
-            true,
-            torchAllowed,
-            "main"
+            true
         )
         if not moved then stopReason = reason break end
         runtime.mainCompleted = localStep
@@ -893,7 +955,7 @@ local function runMining()
     if stopReason then printError("A banyaszat leallt: " .. stopReason)
     else print("A beallitott banyaszati szakasz elkeszult.") end
 
-    if returnHome() then
+    if returnHomeWithMainTorches() then
         local finalOk, finalReason = serviceHome(config.fuelReserve)
         if finalOk then
             if not stopReason then

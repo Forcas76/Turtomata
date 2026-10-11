@@ -626,7 +626,10 @@ local function processTorchStep(x, z)
     end
     local placed, placeReason
     if config.torchPlacementMode == 2 then
-        placed, placeReason = torchManager.placeAbove()
+        placed, placeReason = torchManager.placeAbove(
+            function() return heading end,
+            face
+        )
     else
         placed, placeReason = torchManager.placeInDirection(
             direction,
