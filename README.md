@@ -86,6 +86,27 @@ a `Ctrl+T` biztonsagos leallitast ker: a turtle befejezi az aktualis atomi
 3x3-as vagasi lepest, megorzi a mentest, hazater, lepakol es tankol. A munka
 kesobb az `Auto folytatas` menuponttal folytathato.
 
+## KISERLETI: tetszoleges terulet
+
+> **KISERLETI FUNKCIO:** nagy teruleten eloszor kisebb merettel probald ki.
+
+A fomenu `KISERLETI: terulet` pontja a kulon `excavator.lua` programot inditja.
+A meretek a turtle nezopontjabol ertendok:
+
+- szelesseg: a turtle-tol jobbra;
+- melyseg: a turtle elore nezesi iranyaba;
+- magassag: felfele.
+
+A turtle a kiemelendo teglatest bal-also-elso sarka elott alljon, es a melyseg
+iranyaba nezzen. A program retegenkent, kigyozo utvonalon jarja be a teljes
+terfogatot. Megtelt inventory vagy keves fuel eseten hazater, urit es tankol,
+majd visszamegy az aktualis munkapontra. Ugyanazt a ketladas elrendezest
+hasznalja, mint a branch miner.
+
+Az `excavator.lua` jelenleg kiserleti: sajat ujrainditas utani allapotmentese
+meg nincs, ezert varatlan szerver- vagy chunk-leallas utan kezi ujrainditas
+szukseges lehet.
+
 ## Folytatasi mod
 
 A `Meglevo alagutban eloremegyek` modban add meg, hany blokk hosszu a mar
@@ -130,6 +151,7 @@ A fajlok forras- es celneve a `links` tablaban allithato. Jelenleg a repo
 ```text
 downloader                 # minden komponens
 downloader main            # csak a banyaszprogram
+downloader excavator       # csak a kiserleti teruletkitores
 downloader downloader      # csak a downloader
 ```
 

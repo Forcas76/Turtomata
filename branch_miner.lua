@@ -112,12 +112,16 @@ local function configure()
         "Branch 1x2",
         "Branch 1x3",
         "Egyenes 3x3",
+        "KISERLETI: terulet",
         saved and "Auto folytatas" or "Auto (nincs mentes)",
-    }, saved and 4 or 1)
+    }, saved and 5 or 1)
 
     clearScreen()
 
     if taskMode == 4 then
+        config.launchExperimental = true
+        return
+    elseif taskMode == 5 then
         if not saved then
             printError("Nincs hasznalhato mentes.")
             sleep(2)
@@ -781,6 +785,15 @@ end
 local configured, configureError = pcall(configure)
 if not configured then
     printError("Beallitasi hiba: " .. tostring(configureError))
+elseif config.launchExperimental then
+    clearScreen()
+    print("!!! KISERLETI FUNKCIO !!!")
+    print("Kulso program inditasa...")
+    if not fs.exists("excavator") and not fs.exists("excavator.lua") then
+        printError("Hianyzik az excavator program.")
+    else
+        shell.run("excavator")
+    end
 else
     parallel.waitForAll(miningTask, stopListener)
 end

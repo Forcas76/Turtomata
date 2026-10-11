@@ -32,9 +32,14 @@ local links = {
         githubPath = "downloader.lua",
         fileName = "downloader",
     },
+    excavator = {
+        pastebinID = "",
+        githubPath = "excavator.lua",
+        fileName = "excavator",
+    },
 }
 
-local downloadOrder = { "main", "downloader" }
+local downloadOrder = { "main", "excavator", "downloader" }
 
 local function delTerm()
     if not DEBUG then sleep(2) end
@@ -182,7 +187,12 @@ end
 local function downloadAll()
     local allSuccessful = true
     for _, name in ipairs(downloadOrder) do
-        if not downloadThat(name) then allSuccessful = false end
+        local link = links[name]
+        if DOWNLOAD_SOURCE == "pastebin" and (not link.pastebinID or link.pastebinID == "") then
+            print("Kihagyva (nincs Pastebin ID): " .. link.fileName)
+        elseif not downloadThat(name) then
+            allSuccessful = false
+        end
         if not DEBUG then sleep(1) end
     end
     return allSuccessful
@@ -195,6 +205,8 @@ local fileMap = {
     main = "main",
     d = "downloader",
     downloader = "downloader",
+    e = "excavator",
+    excavator = "excavator",
 }
 
 delTerm()
@@ -204,7 +216,7 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or "all"
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|downloader]")
+    printError("Hasznalat: downloader [all|main|excavator|downloader]")
 elseif requested == "all" then
     if downloadAll() then print("Minden komponens frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end
