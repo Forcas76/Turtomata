@@ -80,4 +80,21 @@ function manager.placeInDirection(targetHeading, getHeading, face)
     return true
 end
 
+function manager.placeAbove()
+    if not manager.hasTorch() then return false, "empty" end
+    if turtle.detectUp() then
+        return false, "A turtle felett nincs szabad hely a faklyanak."
+    end
+
+    local selected = turtle.getSelectedSlot()
+    turtle.select(2)
+    local placed = turtle.placeUp()
+    local restoreSlot = selected <= 2 and 3 or selected
+    turtle.select(restoreSlot)
+    if not placed then
+        return false, "Nem sikerult a fej fole rakni a faklyat."
+    end
+    return true
+end
+
 return manager

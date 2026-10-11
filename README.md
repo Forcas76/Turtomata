@@ -123,10 +123,19 @@ varatlan leallas utan nem szabad kezzel elmozditani vagy elforgatni.
 ## KISERLETI: automatikus faklyazas
 
 A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
-beallitasakor a faklyazas opcionálisan bekapcsolhato, es megadhato a faklyak
-kozotti tavolsag. A modul egy oldalso, utvonalon kivuli helyet as ki, majd oda
-probalja lerakni a faklyat. Teruletkitoresnel csak a kijelolt terulet kulso
-peremen helyez el faklyat, hogy ne keruljon a kesobbi utvonalba.
+beallitasakor a faklyazas opcionalisan bekapcsolhato. Branch miningnal a
+foutvonal beasasainak gyakorisaga es az oldalagi blokk-tavolsag kulon adhato
+meg. A bal es jobb oldalagat kozos oldalagi szamlalot hasznal.
+
+Ket lerakasi mod valaszthato:
+
+- `Oldalt`: elfordul, kiut egy oldalso blokkot, majd a helyere teszi a faklyat.
+- `Fej folott`: a kiserleti `placeUp` muvelettel a turtle feletti szabad
+  mezobe probalja rakni; a jatek donti el, talal-e megfelelo tapadasi feluletet.
+
+Teruletkitoresnel az oldalso mod csak a kijelolt terulet kulso peremen rak.
+A fej folotti mod a megadott cellatavolsagot hasznalja, ezert a kitermelt
+terfogaton belul is maradhat faklya.
 
 Ha a 2-es slot kiurul, a turtle hazater. A fuel lada folotti faklyas ladabol
 legfeljebb egy stacket vesz fel, majd visszamegy a mentett munkapontra. Ez a

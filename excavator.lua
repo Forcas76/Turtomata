@@ -148,13 +148,21 @@ local function configure()
         }, 1) == 2
         if config.torchEnabled then
             config.torchInterval = promptInteger("Faklya tavolsag", 12, 1)
+            config.torchPlacementMode = promptChoice("Faklya helye (KISERLETI):", {
+                "Oldalt: blokk ki, faklya be",
+                "A turtle feje fole",
+            }, 1)
         else
             config.torchInterval = 0
+            config.torchPlacementMode = 1
         end
     end
 
     if config.torchEnabled and not torchManager then
         error("Hianyzik a torch_manager.lua modul.", 0)
+    end
+    if config.torchEnabled then
+        config.torchPlacementMode = config.torchPlacementMode or 1
     end
 
     clearScreen()
@@ -166,6 +174,7 @@ local function configure()
     print(config.autoResume and "Mod: auto folytatas" or "Mod: uj terulet")
     if config.torchEnabled then
         print("Faklya: " .. config.torchInterval .. " cellankent (KISERLETI)")
+        print("Faklya hely: " .. (config.torchPlacementMode == 2 and "fej folott" or "oldalt"))
     else
         print("Faklya: ki")
     end
@@ -601,7 +610,8 @@ local function processTorchStep(x, z)
     if not config.torchEnabled then return true, nil, runtime.torchSteps end
     local nextTorchSteps = (runtime.torchSteps or 0) + 1
     local direction = torchDirection(x, z)
-    if nextTorchSteps < config.torchInterval or direction == nil then
+    local placementAvailable = config.torchPlacementMode == 2 or direction ~= nil
+    if nextTorchSteps < config.torchInterval or not placementAvailable then
         return true, nil, nextTorchSteps
     end
 
@@ -614,11 +624,16 @@ local function processTorchStep(x, z)
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
         if not resumed then return false, reason end
     end
-    local placed, placeReason = torchManager.placeInDirection(
-        direction,
-        function() return heading end,
-        face
-    )
+    local placed, placeReason
+    if config.torchPlacementMode == 2 then
+        placed, placeReason = torchManager.placeAbove()
+    else
+        placed, placeReason = torchManager.placeInDirection(
+            direction,
+            function() return heading end,
+            face
+        )
+    end
     if not placed then return false, placeReason end
     if not torchManager.hasTorch() then
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
