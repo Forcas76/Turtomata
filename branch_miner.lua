@@ -4,6 +4,8 @@
 local position = { x = 0, y = 0, z = 0 }
 local heading = 0
 local returningHome = false
+local torchModuleOk, torchManager = pcall(require, "torch_manager")
+if not torchModuleOk then torchManager = nil end
 
 local headings = {
     [0] = { x = 0, z = 1, name = "elore (+Z)" },
@@ -23,6 +25,7 @@ local runtime = {
     activity = "menu",
     mainCompleted = 0,
     branchesCompletedAt = 0,
+    torchSteps = 0,
 }
 
 local function saveState()
@@ -33,6 +36,7 @@ local function saveState()
         activity = runtime.activity,
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
+        torchSteps = runtime.torchSteps,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         config = config,
@@ -112,7 +116,7 @@ local function configure()
         "Branch 1x2",
         "Branch 1x3",
         "Egyenes 3x3",
-        "KISERLETI: terulet",
+        "Terulet asas",
         saved and "Auto folytatas" or "Auto (nincs mentes)",
     }, saved and 5 or 1)
 
@@ -137,6 +141,7 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.mainCompleted = saved.mainCompleted or 0
         runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
+        runtime.torchSteps = saved.torchSteps or 0
     else
         config.tunnelMode = taskMode
         config.autoResume = false
@@ -164,6 +169,20 @@ local function configure()
             config.branchSpacing = promptInteger("Agak tavolsaga", 3, 1)
         end
         config.fuelReserve = promptInteger("Fuel tartalek", 5, 2)
+        print("")
+        config.torchEnabled = promptChoice("KISERLETI faklyazas:", {
+            "Kikapcsolva",
+            "Bekapcsolva",
+        }, 1) == 2
+        if config.torchEnabled then
+            config.torchInterval = promptInteger("Faklya tavolsag", 12, 1)
+        else
+            config.torchInterval = 0
+        end
+    end
+
+    if config.torchEnabled and not torchManager then
+        error("Hianyzik a torch_manager.lua modul.", 0)
     end
 
     clearScreen()
@@ -184,6 +203,11 @@ local function configure()
         print("Agkoz: " .. config.branchSpacing)
     end
     print("Fuel+: " .. config.fuelReserve)
+    if config.torchEnabled then
+        print("Faklya: " .. config.torchInterval .. " blokkonkent (KISERLETI)")
+    else
+        print("Faklya: ki")
+    end
     local tunnelNames = {
         "2 blokk magas",
         "3 blokk magas",
@@ -191,6 +215,7 @@ local function configure()
     }
     print("Meret: " .. tunnelNames[config.tunnelMode])
     print("Lada: hatul, fuel: folotte")
+    if config.torchEnabled then print("Faklya lada: a fuel lada folott") end
     write("ENTER = inditas")
     read()
     clearScreen()
@@ -224,8 +249,9 @@ local function inventoryUsage()
 end
 
 local function inventoryFull()
-    -- Az 1-es slot a tankolashoz van fenntartva.
-    for slot = 2, 16 do
+    -- Faklyazasnal az 1-es slot a fuel, a 2-es slot a faklya helye.
+    local firstMiningSlot = config.torchEnabled and 3 or 2
+    for slot = firstMiningSlot, 16 do
         if turtle.getItemSpace(slot) > 0 then return false end
     end
     return true
@@ -234,9 +260,13 @@ end
 local function status(prefix)
     local usedSlots, usedPercent = inventoryUsage()
     print(string.format(
-        "%s | x=%d z=%d | fuel=%s | haza=%d | inv=%d/16 (%d%%)",
-        prefix, position.x, position.z, fuelText(fuelLevel()), distanceHome(),
-        usedSlots, usedPercent
+        "%s | %s | %d/%d",
+        prefix, runtime.activity, runtime.mainCompleted, config.mainLength or 0
+    ))
+    print(string.format(
+        "Poz:%d,%d,%d Fuel:%s Haza:%d Inv:%d/16 %d%%",
+        position.x, position.y, position.z, fuelText(fuelLevel()),
+        distanceHome(), usedSlots, usedPercent
     ))
 end
 
@@ -447,7 +477,9 @@ local function unloadBehind()
         turtle.select(slot)
         if turtle.getItemCount(slot) > 0 then
             local keepForFuel = slot == 1 and turtle.refuel(0)
-            if not keepForFuel then
+            local keepForTorch = slot == 2 and config.torchEnabled
+                and torchManager and torchManager.keepReservedSlot(config)
+            if not keepForFuel and not keepForTorch then
                 turtle.drop()
                 if turtle.getItemCount(slot) > 0 then allDeposited = false end
             end
@@ -462,8 +494,9 @@ end
 
 local function refuelFromUpperChest(requiredAfterService)
     -- Ekkor a turtle a ladak fele nez. A fuel lada a leado lada folott van.
-    if fuelLevel() ~= math.huge and not refuelFromInventory(2) then
-        return false, "Legalabb 2 fuel kell a felso uzemanyaglada eleresehez."
+    local accessFuel = config.torchEnabled and 4 or 2
+    if fuelLevel() ~= math.huge and not refuelFromInventory(accessFuel) then
+        return false, "Nincs eleg fuel a kiszolgalasi ladak eleresehez."
     end
     if not turtle.up() then
         return false, "Nem tudok felmenni az uzemanyagladahoz. Szabad a hely folottem?"
@@ -471,7 +504,7 @@ local function refuelFromUpperChest(requiredAfterService)
     position.y = position.y + 1
     saveState()
 
-    local requiredAtTop = requiredAfterService + 1
+    local requiredAtTop = requiredAfterService + (config.torchEnabled and 3 or 1)
     local selected = turtle.getSelectedSlot()
     local reason = nil
     turtle.select(1)
@@ -498,6 +531,22 @@ local function refuelFromUpperChest(requiredAfterService)
     if selected == 1 then selected = 2 end
     turtle.select(selected)
 
+    if refuelOk and config.torchEnabled then
+        if not turtle.up() then
+            reason = "Nem tudok felmenni a faklyas ladahoz."
+        else
+            position.y = position.y + 1
+            saveState()
+            local torchOk, torchReason = torchManager.refillFromChest()
+            if not torchOk then reason = torchReason end
+            if not turtle.down() then
+                return false, "Nem tudok lejonni a faklyas ladatol."
+            end
+            position.y = position.y - 1
+            saveState()
+        end
+    end
+
     if fuelLevel() < 1 then
         printError("Nincs fuel a leereszkedeshez; a turtle a felso szinten maradt.")
         return false, reason or "Elfogyott az uzemanyag."
@@ -506,7 +555,9 @@ local function refuelFromUpperChest(requiredAfterService)
     position.y = position.y - 1
     saveState()
     turnAround()
-    if not refuelOk then return false, reason or "Nem sikerult eleg uzemanyagot felvenni." end
+    if not refuelOk or reason then
+        return false, reason or "Nem sikerult eleg uzemanyagot felvenni."
+    end
     return true
 end
 
@@ -515,7 +566,7 @@ local function serviceHome(requiredForTrip)
         return false, "A lada-kiszolgalas csak a kezdohelyen vegezheto."
     end
     setActivity("urites_tankolas")
-    refuelFromInventory(math.max(2, requiredForTrip))
+    refuelFromInventory(math.max(config.torchEnabled and 4 or 2, requiredForTrip))
     local unloaded, unloadReason = unloadBehind()
     if not unloaded then
         turnAround()
@@ -523,7 +574,7 @@ local function serviceHome(requiredForTrip)
     end
     local fueled, fuelReason = refuelFromUpperChest(requiredForTrip)
     if not fueled then return false, fuelReason end
-    turtle.select(2)
+    turtle.select(config.torchEnabled and 3 or 2)
     print("Inventory kiuritve, tankolas kesz.")
     return true
 end
@@ -545,6 +596,7 @@ local function serviceAndResume(reasonText)
     if not returnHome() then return false, "Nem sikerult hazaterni." end
     local fueled, serviceReason = serviceHome(tripFuelRequirement(savedX, savedZ))
     if not fueled then return false, serviceReason end
+    if stopRequested then return false, "Felhasznaloi leallitas." end
     print(string.format("Visszateres a munkapontra: x=%d z=%d", savedX, savedZ))
     setActivity("vissza_munkapontra")
     local levelOk, levelReason = moveVerticalTo(savedY)
@@ -556,7 +608,41 @@ local function serviceAndResume(reasonText)
     return true
 end
 
-local function mineForward(steps, label, carveCrossSection)
+local function processTorchStep(placementAllowed)
+    if not config.torchEnabled or returningHome then return true end
+    runtime.torchSteps = (runtime.torchSteps or 0) + 1
+    saveState()
+    if runtime.torchSteps < config.torchInterval or placementAllowed == false then
+        return true
+    end
+
+    if inventoryFull() then
+        local resumed, reason = serviceAndResume("Az inventory megtelt.")
+        if not resumed then return false, reason end
+    end
+
+    if not torchManager.hasTorch() then
+        local resumed, reason = serviceAndResume("Elfogyott a faklya.")
+        if not resumed then return false, reason end
+    end
+
+    local placed, placeReason = torchManager.placeInDirection(
+        (heading + 1) % 4,
+        function() return heading end,
+        face
+    )
+    if not placed then return false, placeReason end
+    runtime.torchSteps = 0
+    saveState()
+
+    if not torchManager.hasTorch() then
+        local resumed, reason = serviceAndResume("Elfogyott a faklya.")
+        if not resumed then return false, reason end
+    end
+    return true
+end
+
+local function mineForward(steps, label, carveCrossSection, torchPlacementAllowed)
     if carveCrossSection == nil then carveCrossSection = true end
     local step = 1
     while step <= steps do
@@ -590,6 +676,8 @@ local function mineForward(steps, label, carveCrossSection)
             if carveCrossSection then
                 local cleared, clearReason = clearTunnelCrossSection()
                 if not cleared then return false, clearReason end
+                local torchOk, torchReason = processTorchStep(torchPlacementAllowed)
+                if not torchOk then return false, torchReason end
             end
             if step == 1 or step % 8 == 0 or step == steps then
                 status(label .. " " .. step .. "/" .. steps)
@@ -706,6 +794,7 @@ local function runMining()
         runtime.activity = "indulas"
         runtime.mainCompleted = 0
         runtime.branchesCompletedAt = 0
+        runtime.torchSteps = 0
         saveState()
 
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, config.startOffset))
@@ -733,7 +822,14 @@ local function runMining()
         if stopRequested then stopReason = "Felhasznaloi leallitas." break end
         local absoluteStep = config.startOffset + localStep
         setActivity("fotengely")
-        local moved, reason = mineForward(1, "Fotengely " .. localStep .. "/" .. config.mainLength)
+        local torchAllowed = config.tunnelMode == 3
+            or absoluteStep % config.branchSpacing ~= 0
+        local moved, reason = mineForward(
+            1,
+            "Fotengely " .. localStep .. "/" .. config.mainLength,
+            true,
+            torchAllowed
+        )
         if not moved then stopReason = reason break end
         runtime.mainCompleted = localStep
         saveState()
@@ -768,7 +864,7 @@ local function miningTask()
 end
 
 local function stopListener()
-    print("Leallitas: Q vagy Ctrl+T")
+    print("Q/Ctrl+T: leallitas | S: allapot")
     while not miningFinished do
         local event, key = os.pullEventRaw()
         if event == "miner_finished" then return end
@@ -778,6 +874,8 @@ local function stopListener()
                 print("Leallitas kerese fogadva.")
                 print("Biztonsagos hazateres indul...")
             end
+        elseif event == "key" and key == keys.s then
+            status("Allapot")
         end
     end
 end
@@ -787,8 +885,7 @@ if not configured then
     printError("Beallitasi hiba: " .. tostring(configureError))
 elseif config.launchExperimental then
     clearScreen()
-    print("!!! KISERLETI FUNKCIO !!!")
-    print("Kulso program inditasa...")
+    print("Terulet asas inditasa...")
     if not fs.exists("excavator") and not fs.exists("excavator.lua") then
         printError("Hianyzik az excavator program.")
     else

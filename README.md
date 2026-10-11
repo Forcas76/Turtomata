@@ -22,6 +22,7 @@ A turtle a kezdohelyen a banya fele nezzen. A ket lada mogotte legyen:
 Oldalnezet:
 
                     banya iranya ->
+  [faklya lada]  (csak bekapcsolt faklyazasnal)
   [fuel lada]
   [leado lada] [TURTLE]
 ```
@@ -30,10 +31,13 @@ Oldalnezet:
 - Az uzemanyaglada kozvetlenul a leado lada folott van.
 - A turtle feletti blokk maradjon szabad, mert tankolaskor felmegy egyet.
 - Az uzemanyagladaba csak egetheto targyat (peldaul szenet) tegyel.
+- Kiserleti faklyazasnal a faklyas lada a fuel lada folott van, es csak
+  faklyat tartalmazzon. A turtle feletti ket blokk maradjon szabad.
 - A biztonsagi tartalek legalabb 2, igy a turtle a felso ladat eleri.
 - A legelso inditas elott legyen legalabb 2 fuel a turtle-ben vagy legyen
   egetheto targy a sajat inventoryjaban. Ez kell ahhoz, hogy fel tudjon menni
   a felso uzemanyagladahoz; kesobb a program mar nem engedi teljesen kifogyni.
+- Bekapcsolt faklyazasnal a harom lada bejarasahoz legalabb 4 kezdo fuel kell.
 
 ## Mukodes
 
@@ -55,10 +59,12 @@ Oldalnezet:
   hazater, urit, tankol, visszamegy ugyanoda, es folytatja.
 - A munka vegen hazater, kiuriti az inventoryt, es az eredeti iranyba fordul.
 
-## Az 1-es inventory slot
+## Fenntartott inventory slotok
 
 - Az 1-es slot kizarolag tankolasi slot.
-- A turtle a kitermelt targyakhoz a 2-es slotot valasztja ki.
+- Faklyazas nelkul a turtle a kitermelt targyakhoz a 2-es slotot hasznalja.
+- Bekapcsolt kiserleti faklyazasnal a 2-es slot a faklyake, a kitermelt
+  targyak pedig a 3-as slottol kezdodnek.
 - Otthon az 1-es slot nem egetheto tartalmat lerakja a leado ladaba.
 - Az uzemanyagladabol mindig az 1-es slotba vesz fel, es csak ebbol tankol.
 - Az uzemanyagladabol felvett teljes stacket betankolja. Ha 64 szenet vesz
@@ -86,11 +92,12 @@ a `Ctrl+T` biztonsagos leallitast ker: a turtle befejezi az aktualis atomi
 3x3-as vagasi lepest, megorzi a mentest, hazater, lepakol es tankol. A munka
 kesobb az `Auto folytatas` menuponttal folytathato.
 
-## KISERLETI: tetszoleges terulet
+Az `S` billentyu futas kozben kiirja az aktualis muveletet, haladast,
+koordinatat, fuel-szintet, hazatavolsagot es inventory-kihasznaltsagot.
 
-> **KISERLETI FUNKCIO:** nagy teruleten eloszor kisebb merettel probald ki.
+## Tetszoleges terulet
 
-A fomenu `KISERLETI: terulet` pontja a kulon `excavator.lua` programot inditja.
+A fomenu `Terulet asas` pontja a kulon `excavator.lua` programot inditja.
 A meretek a turtle nezopontjabol ertendok:
 
 - szelesseg: a turtle-tol jobbra;
@@ -106,9 +113,25 @@ inventory vagy keves fuel eseten hazater, urit es tankol, majd visszamegy az
 aktualis munkapontra. Ugyanazt a ketladas elrendezest hasznalja, mint a branch
 miner.
 
-Az `excavator.lua` jelenleg kiserleti: sajat ujrainditas utani allapotmentese
-meg nincs, ezert varatlan szerver- vagy chunk-leallas utan kezi ujrainditas
-szukseges lehet.
+Az `excavator.lua` az `excavator_state.txt` egyetlen soraba menti a fizikai
+poziciot, iranyt, beallitasokat, a teljesen feldolgozott cellak szamat es az
+aktualis muveletet. A `Q` vagy `Ctrl+T` biztonsagosan leallitja es hazakuldi;
+az `S` allapotot ir ki. Ujrainditas utan az `Auto folytatas` hazater, urit,
+tankol, majd a kovetkezo meg nem kesz cellatol folytatja. A turtle-t a
+varatlan leallas utan nem szabad kezzel elmozditani vagy elforgatni.
+
+## KISERLETI: automatikus faklyazas
+
+A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
+beallitasakor a faklyazas opcionálisan bekapcsolhato, es megadhato a faklyak
+kozotti tavolsag. A modul egy oldalso, utvonalon kivuli helyet as ki, majd oda
+probalja lerakni a faklyat. Teruletkitoresnel csak a kijelolt terulet kulso
+peremen helyez el faklyat, hogy ne keruljon a kesobbi utvonalba.
+
+Ha a 2-es slot kiurul, a turtle hazater. A fuel lada folotti faklyas ladabol
+legfeljebb egy stacket vesz fel, majd visszamegy a mentett munkapontra. Ez a
+funkcio kiserleti: eloszor rovid alaguttal vagy kis terulettel probald ki,
+mert egyes modolt faklyak elhelyezesi szabalyai elterhetnek.
 
 ## Folytatasi mod
 
@@ -154,7 +177,8 @@ A fajlok forras- es celneve a `links` tablaban allithato. Jelenleg a repo
 ```text
 downloader                 # minden komponens
 downloader main            # csak a banyaszprogram
-downloader excavator       # csak a kiserleti teruletkitores
+downloader excavator       # csak a teruletkitore program
+downloader torch           # csak a kiserleti faklyakezelo modul
 downloader downloader      # csak a downloader
 ```
 
