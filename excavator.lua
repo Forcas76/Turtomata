@@ -353,11 +353,38 @@ local function moveToTarget(targetX, targetY, targetZ)
     return true
 end
 
-local function visit(targetX, targetY, targetZ, total)
+local function clearUpperCell()
+    local attempts = 0
+    while turtle.detectUp() do
+        if not turtle.digUp() then
+            return false, "A felso blokk nem ashato."
+        end
+        sleep(0.1)
+        attempts = attempts + 1
+        if attempts > 20 then
+            return false, "Tul sok blokk esik felulrol."
+        end
+    end
+    return true
+end
+
+local function visit(targetX, targetY, targetZ, total, clearAbove)
     local ok, reason = moveToTarget(targetX, targetY, targetZ)
     if not ok then return false, reason end
+
     visited = visited + 1
-    if visited == 1 or visited % 16 == 0 or visited == total then
+
+    if clearAbove then
+        if inventoryFull() then
+            local resumed, resumeReason = serviceAndResume("Inventory tele.")
+            if not resumed then return false, resumeReason end
+        end
+        local cleared, clearReason = clearUpperCell()
+        if not cleared then return false, clearReason end
+        visited = visited + 1
+    end
+
+    if visited <= 2 or visited % 16 == 0 or visited == total then
         print(string.format("Haladas: %d/%d | %d,%d,%d", visited, total,
             position.x, position.y, position.z))
     end
@@ -375,20 +402,23 @@ local function excavate()
 
     local currentX = 0
     local stopReason = nil
-    for y = 0, config.height - 1 do
-        local zStart = y % 2 == 0 and 1 or config.depth
-        local zEnd = y % 2 == 0 and config.depth or 1
-        local zStep = y % 2 == 0 and 1 or -1
+    local layerPass = 0
+    for y = 0, config.height - 1, 2 do
+        local clearAbove = y + 1 < config.height
+        local forwardDepth = layerPass % 2 == 0
+        local zStart = forwardDepth and 1 or config.depth
+        local zEnd = forwardDepth and config.depth or 1
+        local zStep = forwardDepth and 1 or -1
         local xDirection = currentX == 0 and 1 or -1
         local z = zStart
 
         while true do
-            local rowOk, rowReason = visit(currentX, y, z, total)
+            local rowOk, rowReason = visit(currentX, y, z, total, clearAbove)
             if not rowOk then stopReason = rowReason break end
 
             for _ = 2, config.width do
                 currentX = currentX + xDirection
-                local cellOk, cellReason = visit(currentX, y, z, total)
+                local cellOk, cellReason = visit(currentX, y, z, total, clearAbove)
                 if not cellOk then stopReason = cellReason break end
             end
             if stopReason or z == zEnd then break end
@@ -396,6 +426,7 @@ local function excavate()
             z = z + zStep
         end
         if stopReason then break end
+        layerPass = layerPass + 1
     end
 
     if stopReason then printError("Kitores leallt: " .. (stopReason or "hiba"))

@@ -98,10 +98,13 @@ A meretek a turtle nezopontjabol ertendok:
 - magassag: felfele.
 
 A turtle a kiemelendo teglatest bal-also-elso sarka elott alljon, es a melyseg
-iranyaba nezzen. A program retegenkent, kigyozo utvonalon jarja be a teljes
-terfogatot. Megtelt inventory vagy keves fuel eseten hazater, urit es tankol,
-majd visszamegy az aktualis munkapontra. Ugyanazt a ketladas elrendezest
-hasznalja, mint a branch miner.
+iranyaba nezzen. A program kigyozo utvonalon jarja be a teljes terfogatot.
+Amikor van meg felette kijelolt reteg, az also reteg bejarasa kozben minden
+cellanal felfele is as, igy egy menetben ket fuggoleges reteget dolgoz fel.
+Paratlan magassagnal a legfelso, utolso reteget kulon jarja be. Megtelt
+inventory vagy keves fuel eseten hazater, urit es tankol, majd visszamegy az
+aktualis munkapontra. Ugyanazt a ketladas elrendezest hasznalja, mint a branch
+miner.
 
 Az `excavator.lua` jelenleg kiserleti: sajat ujrainditas utani allapotmentese
 meg nincs, ezert varatlan szerver- vagy chunk-leallas utan kezi ujrainditas
