@@ -14,6 +14,69 @@ Masold a fajlt a turtle gepere `branch_miner` nevvel, majd futtasd:
 branch_miner
 ```
 
+## Menümagyarázó
+
+Az első oszlopban pontosan az a rövid, ékezet nélküli felirat szerepel,
+amely a turtle kijelzőjén látható. Mellette található az ékezetes cím és a
+választás jelentése.
+
+### Főmenü
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `Branch 1x2` | Branch mining – 1×2 | Egy blokk széles, két blokk magas főutat és oldalágakat ás. |
+| `Branch 1x3` | Branch mining – 1×3 | Egy blokk széles, három blokk magas főutat és oldalágakat ás. |
+| `Egyenes 3x3` | Egyenes 3×3-as alagút | Oldalágak nélküli, három blokk széles és magas alagutat készít. Induláskor egy blokkal feljebb megy, így a kezdőszint lesz az alagút alja. |
+| `Terulet asas` | Területásás | Elindítja a kísérleti területásó programot, ahol egy teljes téglatest méretei adhatók meg. |
+| `Auto folytatas` | Automatikus folytatás | Betölti a mentett munkát, visszamegy a mentett pontra, majd onnan folytatja. |
+| `Auto (nincs mentes)` | Automatikus folytatás (nincs mentés) | Jelenleg nincs használható mentés, ezért az automatikus folytatás nem választható. |
+
+### Branch mining és 3×3-as alagút beállításai
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `Uj munka` | Új munka | Új bányászást indít a kezdőponttól. |
+| `Kezi folytatas` | Kézi folytatás | A turtle előbb végigmegy a már meglévő alagúton a megadott kezdő távolságig, majd ott kezdi az új szakaszt. Vésztartalék arra az esetre, ha nincs megfelelő mentés. |
+| `Kezdo tavolsag` | Kezdő távolság | A már elkészült főút hossza, amelyen a turtle ásás nélkül előremegy. |
+| `Alagut hossza` | Alagút hossza | Az egyenes 3×3-as alagút teljes hossza. |
+| `Fotengely` | Főtengely hossza | A branch mining során elkészítendő új főút hossza. |
+| `Oldalagat` | Oldalág hossza | Egy bal vagy jobb oldali bányaág hossza. |
+| `Agak tavolsaga` | Ágak távolsága | Ennyi blokk marad két egymást követő oldalág között. Alapértéke 3. |
+| `Fuel tartalek` | Üzemanyag-tartalék | Ennyi extra üzemanyagot tartson meg a program a kezdőpontra való visszaút kiszámított igényén felül. |
+
+### Kísérleti automatikus fáklyázás
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `KISERLETI faklyazas` | KÍSÉRLETI fáklyázás | Beállítja, hogy a turtle használjon-e automatikusan fáklyákat. Bekapcsolva a 2-es inventory slot a fáklyáké. |
+| `Kikapcsolva` | Kikapcsolva | Nem használ fáklyát, és nem keresi a fáklyás ládát. |
+| `Bekapcsolva` | Bekapcsolva | Engedélyezi a fáklyázást; ha elfogy a fáklya, a turtle visszatér és újratölti a 2-es slotot. |
+| `Fout: hany beasas` | Főút: hány beásásonként | Megadja, hogy a főúton hány elkészült oldalág után legyen fáklya. A főúti fáklyákat a kész útvonalon, a végső visszatéréskor rakja le. |
+| `Ag: hany blokkonkent` | Ág: hány blokkonként | Az oldalág fáklyái közötti távolság. A turtle előbb kiássa az egész ágat, majd visszafelé rakja le a fáklyákat. |
+| `Faklya tavolsag` | Fáklyák távolsága | Területásásnál a fáklyák közötti beállított távolság. |
+| `Faklya helye (KISERLETI)` | Fáklya helye (KÍSÉRLETI) | Kiválasztja a fáklya lerakási módját. |
+| `Oldalt: blokk ki, faklya be` | Oldalt: blokk ki, fáklya be | A turtle oldalra fordul, kiüt egy blokkot, majd a kialakított helyre próbálja tenni a fáklyát. |
+| `A turtle feje fole` | A turtle feje fölé | A turtle felfelé próbálja elhelyezni a fáklyát. Ez a lerakási mód kísérleti. |
+
+### Területásás beállításai
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `Uj terulet` | Új terület | Új, téglatest alakú terület kiását állítja be. |
+| `Auto folytatas` | Automatikus folytatás | Betölti a területásó mentését, visszamegy a mentett pontra, majd folytatja a munkát. |
+| `Auto (nincs mentes)` | Automatikus folytatás (nincs mentés) | Nincs használható területásó-mentés. |
+| `Szelesseg` | Szélesség | A turtle nézőpontjából a kiásandó terület oldalirányú mérete. |
+| `Melyseg` | Mélység | A turtle előtti irányban mért hossz. |
+| `Magassag` | Magasság | A kiásandó terület függőleges mérete. |
+| `Fuel tartalek` | Üzemanyag-tartalék | A kiszámított visszaúthoz szükséges mennyiségen felül megtartandó extra üzemanyag. |
+
+### Futás közbeni vezérlés
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `Q/Ctrl+T: leallitas` | Q/Ctrl+T: leállítás | Biztonságos leállítást kér. A turtle elmenti az állapotát, visszatér a kezdőpontra, lepakol és feltankol. |
+| `S: allapot` | S: állapot | Kiírja az aktuális munkafázist, pozíciót, irányt, üzemanyagszintet és a visszaúthoz szükséges mennyiséget. |
+
 ## Ladak elhelyezese
 
 A turtle a kezdohelyen a banya fele nezzen. A ket lada mogotte legyen:
