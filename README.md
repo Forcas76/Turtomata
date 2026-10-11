@@ -1,8 +1,10 @@
 # CC:Tweaked Branch Miner
 
-A `branch_miner.lua` interaktiv menubol allithato branch mining program.
+A `branch_miner.lua` interaktiv menubol allithato banyaszprogram.
 Nem kell parancssori parametereket megadni: inditas utan kerdesenkent bekeri a
 beallitasokat, osszefoglalja oket, majd a vegso ENTER-re indul el.
+Minden szambeviteli mezonel az ures ENTER az alapertelmezett erteket valasztja.
+Az oldalagatok alapertelmezett tavolsaga 3 blokk.
 
 ## Inditas
 
@@ -35,12 +37,17 @@ Oldalnezet:
 
 ## Mukodes
 
-- Valaszthato 2 blokk magas alagut: a turtle elotti es feletti blokkot assa.
-- Valaszthato 3 blokk magas alagut: az alatta, elotte es felette levo blokkot
-  assa ki.
-- Valaszthato 3x3-as alagut: a turtle minden szeletnel balra es jobbra is
+- A `Branch 1x2` es `Branch 1x3` modnal fotengelyt, oldalaghosszt es agak
+  kozotti tavolsagot lehet megadni.
+- Az `Egyenes 3x3` mod eloszor valaszthato ki, es csak az alagut hosszat keri;
+  ebben a modban nincsenek oldalagatok.
+- A 3x3-as alagutnal a turtle minden szeletnel balra es jobbra is
   kiter, kiassa mindharom oszlop also es felso blokkjat, majd visszaall a
-  kozepvonalra. A plusz oldaliranyu lepeseket a fuel-szamitas tartalmazza.
+  kozepvonalra es az eredeti iranyba. A plusz oldaliranyu lepeseket a
+  fuel-szamitas tartalmazza.
+- A 3x3-as mod indulasakor a turtle egy blokkot felmegy. Igy az eredeti
+  indulasi szint lesz az alagut also sora, a turtle pedig a kozepso sorban
+  halad. Hazafele is a kozepso soron jon, es csak a kezdohelyen ereszkedik le.
 - A turtle relativ koordinatakat vezet. A pontos hazautigeny:
   `abs(x) + abs(y) + abs(z)`.
 - Minden bovito lepes elott ellenorzi a hazaut uzemanyag-igenyet.
@@ -54,8 +61,30 @@ Oldalnezet:
 - A turtle a kitermelt targyakhoz a 2-es slotot valasztja ki.
 - Otthon az 1-es slot nem egetheto tartalmat lerakja a leado ladaba.
 - Az uzemanyagladabol mindig az 1-es slotba vesz fel, es csak ebbol tankol.
-- Az 1-es slotban maradt egetheto targyat felhasznalja vagy visszarakja az
-  uzemanyagladaba.
+- Az uzemanyagladabol felvett teljes stacket betankolja. Ha 64 szenet vesz
+  fel, mind a 64 darabot felhasznalja, nem csak a pillanatnyi uthoz elegendot.
+
+## Automatikus folytatas
+
+A program a `branch_miner_state.txt` fajl egyetlen soraba menti az aktualis
+koordinatat, iranyt, beallitasokat, elvegzett fotengelyhosszt es az eppen vegzett
+muveletet. Minden sikeres mozgas vagy fordulas utan ugyanazt a sort irja felul.
+
+Ujrainditas utan az `Auto folytatas` mod betolti ezt az allapotot. Feltetelezi,
+hogy a turtle-t a leallas ota nem mozgattak el es nem forgattak el. Eloszor
+visszater a kezdohelyre, urit es tankol, majd visszamegy az utolso mentett
+fotengely-ellenorzoponthoz. Ha egy oldalagat felbeszakadt, biztonsagosan ujra
+bejárja az adott pont oldalágait, majd folytatja a munkat.
+
+A `Kezi folytatas` mod tovabbra is elerheto, ha a mentes hianyzik, serult, vagy
+a turtle-t kezzel athelyeztek.
+
+## Kezi leallitas futas kozben
+
+A banyaszat alatt a program folyamatosan figyeli a billentyuzetet. A `Q` vagy
+a `Ctrl+T` biztonsagos leallitast ker: a turtle befejezi az aktualis atomi
+3x3-as vagasi lepest, megorzi a mentest, hazater, lepakol es tankol. A munka
+kesobb az `Auto folytatas` menuponttal folytathato.
 
 ## Folytatasi mod
 
