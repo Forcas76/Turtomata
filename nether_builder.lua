@@ -1,5 +1,6 @@
 -- CC:Tweaked Nether ut- es alagutepito turtle.
--- 1-es slot: fuel, 2-5. slot: epitoanyag, 6-16. slot: banyaszott targyak.
+-- 1-es slot: fuel. Faklya nelkul 2-5., faklyaval 3-5. slot: epitoanyag.
+-- KISERLETI faklyazasnal a 2-es slot a faklyake. A 6-16. slot banyaszslot.
 
 local config = {}
 local position = { x = 0, y = 0, z = 0 }
@@ -11,10 +12,13 @@ local returningHome = false
 
 local STATE_FILE = "nether_builder_state.txt"
 local STATE_TEMP_FILE = ".nether_builder_state.tmp"
-local BUILD_FIRST, BUILD_LAST, MINE_FIRST = 2, 5, 6
+local BUILD_LAST, MINE_FIRST = 5, 6
+local buildFirstSlot = 2
 
 local actionLogOk, actionLogger = pcall(require, "action_log")
 if not actionLogOk then actionLogger = nil end
+local torchModuleOk, torchManager = pcall(require, "torch_manager")
+if not torchModuleOk then torchManager = nil end
 
 local headings = {
     [0] = { x = 0, z = 1 },
@@ -30,6 +34,7 @@ local runtime = {
     path = {},
     pending = nil,
     serviceLevel = 0,
+    blockDrops = {},
 }
 
 local function saveState()
@@ -42,6 +47,7 @@ local function saveState()
         path = runtime.path,
         pending = runtime.pending,
         serviceLevel = runtime.serviceLevel,
+        blockDrops = runtime.blockDrops,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         config = config,
@@ -152,6 +158,7 @@ local function configure()
         runtime.path = type(saved.path) == "table" and saved.path or {}
         runtime.pending = saved.pending
         runtime.serviceLevel = saved.serviceLevel or 0
+        runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
     else
         config.autoResume = false
         config.mode = mode
@@ -164,9 +171,22 @@ local function configure()
         config.length = promptInteger("Hossz", 64, 1)
         config.builderBlock = promptBlockName("minecraft:cobblestone")
         config.fuelReserve = promptInteger("Fuel tartalek", 8, 4)
+        print("")
+        config.torchEnabled = promptChoice("KISERLETI faklyazas:", {
+            "Kikapcsolva",
+            "Bekapcsolva",
+        }, 1) == 2
+        config.torchInterval = config.torchEnabled
+            and promptInteger("Faklya tavolsag", 8, 1) or 0
     end
 
     config.fuelReserve = config.fuelReserve or 8
+    config.torchEnabled = config.torchEnabled == true
+    config.torchInterval = config.torchEnabled and (config.torchInterval or 8) or 0
+    if config.torchEnabled and not torchManager then
+        error("Hianyzik a torch_manager.lua.", 0)
+    end
+    buildFirstSlot = config.torchEnabled and 3 or 2
     config.builderBlock = normalizeBlockName(config.builderBlock)
     if not config.builderBlock then error("Hibas mentett epitoanyag.", 0) end
 
@@ -179,9 +199,12 @@ local function configure()
     end
     print("Hossz: " .. config.length)
     print("Epito: " .. config.builderBlock)
-    print("Epito slot: 2-5")
+    print("Faklya: " .. (config.torchEnabled
+        and ("be, " .. config.torchInterval .. " lepesenkent") or "ki"))
+    print("Epito slot: " .. buildFirstSlot .. "-5")
     print("Banyasz slot: 6-16")
     print("Lada: hatul, fuel: folotte")
+    if config.torchEnabled then print("Faklyas lada: a fuel lada folott") end
     print("Epitoanyag a leado lada elejere!")
     if config.autoResume then print("Folytatas: " .. runtime.completed .. " lepestol") end
     print("")
@@ -361,7 +384,7 @@ end
 
 local function builderCount()
     local total = 0
-    for slot = BUILD_FIRST, BUILD_LAST do
+    for slot = buildFirstSlot, BUILD_LAST do
         local detail = turtle.getItemDetail(slot)
         if detail and detail.name == config.builderBlock then
             total = total + turtle.getItemCount(slot)
@@ -371,7 +394,7 @@ local function builderCount()
 end
 
 local function selectBuilder()
-    for slot = BUILD_FIRST, BUILD_LAST do
+    for slot = buildFirstSlot, BUILD_LAST do
         local detail = turtle.getItemDetail(slot)
         if detail and detail.name == config.builderBlock and turtle.getItemCount(slot) > 0 then
             turtle.select(slot)
@@ -388,14 +411,69 @@ local function miningFull()
     return true
 end
 
-local function selectMiningSlot()
-    for slot = MINE_FIRST, 16 do
-        if turtle.getItemCount(slot) == 0 then turtle.select(slot) return true end
-    end
-    for slot = MINE_FIRST, 16 do
-        if turtle.getItemSpace(slot) > 0 then turtle.select(slot) return true end
+local function selectMatchingSlot(itemName, firstSlot, lastSlot)
+    if not itemName then return false end
+    for slot = firstSlot, lastSlot do
+        local detail = turtle.getItemDetail(slot)
+        if detail and detail.name == itemName and turtle.getItemSpace(slot) > 0 then
+            turtle.select(slot)
+            return true
+        end
     end
     return false
+end
+
+local function selectDropSlot(blockData)
+    local blockName = type(blockData) == "table" and blockData.name or nil
+    local expectedDrop = blockName and runtime.blockDrops[blockName] or blockName
+
+    -- A kibanyaszott epitoanyag rogton visszakerulhet a fenntartott stackekbe.
+    if expectedDrop == config.builderBlock
+        and selectMatchingSlot(expectedDrop, buildFirstSlot, BUILD_LAST) then
+        return true
+    end
+    if selectMatchingSlot(expectedDrop, MINE_FIRST, 16) then return true end
+
+    -- Ismeretlen dropnal a blokk sajat targyvaltozatat is megprobaljuk.
+    if blockName ~= expectedDrop
+        and selectMatchingSlot(blockName, MINE_FIRST, 16) then return true end
+
+    -- Uj targyfajta csak tenylegesen ures banyaszslotot kapjon.
+    for slot = MINE_FIRST, 16 do
+        if turtle.getItemCount(slot) == 0 then
+            turtle.select(slot)
+            return true
+        end
+    end
+    return false
+end
+
+local function inventoryTotals()
+    local totals = {}
+    for slot = buildFirstSlot, 16 do
+        local detail = turtle.getItemDetail(slot)
+        if detail then
+            totals[detail.name] = (totals[detail.name] or 0) + turtle.getItemCount(slot)
+        end
+    end
+    return totals
+end
+
+local function learnDrop(blockData, before)
+    local blockName = type(blockData) == "table" and blockData.name or nil
+    if not blockName then return end
+    local after = inventoryTotals()
+    local learnedName = nil
+    for itemName, count in pairs(after) do
+        if count > (before[itemName] or 0) then
+            if learnedName then return end
+            learnedName = itemName
+        end
+    end
+    if learnedName and runtime.blockDrops[blockName] ~= learnedName then
+        runtime.blockDrops[blockName] = learnedName
+        saveState()
+    end
 end
 
 local function inspectDepositChest()
@@ -418,9 +496,11 @@ local function unloadAndLoadBuilders(requiredBlocks)
         if count > 0 then
             local detail = turtle.getItemDetail(slot)
             local keepFuel = slot == 1 and turtle.refuel(0)
-            local keepBuilder = slot >= BUILD_FIRST and slot <= BUILD_LAST
+            local keepTorch = slot == 2 and config.torchEnabled
+                and torchManager.keepReservedSlot(config)
+            local keepBuilder = slot >= buildFirstSlot and slot <= BUILD_LAST
                 and detail and detail.name == config.builderBlock
-            if not keepFuel and not keepBuilder then
+            if not keepFuel and not keepTorch and not keepBuilder then
                 turtle.drop()
                 if turtle.getItemCount(slot) > 0 then
                     turtle.select(selectedSlot)
@@ -432,7 +512,7 @@ local function unloadAndLoadBuilders(requiredBlocks)
     end
 
     if requiredBlocks > 0 then
-        for slot = BUILD_FIRST, BUILD_LAST do
+        for slot = buildFirstSlot, BUILD_LAST do
             turtle.select(slot)
             local detail = turtle.getItemDetail(slot)
             if detail and detail.name ~= config.builderBlock then
@@ -461,10 +541,11 @@ local function unloadAndLoadBuilders(requiredBlocks)
     return true
 end
 
-local function refuelFromUpperChest(requiredFuel)
-    if not refuelFromSlotOne(2) then
+local function refuelFromUpperChest(requiredFuel, refillTorch)
+    local accessFuel = config.torchEnabled and 4 or 2
+    if not refuelFromSlotOne(accessFuel) then
         turnAround()
-        return false, "Legalabb 2 kezdo fuel kell a fuel lada eleresehez."
+        return false, "Nincs eleg kezdo fuel a kiszolgalo ladak eleresehez."
     end
     if not turtle.up() then
         turnAround()
@@ -497,6 +578,24 @@ local function refuelFromUpperChest(requiredFuel)
         end
     end
 
+    if not reason and config.torchEnabled and refillTorch ~= false then
+        if not turtle.up() then
+            reason = "Nem tudok felmenni a faklyas ladahoz."
+        else
+            position.y = position.y + 1
+            runtime.serviceLevel = 2
+            saveState()
+            local torchOk, torchReason = torchManager.refillFromChest()
+            if not torchOk then reason = torchReason end
+            if not turtle.down() then
+                return false, "Nem tudok lejonni a faklyas ladatol."
+            end
+            position.y = position.y - 1
+            runtime.serviceLevel = 1
+            saveState()
+        end
+    end
+
     if fuelLevel() < 1 then return false, reason or "Nincs fuel a leereszkedeshez." end
     if not turtle.down() then return false, "Nem tudok lejonni a fuel ladatol." end
     position.y = position.y - 1
@@ -508,14 +607,14 @@ local function refuelFromUpperChest(requiredFuel)
     return true
 end
 
-local function serviceHome(requiredFuel, requiredBlocks)
+local function serviceHome(requiredFuel, requiredBlocks, refillTorch)
     if #runtime.path ~= 0 or position.x ~= 0 or position.y ~= 0 or position.z ~= 0 then
         return false, "A lada-kiszolgalas nem a kezdoponton indult."
     end
     setActivity("urites_anyag_tankolas")
     local loaded, loadReason = unloadAndLoadBuilders(requiredBlocks)
     if not loaded then return false, loadReason end
-    return refuelFromUpperChest(requiredFuel)
+    return refuelFromUpperChest(requiredFuel, refillTorch)
 end
 
 local function serviceAndResume(reasonText, requiredBlocks)
@@ -558,6 +657,9 @@ local function status(prefix)
         "Poz:%d,%d,%d Fuel:%s Ut:%d Epit:%d",
         position.x, position.y, position.z, fuelText(), #runtime.path, builderCount()
     ))
+    if config.torchEnabled then
+        print("Faklya: " .. turtle.getItemCount(2))
+    end
 end
 
 local function managedDig(direction)
@@ -567,21 +669,24 @@ local function managedDig(direction)
     else inspect, dig = turtle.inspect, turtle.dig end
 
     local attempts = 0
-    while inspect() do
+    while true do
+        local hasBlock, blockData = inspect()
+        if not hasBlock then return true end
         if stopRequested then return false, "Felhasznaloi leallitas." end
-        if miningFull() then
+        if not selectDropSlot(blockData) then
             local serviced, reason = serviceAndResume(
-                "Az inventory megtelt.", config.mode == 2 and 6 or 1
+                "A kovetkezo drop mar nem fer el.", config.mode == 2 and 6 or 1
             )
             if not serviced then return false, reason end
+        else
+            local before = inventoryTotals()
+            if not dig() then return false, "A blokk nem banyaszhato." end
+            learnDrop(blockData, before)
+            sleep(0.15)
+            attempts = attempts + 1
+            if attempts > 20 then return false, "Tul sok blokk esik vissza az utba." end
         end
-        if not selectMiningSlot() then return false, "Nincs szabad banyaszslot." end
-        if not dig() then return false, "A blokk nem banyaszhato." end
-        sleep(0.15)
-        attempts = attempts + 1
-        if attempts > 20 then return false, "Tul sok blokk esik vissza az utba." end
     end
-    return true
 end
 
 local function placeIfAir(direction, targetHeading)
@@ -605,7 +710,8 @@ local function placeIfAir(direction, targetHeading)
     if direction == "forward" then face(targetHeading) end
     if not selectBuilder() then
         if direction == "forward" then face(originalHeading) end
-        return false, "Nem talalom az epitoanyagot a 2-5. slotban."
+        return false, "Nem talalom az epitoanyagot a "
+            .. buildFirstSlot .. "-5. slotban."
     end
     local placed = place()
     if direction == "forward" then face(originalHeading) end
@@ -613,6 +719,57 @@ local function placeIfAir(direction, targetHeading)
     if not placed then return false, "Nem sikerult epitoanyagot lerakni." end
     saveState()
     return true
+end
+
+local function placeTorchAboveWithSupport()
+    if not torchManager.hasTorch() then
+        local serviced, reason = serviceAndResume(
+            "Elfogyott a faklya.", config.mode == 2 and 6 or 1
+        )
+        if not serviced then return false, reason end
+    end
+
+    local placed, reason = torchManager.placeAbove(function() return heading end, face)
+    if placed then return true end
+
+    -- Nyilt terepen a fali faklyanak nem feltetlenul van mihez tapadnia.
+    -- Belepes a faklya cellajaba, oldalso tamasz epites, majd ujraprobalas.
+    if turtle.detectUp() then return false, reason end
+    local moved, moveReason = pushMove({ kind = "u" })
+    if not moved then return false, moveReason end
+    local supported, supportReason = placeIfAir("forward", (heading + 1) % 4)
+    local returned, returnReason = popMove()
+    if not returned then return false, returnReason end
+    if not supported then return false, supportReason end
+
+    placed, reason = torchManager.placeAbove(function() return heading end, face)
+    if not placed then return false, reason end
+    return true
+end
+
+local function placeScheduledTorch()
+    setActivity("faklyazas")
+
+    -- Felfele lepcsozesnel a jelenlegi fej feletti cella lesz a kovetkezo
+    -- lepes utja. Ezert egy cellaval visszabb, az elozo foknal faklyazunk.
+    if config.mode == 1 and config.stairDirection == "up" then
+        local lastMove = runtime.path[#runtime.path]
+        if not lastMove or lastMove.kind ~= "h" then
+            return false, "Nem talalom a felfele lepcso elozo fokat."
+        end
+        local restoredMove = copyMove(lastMove)
+        local backed, backReason = popMove()
+        if not backed then return false, backReason end
+        local placed, placeReason = placeTorchAboveWithSupport()
+        local restored, restoreReason = pushMove(restoredMove)
+        if not restored then return false, restoreReason end
+        face(0)
+        return placed, placeReason
+    end
+
+    local placed, reason = placeTorchAboveWithSupport()
+    face(0)
+    return placed, reason
 end
 
 local function buildTunnelShell(travelHeading)
@@ -712,7 +869,9 @@ local function runBuilder()
         local modeName = config.mode == 1
             and (config.stairDirection == "up" and "Nether lepcso fel" or "Nether lepcso le")
             or "Nether vedett 1x2"
-        actionLogger.log(modeName .. (config.autoResume and " - auto folytatas" or " - uj munka"))
+        actionLogger.log(modeName
+            .. (config.autoResume and " - auto folytatas" or " - uj munka")
+            .. (config.torchEnabled and " - faklyazas=be" or " - faklyazas=ki"))
     end
 
     if config.autoResume then
@@ -736,6 +895,7 @@ local function runBuilder()
         runtime.path = {}
         runtime.pending = nil
         runtime.serviceLevel = 0
+        runtime.blockDrops = {}
         saveState()
         local serviced, reason = serviceHome(
             config.fuelReserve + 12,
@@ -760,6 +920,10 @@ local function runBuilder()
         if config.mode == 1 then ok, reason = buildStairStep()
         else ok, reason = buildTunnelStep() end
         if not ok then stopReason = reason break end
+        if config.torchEnabled and step % config.torchInterval == 0 then
+            ok, reason = placeScheduledTorch()
+            if not ok then stopReason = reason break end
+        end
         runtime.completed = step
         saveState()
         if step == 1 or step % 8 == 0 or step == config.length then
@@ -775,7 +939,7 @@ local function runBuilder()
         printError("Nem sikerult hazaterni: " .. tostring(homeReason))
         return
     end
-    local serviced, serviceReason = serviceHome(config.fuelReserve + 4, 0)
+    local serviced, serviceReason = serviceHome(config.fuelReserve + 4, 0, false)
     if not serviced then
         printError("Otthoni kiszolgalasi hiba: " .. tostring(serviceReason))
         return

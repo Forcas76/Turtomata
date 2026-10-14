@@ -283,6 +283,22 @@ visszafejti a félbemaradt útvonalat, kiszolgálja magát, majd a legutóbbi te
 lépésig visszamegy. A turtle-t váratlan leállás után nem szabad kézzel
 elmozdítani vagy elforgatni.
 
+### KISERLETI faklyazas a Nether epitonel
+
+Mindket Nether epito modnal bekapcsolhato az automatikus faklyazas, es
+megadhato a faklyak kozotti lepesek szama. Kikapcsolva a 2-5. slot az
+epitoanyage. Bekapcsolva a 2-es slot a faklyake, az epitoanyag pedig a 3-5.
+slotba kerul; a 6-16. slot tovabbra is a kibanyaszott targyake.
+
+A faklyas ladat a fuel-lada fole kell tenni. Ha a 2-es slot kiurul, a turtle
+a mentett utvonalon hazater, lepakol, feltankol, feltolti a faklyat es az
+epitoanyagot, majd folytatja a munkat. A kesz cellaknal a feje folotti
+jaratreszbe probal fali faklyat rogzitani. Nyilt terepen szukseg eseten egy
+oldalso tamaszblokkot is epit hozza. Felfele vezeto lepcson az elozo foknal
+faklyaz, hogy a kovetkezo felfele lepes ne usse ki a friss faklyat.
+
+Ez a lehetoseg kiserleti; eloszor rovid utvonallal ajanlott kiprobalni.
+
 ## KISERLETI: automatikus faklyazas
 
 A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
