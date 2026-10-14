@@ -59,7 +59,7 @@ mindig felülírva az előző állapotot.
 Az `inventory_state.txt` javasolt felépítése:
 
 ```json
-{"version":1,"updated":0,"reason":"indulas","firstMiningSlot":3,"emptyMiningSlots":12,"slots":{"1":{"name":"minecraft:coal","count":32,"space":32},"2":{"name":"minecraft:torch","count":64,"space":0}},"itemTotals":{"minecraft:coal":32,"minecraft:torch":64},"seenBlocks":{"minecraft:stone":true},"blockDrops":{"minecraft:stone":"minecraft:cobblestone"}}
+{"version":1,"updated":0,"reason":"indulas","firstMiningSlot":3,"emptyMiningSlots":12,"slots":{"1":{"name":"minecraft:coal","count":32,"space":32},"2":{"name":"minecraft:torch","count":64,"space":0}},"itemTotals":{"minecraft:coal":32,"minecraft:torch":64},"seenBlocks":{"minecraft:stone":true},"blockDrops":{"minecraft:stone":"minecraft:cobblestone"},"blockDropCounts":{"minecraft:stone":1}}
 ```
 
 A fájl tartalmazza:
@@ -135,17 +135,17 @@ Ismeretlen dropot csak akkor szabad kibányászni, ha van legalább egy teljesen
 üres bányászslot. Ha nincs, a turtle még a blokk kiütése előtt visszatér
 lepakolni.
 
-### Biztonsági puffer
+### Nincs előre fenntartott puffer
 
-Alapértelmezetten egy üres bányászslot legyen biztonsági puffer az ismeretlen,
-többszörös vagy váratlan dropok számára.
+A kísérleti rendszer nem tart fenn állandóan egy üres biztonsági slotot.
+Az utolsó üres bányászslot is felhasználható, ha a detektált blokk dropja
+oda elfér. A turtle ettől még nem indul azonnal haza; csak a következő
+detektált blokk előtt tér vissza, ha annak dropja már sem megfelelő stackbe,
+sem üres slotba nem helyezhető el.
 
-- Ha a következő ismert drop meglévő stackbe fér, a puffer megőrizhető, és
-  a munka folytatható.
-- Ha a következő drop elfoglalná az utolsó üres slotot, a blokk még
-  kibányászható, de utána azonnal lepakolási visszatérést kell jelölni.
-- Ismeretlen vagy várhatóan több darabot adó ércnél az utolsó üres slotot
-  nem szabad kockáztatni: előbb le kell pakolni.
+Ismeretlen blokknál egyetlen üres slot elegendő a bányászáshoz. Ha nincs
+üres slot, és a blokkhoz még nincs megtanult drop, a turtle előbb lepakol,
+mert az `inspect` a blokk nevét mutatja, nem garantálja a kieső item nevét.
 
 Ez gazdaságosabb egy fix, például 80%-os telítettségi határnál, mert a
 turtle kihasználja a részben töltött stackeket, de nem veszít el új itemtípust.
@@ -256,7 +256,6 @@ Az `S: allapot` kimenete egészüljön ki:
 ```text
 Inv: 11/14 slot
 Ures: 3
-Puffer: 1
 Kovetkezo: minecraft:cobblestone
 Kapacitas: 47
 ```
@@ -289,8 +288,10 @@ Blokk: minecraft:deepslate_diamond_ore
 - Minden slot foglalt, de mindegyik stack csak 63 darabos és más itemet
   tartalmaz.
 - Nincs üres slot, de az ismert drop egyik meglévő stackbe befér.
-- Az utolsó üres slotot egy ismert drop foglalná el.
-- Az utolsó üres slot előtt ismeretlen blokk jelenik meg.
+- Az utolsó üres slotot egy ismert drop foglalja el; a turtle csak a
+  következő, már el nem férő drop előtt induljon haza.
+- Az utolsó üres slot előtt ismeretlen blokk jelenik meg; a blokkot még
+  bányássza ki, majd frissítse a pillanatképet.
 - Egy blokk több itemet dob.
 - A blokk neve eltér a drop nevétől, például kő és zúzottkő.
 - Fáklyázás be- és kikapcsolva.
@@ -309,6 +310,8 @@ Blokk: minecraft:deepslate_diamond_ore
   felülírja az `inventory_state.txt` fájlt.
 - A részben töltött, megfelelő stackeket kihasználja, ezért nem tér haza
   pusztán egy fix slot- vagy százalékhatár miatt.
+- Nem tér haza csak azért, mert elfogyott az üres puffer; kizárólag akkor,
+  amikor a már detektált blokk várható dropja nem fér be.
 - Stackösszevonással elkerüli a szükségtelen lepakoló utakat.
 - Hazatérés után ugyanazon a munkaponton, a helyes irányban és a kihagyott
   blokk előtt folytatja a munkát.

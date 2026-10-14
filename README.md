@@ -144,9 +144,11 @@ blokk kiutese elott, hogy a varhato drop tenylegesen elfer-e.
 
 Az uj rendszer nem csak azt nezi, hogy van-e valamelyik stackben szabad hely.
 Ismert dropnal megfelelo, reszben toltott stacket vagy ures banyaszslotot keres.
-Uj, meg nem ismert blokkfajta elott ures biztonsagi puffert kovetel. Ha nincs
-eleg hely, a turtle a blokk kiutese elott hazater, lepakol, majd ugyanoda es
-ugyanabba az iranyba visszamegy.
+Nincs allandoan fenntartott biztonsagi puffer: uj blokkfajta szamara egyetlen
+ures slot eleg. A turtle csak akkor ter haza, amikor a mar detektalt blokk
+varhato dropja sem megfelelo stackbe, sem ures banyaszslotba nem fer be. Ilyenkor
+meg a blokk kiutese elott lepakol, majd ugyanoda es ugyanabba az iranyba megy
+vissza.
 
 A modul az `inventory_state.txt` egyetlen JSON-soraban tarolja az inventory
 pillanatkepet, a mar latott blokkokat es a futas kozben megtanult blokk-drop
@@ -155,8 +157,8 @@ torteno elindulas elott a turtle valodi inventory-ja felulirja ezt a fajlt.
 Ezert a TXT csak folytatasi segedadat; soha nem elozheti meg a slotok valos
 tartalmat.
 
-Az `S` allapotkijelzes bekapcsolt kiserleti modban az ures banyaszslotok es a
-biztonsagi puffer szamat is kiirja. A funkcio a branch mining, az egyenes
+Az `S` allapotkijelzes bekapcsolt kiserleti modban az ures banyaszslotok szamat
+is kiirja. A funkcio a branch mining, az egyenes
 3x3-as alagut es a teruletasas minden elore, felfele es lefele vegzett
 banyaszmuveletet ellenorzi. A fenti mukodes tesztfunkcio; rovid munkaval erdemes
 kiprobalni, mielott kotelezo alapmechanikava valik.

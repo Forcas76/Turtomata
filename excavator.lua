@@ -232,7 +232,8 @@ end
 
 local function inventoryFull()
     if config.experimentalInventory and inventoryManager then
-        return inventoryManager.isCompletelyFull(config)
+        -- Kiserleti modban csak a mar detektalt blokk helyigenye dont.
+        return false
     end
     local firstMiningSlot = config.torchEnabled and 3 or 2
     for slot = firstMiningSlot, 16 do
@@ -263,9 +264,9 @@ local function status(prefix)
     if config.experimentalInventory and inventoryManager then
         local inventoryStatus = inventoryManager.status(config)
         print(string.format(
-            "KIS-INV:%d/%d Ures:%d Puffer:%d",
+            "KIS-INV:%d/%d Ures:%d",
             inventoryStatus.used, inventoryStatus.total,
-            inventoryStatus.empty, inventoryStatus.buffer
+            inventoryStatus.empty
         ))
     end
 end

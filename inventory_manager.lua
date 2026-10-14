@@ -8,6 +8,7 @@ local firstMiningSlot = 2
 local snapshot = nil
 local seenBlocks = {}
 local blockDrops = {}
+local blockDropCounts = {}
 local digCount = 0
 
 local function now()
@@ -29,6 +30,9 @@ local function readSavedLearning()
     if not ok or type(saved) ~= "table" or saved.version ~= 1 then return end
     if type(saved.seenBlocks) == "table" then seenBlocks = saved.seenBlocks end
     if type(saved.blockDrops) == "table" then blockDrops = saved.blockDrops end
+    if type(saved.blockDropCounts) == "table" then
+        blockDropCounts = saved.blockDropCounts
+    end
 end
 
 local function scanInternal(reason)
@@ -87,6 +91,7 @@ local function writeSnapshot(reason)
         itemTotals = snapshot.itemTotals,
         seenBlocks = seenBlocks,
         blockDrops = blockDrops,
+        blockDropCounts = blockDropCounts,
     }
     local file = fs.open(TEMP_FILE, "w")
     if not file then return false, "Nem irhato az inventory ideiglenes fajlja." end
@@ -121,17 +126,6 @@ local function findMatchingSlot(itemName, requiredSpace)
     return bestSlot
 end
 
-local function isOre(blockData)
-    if type(blockData) ~= "table" then return false end
-    local name = blockData.name or ""
-    if string.find(name, "_ore$") or name == "minecraft:ancient_debris" then
-        return true
-    end
-    local tags = blockData.tags
-    return type(tags) == "table"
-        and (tags["forge:ores"] or tags["c:ores"])
-end
-
 local function compactInternal()
     local selected = turtle.getSelectedSlot()
     for target = firstMiningSlot, 16 do
@@ -155,7 +149,7 @@ end
 local function candidateFor(blockData)
     local blockName = type(blockData) == "table" and blockData.name or nil
     local dropName = blockName and blockDrops[blockName] or nil
-    local requiredSpace = isOre(blockData) and 8 or 1
+    local requiredSpace = blockName and blockDropCounts[blockName] or 1
 
     if dropName then
         local matching = findMatchingSlot(dropName, requiredSpace)
@@ -165,10 +159,9 @@ local function candidateFor(blockData)
         return nil, dropName, false
     end
 
-    -- Ismeretlen dropnal egy teljesen ures slot maradjon biztonsagi puffernek.
-    if snapshot.emptyMiningSlots >= 2 then
-        return findEmptySlot(), nil, true
-    end
+    -- Nincs allando puffer: egyetlen ures slot mar eleg az uj dropnak.
+    local empty = findEmptySlot()
+    if empty then return empty, nil, true end
     return nil, nil, true
 end
 
@@ -209,7 +202,7 @@ function manager.prepareForDig(config, blockData)
         slot, dropName, unknown = candidateFor(blockData)
     end
     if not slot then
-        writeSnapshot(unknown and "nincs_puffer_uj_dropnak" or "nincs_hely_dropnak")
+        writeSnapshot(unknown and "nincs_hely_uj_dropnak" or "nincs_hely_dropnak")
         return false, string.format(
             "Nincs biztonsagos hely a dropnak: %s", blockName or "ismeretlen"
         )
@@ -234,8 +227,26 @@ function manager.afterDig(config, blockData, before)
             local oldCount = old and old.count or 0
             if totals.count > oldCount then candidates[#candidates + 1] = itemName end
         end
-        if #candidates == 1 then blockDrops[blockName] = candidates[1] end
+        if #candidates == 1 then
+            local dropName = candidates[1]
+            blockDrops[blockName] = dropName
+            local old = before and before.itemTotals[dropName]
+            local oldCount = old and old.count or 0
+            blockDropCounts[blockName] = math.max(
+                1, after.itemTotals[dropName].count - oldCount
+            )
+        end
         learned = true
+    elseif blockName and blockDrops[blockName] then
+        local dropName = blockDrops[blockName]
+        local old = before and before.itemTotals[dropName]
+        local oldCount = old and old.count or 0
+        local current = after.itemTotals[dropName]
+        local gained = current and current.count - oldCount or 0
+        if gained > (blockDropCounts[blockName] or 1) then
+            blockDropCounts[blockName] = gained
+            learned = true
+        end
     end
 
     digCount = digCount + 1
@@ -262,7 +273,6 @@ function manager.status(config)
         used = snapshot.usedMiningSlots,
         total = snapshot.miningSlots,
         empty = snapshot.emptyMiningSlots,
-        buffer = 1,
     }
 end
 
