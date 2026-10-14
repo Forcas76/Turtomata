@@ -103,12 +103,22 @@ end
 local function addCustom()
     clearScreen()
     print("=== UJ ERC/BLOKK ===")
-    print("Pelda: modnev:tin_ore")
+    print("Formatum:")
+    print("<mod_neve>:<blokk_neve>")
+    print("")
+    print("Vanilla: minecraft:coal_ore")
+    print("Rovid vanilla: coal_ore")
+    print("Modolt: create:zinc_ore")
     write("Azonosito: ")
     local value = string.lower(read() or "")
     value = value:gsub("^%s+", ""):gsub("%s+$", "")
+    -- Namespace nelkuli rovid nevnel a vanilla minecraft namespace az alap.
+    if not string.find(value, ":", 1, true)
+        and string.match(value, "^[a-z0-9_./-]+$") then
+        value = "minecraft:" .. value
+    end
     if not validBlockName(value) then
-        printError("Hibas namespace:block_name formatum.")
+        printError("Hibas blokknev. Pelda: coal_ore vagy mod:tin_ore")
         sleep(1.5)
         return false
     end
@@ -140,8 +150,14 @@ local function toggleRow(row)
 end
 
 local function deleteRow(row)
-    if not row or row.kind ~= "custom" then return false end
+    if not row then return false end
+    if row.kind == "group" then
+        -- A beepitett vanilla sor megmarad, de minden valtozata kikapcsol.
+        for _, name in ipairs(groups[row.index].ids) do selected[name] = nil end
+        return true
+    end
     local name = custom[row.index]
+    if not name then return false end
     selected[name] = nil
     table.remove(custom, row.index)
     return true
@@ -175,7 +191,7 @@ function scanner.editTargets()
         term.setCursorPos(1, height - 2)
         write(string.sub("< Elozo     Kovetkezo >", 1, width))
         term.setCursorPos(1, height - 1)
-        write(string.sub("A:+ uj   D:- torles", 1, width))
+        write(string.sub("A:+ uj   D: torol/ki", 1, width))
         term.setCursorPos(1, height)
         write(string.sub("K: kesz", 1, width))
 

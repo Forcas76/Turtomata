@@ -177,8 +177,8 @@ a helyükre.
 | --- | --- | --- |
 | `KISERLETI erckereses` | KÍSÉRLETI érckeresés | Be- vagy kikapcsolja az oldalágak utólagos ércvizsgálatát. |
 | `Keresett ercek` | Keresett ércek | A kibányászandó blokkazonosítók mentett listája. |
-| `A:+ uj` | Új blokk hozzáadása | `namespace:block_name` alakú vanilla vagy modolt blokkazonosítót vesz fel. |
-| `D:- torles` | Saját blokk törlése | A kijelölt, kézzel felvett azonosítót törli. |
+| `A:+ uj` | Új blokk hozzáadása | Elfogadja a `coal_ore` rövid alakot (`minecraft:coal_ore`), illetve a teljes `namespace:block_name` modolt azonosítót. |
+| `D: torol/ki` | Törlés vagy kikapcsolás | Saját elemet töröl; beépített vanilla csoportnál minden változat kijelölését kikapcsolja, de a választható sor megmarad. |
 | `K: kesz` | Kész | Elmenti az `ore_targets.txt` fájlt és visszatér a beállításokhoz. |
 | `Max melyseg` | Maximális mélység | Egy érctelepen belül engedélyezett követési mélység. Alapértéke 4. |
 | `Max erc/telep` | Maximális érc/telep | Egyetlen kitérő alatt kibányászható ércek felső korlátja. Alapértéke 16. |
