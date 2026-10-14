@@ -767,6 +767,18 @@ local function placeScheduledTorch()
         return placed, placeReason
     end
 
+    -- Lefele lepcson a turtle kesobb ugyanebbe a fejcellaba lep vissza.
+    -- Ezert egy szinttel feljebb allva tesszuk a faklyat a sarokresbe.
+    if config.mode == 1 and config.stairDirection == "down" then
+        local raised, raiseReason = pushMove({ kind = "u" })
+        if not raised then return false, raiseReason end
+        local placed, placeReason = placeTorchAboveWithSupport()
+        local lowered, lowerReason = popMove()
+        if not lowered then return false, lowerReason end
+        face(0)
+        return placed, placeReason
+    end
+
     local placed, reason = placeTorchAboveWithSupport()
     face(0)
     return placed, reason
@@ -798,11 +810,15 @@ local function buildStairStep()
     if config.stairDirection == "up" then
         ok, reason = managedDig("up")
         if ok then ok, reason = pushMove({ kind = "u" }) end
+        -- Az atlos fellepes belso sarkanak kulon fejter kell.
+        if ok then ok, reason = managedDig("up") end
         if ok then ok, reason = managedDig("forward") end
         if ok then ok, reason = pushMove({ kind = "h", heading = 0 }) end
     else
         ok, reason = managedDig("forward")
         if ok then ok, reason = pushMove({ kind = "h", heading = 0 }) end
+        -- Lefele lepeskor is ki kell venni a felso belso sarkot.
+        if ok then ok, reason = managedDig("up") end
         if ok then ok, reason = managedDig("down") end
         if ok then ok, reason = pushMove({ kind = "d" }) end
     end

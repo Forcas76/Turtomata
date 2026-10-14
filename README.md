@@ -283,6 +283,12 @@ visszafejti a félbemaradt útvonalat, kiszolgálja magát, majd a legutóbbi te
 lépésig visszamegy. A turtle-t váratlan leállás után nem szabad kézzel
 elmozdítani vagy elforgatni.
 
+### Lepcso fejtere
+
+A lepcso nem egyszeru vizszintes 1x2-es vagas. Minden foknal a ket blokkos
+jarat mellett az atlos fel- vagy lelepes belso felso sarkat is kibontja. Ez a
+plusz sarokcella kell ahhoz, hogy a lepcso tenylegesen jarhato legyen.
+
 ### KISERLETI faklyazas a Nether epitonel
 
 Mindket Nether epito modnal bekapcsolhato az automatikus faklyazas, es
