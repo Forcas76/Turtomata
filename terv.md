@@ -146,19 +146,41 @@ Talalt erc: 5
 Az akciónapló továbbra is csak a funkció indítását naplózza. A fordulásokat,
 vizsgálatokat és az egyes kibányászott érceket nem kell beleírni.
 
+## Ismert hiba: a főág fáklyázása kimarad
+
+**Jelenlegi viselkedés:** bekapcsolt automatikus fáklyázás mellett a turtle
+elkészíti a főágat, de azon nem rakja le a beállított fáklyákat.
+
+**Elvárt viselkedés:** a teljes főág kiásása után, a végső hazatérés
+közben rakja le a fáklyákat a `Fout: hany beasas` beállítás szerint. Így
+egyetlen fáklya sem kerülhet olyan blokkra, amelyet később még kiüt.
+
+A javításnál ellenőrizni kell:
+
+- a főági fáklyapontok kiszámítását;
+- hogy a normál befejezés valóban a fáklyázó hazatérési útvonalat hívja;
+- a fáklyák pótlása miatti megszakítást és pontos folytatást;
+- mindkét lerakási módot, valamint az oldalág-csatlakozások kihagyását;
+- hogy az ércfelderítés be- vagy kikapcsolása ne változtassa meg a
+  főág fáklyázását;
+- leállítás és újraindítás után ne maradjanak ki, illetve ne
+  duplázódjanak a már kezelt fáklyapontok.
+
 ## Javasolt megvalósítási lépések
 
-1. Menüopció, konfiguráció és összefoglaló kijelzés hozzáadása.
-2. Az `isOre` felismerőfüggvény elkészítése.
-3. Egyetlen felület biztonságos ellenőrzésének és bányászásának
+1. A főági fáklyázási hiba reprodukálása, javítása és regressziós
+   tesztjének elkészítése.
+2. Menüopció, konfiguráció és összefoglaló kijelzés hozzáadása.
+3. Az `isOre` felismerőfüggvény elkészítése.
+4. Egyetlen felület biztonságos ellenőrzésének és bányászásának
    megvalósítása.
-4. Egy alagútpozíció minden szintjének bejárása.
-5. A teljes oldalág visszafelé történő felderítése.
-6. A fáklyázási sorrend és a második oldalág bekötése.
-7. Üzemanyag-, inventory- és otthoni kiszolgálás integrációja.
-8. Részletes ellenőrzőpont mentése és automatikus folytatása.
-9. Állapotkijelzés és README menümagyarázat frissítése.
-10. Tesztelés szimulált turtle API-val, majd játékon belüli próba.
+5. Egy alagútpozíció minden szintjének bejárása.
+6. A teljes oldalág visszafelé történő felderítése.
+7. A fáklyázási sorrend és a második oldalág bekötése.
+8. Üzemanyag-, inventory- és otthoni kiszolgálás integrációja.
+9. Részletes ellenőrzőpont mentése és automatikus folytatása.
+10. Állapotkijelzés és README menümagyarázat frissítése.
+11. Tesztelés szimulált turtle API-val, majd játékon belüli próba.
 
 ## Elfogadási feltételek
 
@@ -174,3 +196,6 @@ vizsgálatokat és az egyes kibányászott érceket nem kell beleírni.
   esetén biztonságosan hazatér, majd pontosan folytatható a felderítés.
 - A fáklyázás az ércfelderítéssel együtt is működik, és a turtle
   nem üti ki a saját fáklyáit.
+- A főágon a beállított távolság szerint minden tervezett fáklya lekerül,
+  megszakítás vagy automatikus folytatás után is, kihagyás és duplázás
+  nélkül.

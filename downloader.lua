@@ -47,9 +47,16 @@ local links = {
         githubPath = "action_log.lua",
         fileName = "action_log.lua",
     },
+    inventory = {
+        pastebinID = "",
+        githubPath = "inventory_manager.lua",
+        fileName = "inventory_manager.lua",
+    },
 }
 
-local downloadOrder = { "main", "excavator", "torch", "actionlog", "downloader" }
+local downloadOrder = {
+    "main", "excavator", "torch", "actionlog", "inventory", "downloader",
+}
 
 local function delTerm()
     if not DEBUG then sleep(2) end
@@ -222,6 +229,9 @@ local fileMap = {
     l = "actionlog",
     log = "actionlog",
     actionlog = "actionlog",
+    i = "inventory",
+    inv = "inventory",
+    inventory = "inventory",
 }
 
 delTerm()
@@ -231,7 +241,7 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or "all"
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|downloader]")
+    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|inventory|downloader]")
 elseif requested == "all" then
     if downloadAll() then print("Minden komponens frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end

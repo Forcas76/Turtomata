@@ -43,6 +43,7 @@ választás jelentése.
 | `Oldalagat` | Oldalág hossza | Egy bal vagy jobb oldali bányaág hossza. |
 | `Agak tavolsaga` | Ágak távolsága | Ennyi blokk marad két egymást követő oldalág között. Alapértéke 3. |
 | `Fuel tartalek` | Üzemanyag-tartalék | Ennyi extra üzemanyagot tartson meg a program a kezdőpontra való visszaút kiszámított igényén felül. |
+| `KISERLETI inv.` | KÍSÉRLETI inventory-kezelés | Bekapcsolja a következő drop tényleges helyigényét vizsgáló, kapacitásalapú lepakolási rendszert. Alapértelmezetten kikapcsolt. |
 
 ### Kísérleti automatikus fáklyázás
 
@@ -69,6 +70,7 @@ választás jelentése.
 | `Melyseg` | Mélység | A turtle előtti irányban mért hossz. |
 | `Magassag` | Magasság | A kiásandó terület függőleges mérete. |
 | `Fuel tartalek` | Üzemanyag-tartalék | A kiszámított visszaúthoz szükséges mennyiségen felül megtartandó extra üzemanyag. |
+| `KISERLETI inv.` | KÍSÉRLETI inventory-kezelés | A területásásnál is bekapcsolja a kapacitásalapú ellenőrzést és az `inventory_state.txt` frissítését. |
 
 ### Futás közbeni vezérlés
 
@@ -132,6 +134,32 @@ Oldalnezet:
 - Az uzemanyagladabol mindig az 1-es slotba vesz fel, es csak ebbol tankol.
 - Az uzemanyagladabol felvett teljes stacket betankolja. Ha 64 szenet vesz
   fel, mind a 64 darabot felhasznalja, nem csak a pillanatnyi uthoz elegendot.
+
+## KISERLETI: kapacitasalapu inventory-kezeles
+
+Uj munka beallitasakor a `KISERLETI inv.` opcio kulon be- vagy kikapcsolhato.
+Alapertelmezetten ki van kapcsolva. Kikapcsolva a korabbi inventory-ellenorzes
+mukodik; bekapcsolva az `inventory_manager.lua` modul vizsgalja meg minden
+blokk kiutese elott, hogy a varhato drop tenylegesen elfer-e.
+
+Az uj rendszer nem csak azt nezi, hogy van-e valamelyik stackben szabad hely.
+Ismert dropnal megfelelo, reszben toltott stacket vagy ures banyaszslotot keres.
+Uj, meg nem ismert blokkfajta elott ures biztonsagi puffert kovetel. Ha nincs
+eleg hely, a turtle a blokk kiutese elott hazater, lepakol, majd ugyanoda es
+ugyanabba az iranyba visszamegy.
+
+A modul az `inventory_state.txt` egyetlen JSON-soraban tarolja az inventory
+pillanatkepet, a mar latott blokkokat es a futas kozben megtanult blokk-drop
+kapcsolatokat. Programinditaskor, automatikus folytataskor es minden ladaktol
+torteno elindulas elott a turtle valodi inventory-ja felulirja ezt a fajlt.
+Ezert a TXT csak folytatasi segedadat; soha nem elozheti meg a slotok valos
+tartalmat.
+
+Az `S` allapotkijelzes bekapcsolt kiserleti modban az ures banyaszslotok es a
+biztonsagi puffer szamat is kiirja. A funkcio a branch mining, az egyenes
+3x3-as alagut es a teruletasas minden elore, felfele es lefele vegzett
+banyaszmuveletet ellenorzi. A fenti mukodes tesztfunkcio; rovid munkaval erdemes
+kiprobalni, mielott kotelezo alapmechanikava valik.
 
 ## Automatikus folytatas
 
@@ -265,6 +293,7 @@ downloader main            # csak a banyaszprogram
 downloader excavator       # csak a teruletkitore program
 downloader torch           # csak a kiserleti faklyakezelo modul
 downloader actionlog       # csak az inditasi naplo modul
+downloader inventory       # csak a kiserleti inventory modul
 downloader downloader      # csak a downloader
 ```
 

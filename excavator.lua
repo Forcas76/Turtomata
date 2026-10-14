@@ -15,6 +15,8 @@ local torchModuleOk, torchManager = pcall(require, "torch_manager")
 if not torchModuleOk then torchManager = nil end
 local actionLogOk, actionLogger = pcall(require, "action_log")
 if not actionLogOk then actionLogger = nil end
+local inventoryModuleOk, inventoryManager = pcall(require, "inventory_manager")
+if not inventoryModuleOk then inventoryManager = nil end
 local runtime = {
     active = false,
     activity = "menu",
@@ -142,6 +144,11 @@ local function configure()
         config.height = promptInteger("Magassag", 4, 1)
         config.fuelReserve = promptInteger("Fuel tartalek", 5, 2)
         print("")
+        config.experimentalInventory = promptChoice("KISERLETI inv.:", {
+            "Kikapcsolva",
+            "Bekapcsolva",
+        }, 1) == 2
+        print("")
         config.torchEnabled = promptChoice("KISERLETI faklyazas:", {
             "Kikapcsolva",
             "Bekapcsolva",
@@ -158,6 +165,10 @@ local function configure()
         end
     end
 
+    config.experimentalInventory = config.experimentalInventory == true
+    if config.experimentalInventory and not inventoryManager then
+        error("Hianyzik az inventory_manager.lua modul.", 0)
+    end
     if config.torchEnabled and not torchManager then
         error("Hianyzik a torch_manager.lua modul.", 0)
     end
@@ -171,6 +182,7 @@ local function configure()
     print("Meret: " .. config.width .. "x" .. config.depth .. "x" .. config.height)
     print("Blokkok: " .. (config.width * config.depth * config.height))
     print("Fuel+: " .. config.fuelReserve)
+    print("Inv.: " .. (config.experimentalInventory and "KISERLETI" or "regi"))
     print(config.autoResume and "Mod: auto folytatas" or "Mod: uj terulet")
     if config.torchEnabled then
         print("Faklya: " .. config.torchInterval .. " cellankent (KISERLETI)")
@@ -219,6 +231,9 @@ local function refuelSlotOne(required)
 end
 
 local function inventoryFull()
+    if config.experimentalInventory and inventoryManager then
+        return inventoryManager.isCompletelyFull(config)
+    end
     local firstMiningSlot = config.torchEnabled and 3 or 2
     for slot = firstMiningSlot, 16 do
         if turtle.getItemSpace(slot) > 0 then return false end
@@ -245,6 +260,14 @@ local function status(prefix)
         "Poz:%d,%d,%d Fuel:%s Haza:%d Inv:%d/16",
         position.x, position.y, position.z, fuelText(), distanceHome(), inventoryUsage()
     ))
+    if config.experimentalInventory and inventoryManager then
+        local inventoryStatus = inventoryManager.status(config)
+        print(string.format(
+            "KIS-INV:%d/%d Ures:%d Puffer:%d",
+            inventoryStatus.used, inventoryStatus.total,
+            inventoryStatus.empty, inventoryStatus.buffer
+        ))
+    end
 end
 
 local function turnLeft()
@@ -271,6 +294,46 @@ local function face(target)
     elseif difference == 3 then turnLeft() end
 end
 
+local serviceAndResume
+
+local function managedDig(direction)
+    local inspect, dig
+    if direction == "up" then
+        inspect, dig = turtle.inspectUp, turtle.digUp
+    elseif direction == "down" then
+        inspect, dig = turtle.inspectDown, turtle.digDown
+    else
+        inspect, dig = turtle.inspect, turtle.dig
+    end
+
+    local hasBlock, blockData = inspect()
+    if not hasBlock then return true end
+    if not config.experimentalInventory or not inventoryManager or returningHome then
+        if dig() then return true end
+        return false, "A blokk nem ashato."
+    end
+
+    while hasBlock do
+        local ready, beforeOrReason = inventoryManager.prepareForDig(config, blockData)
+        if not ready then
+            local resumed, resumeReason = serviceAndResume(
+                "KISERLETI inventory: " .. tostring(beforeOrReason)
+            )
+            if not resumed then return false, resumeReason end
+            hasBlock, blockData = inspect()
+            if not hasBlock then return true end
+        else
+            if not dig() then return false, "A blokk nem ashato." end
+            local recorded, recordReason = inventoryManager.afterDig(
+                config, blockData, beforeOrReason
+            )
+            if not recorded then return false, recordReason end
+            return true
+        end
+    end
+    return true
+end
+
 local function requiredForMove(nextX, nextY, nextZ)
     local homeAfterMove = math.abs(nextX) + math.abs(nextY) + math.abs(nextZ)
     if not returningHome then homeAfterMove = homeAfterMove + config.fuelReserve end
@@ -280,7 +343,8 @@ end
 local function digForward()
     local attempts = 0
     while turtle.detect() do
-        if not turtle.dig() then return false, "Az elottem levo blokk nem ashato." end
+        local dug, reason = managedDig("forward")
+        if not dug then return false, reason or "Az elottem levo blokk nem ashato." end
         sleep(0.1)
         attempts = attempts + 1
         if attempts > 20 then return false, "Tul sok blokk esik elem." end
@@ -316,12 +380,12 @@ local function vertical(upward)
     end
     local move = upward and turtle.up or turtle.down
     local detect = upward and turtle.detectUp or turtle.detectDown
-    local dig = upward and turtle.digUp or turtle.digDown
     local attack = upward and turtle.attackUp or turtle.attackDown
     local attempts = 0
     while not move() do
         if detect() then
-            if not dig() then return false, "A fuggoleges blokk nem ashato." end
+            local dug, digReason = managedDig(upward and "up" or "down")
+            if not dug then return false, digReason or "A fuggoleges blokk nem ashato." end
         elseif attack() then
             sleep(0.2)
         else
@@ -480,7 +544,15 @@ local function serviceHome(requiredForTrip)
     refuelSlotOne(math.max(config.torchEnabled and 4 or 2, requiredForTrip))
     local unloaded, unloadReason = unloadBehind()
     if not unloaded then return false, unloadReason end
-    return fuelFromUpperChest(requiredForTrip)
+    local fueled, fuelReason = fuelFromUpperChest(requiredForTrip)
+    if not fueled then return false, fuelReason end
+    if config.experimentalInventory and inventoryManager then
+        local refreshed, inventoryReason = inventoryManager.refresh(
+            config, "indulas_ladaktol", true
+        )
+        if not refreshed then return false, inventoryReason end
+    end
+    return true
 end
 
 local function tripRequirement(x, y, z)
@@ -496,7 +568,7 @@ local function navigateFromHome(x, y, z, targetHeading)
     return ok, reason
 end
 
-local function serviceAndResume(reasonText)
+serviceAndResume = function(reasonText)
     local savedX, savedY, savedZ = position.x, position.y, position.z
     local savedHeading = heading
     local savedActivity = runtime.activity
@@ -549,9 +621,8 @@ end
 local function clearUpperCell()
     local attempts = 0
     while turtle.detectUp() do
-        if not turtle.digUp() then
-            return false, "A felso blokk nem ashato."
-        end
+        local dug, reason = managedDig("up")
+        if not dug then return false, reason or "A felso blokk nem ashato." end
         sleep(0.1)
         attempts = attempts + 1
         if attempts > 20 then
@@ -634,7 +705,8 @@ local function processTorchStep(x, z)
         placed, placeReason = torchManager.placeInDirection(
             direction,
             function() return heading end,
-            face
+            face,
+            managedDig
         )
     end
     if not placed then return false, placeReason end
@@ -647,6 +719,13 @@ end
 
 local function runExcavation()
     persistenceEnabled = true
+    if config.experimentalInventory and inventoryManager then
+        local initialized, inventoryReason = inventoryManager.initialize(config)
+        if not initialized then
+            printError("Inventory modul hiba: " .. tostring(inventoryReason))
+            return
+        end
+    end
     if actionLogger then
         actionLogger.log(config.autoResume
             and "Terulet asas - auto folytatas"

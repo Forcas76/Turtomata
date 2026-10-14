@@ -49,16 +49,19 @@ function manager.refillFromChest()
     return true
 end
 
-function manager.placeInDirection(targetHeading, getHeading, face)
+function manager.placeInDirection(targetHeading, getHeading, face, digHandler)
     if not manager.hasTorch() then return false, "empty" end
 
     local originalHeading = getHeading()
     face(targetHeading)
     local attempts = 0
     while turtle.detect() do
-        if not turtle.dig() then
+        local dug, digReason
+        if digHandler then dug, digReason = digHandler("forward")
+        else dug = turtle.dig() end
+        if not dug then
             face(originalHeading)
-            return false, "Nem tudom kialakitani a faklya helyet."
+            return false, digReason or "Nem tudom kialakitani a faklya helyet."
         end
         sleep(0.1)
         attempts = attempts + 1
