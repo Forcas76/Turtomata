@@ -28,6 +28,7 @@ választás jelentése.
 | `Branch 1x3` | Branch mining – 1×3 | Egy blokk széles, három blokk magas főutat és oldalágakat ás. |
 | `Egyenes 3x3` | Egyenes 3×3-as alagút | Oldalágak nélküli, három blokk széles és magas alagutat készít. Induláskor egy blokkal feljebb megy, így a kezdőszint lesz az alagút alja. |
 | `Terulet asas` | Területásás | Elindítja a kísérleti területásó programot, ahol egy teljes téglatest méretei adhatók meg. |
+| `Nether utak` | Nether útépítő | Elindítja a lépcsőzetes út és a burkolt 1×2-es alagút külön programját. |
 | `Auto folytatas` | Automatikus folytatás | Betölti a mentett munkát, visszamegy a mentett pontra, majd onnan folytatja. |
 | `Auto (nincs mentes)` | Automatikus folytatás (nincs mentés) | Jelenleg nincs használható mentés, ezért az automatikus folytatás nem választható. |
 
@@ -245,6 +246,43 @@ az `S` allapotot ir ki. Ujrainditas utan az `Auto folytatas` hazater, urit,
 tankol, majd a kovetkezo meg nem kesz cellatol folytatja. A turtle-t a
 varatlan leallas utan nem szabad kezzel elmozditani vagy elforgatni.
 
+## Nether útépítő
+
+A főmenü `Nether utak` pontja a külön `nether_builder.lua` programot indítja.
+Két mód választható:
+
+- `Lepcso fel/le`: megadott hosszban blokkonként egy szintet emelkedik vagy
+  süllyed. Két blokk magas járatot bont, és ha nincs természetes padló, a
+  kiválasztott építőblokkból elkészíti a lépcső fokát.
+- `Vedett 1x2 alagut`: egy blokk széles, két blokk magas utat bont. Minden
+  elkészült cellánál pótolja a hiányzó padlót, a két-két oldalfalblokkot és a
+  mennyezetet. Meglévő szilárd blokkot nem cserél le, csak a levegős vagy
+  folyadékos réseket zárja le.
+
+Az építőanyag blokkazonosítója a menüben adható meg. A teljes formátum
+`<mod_neve>:<blokk_neve>`, például `minecraft:cobblestone`; vanilla blokknál a
+rövid `cobblestone` alak is elfogadott.
+
+Fenntartott slotok:
+
+- 1-es slot: üzemanyag;
+- 2–5. slot: kizárólag a beállított építőanyag;
+- 6–16. slot: kibányászott tárgyak.
+
+Ugyanazt a lepakoló- és fuel-ládát használja, mint a branch miner. Az
+építőanyagot a turtle mögötti lepakolóláda első elérhető stackjeibe kell tenni.
+Anyaghiánynál a turtle az elmentett útvonalon hazajön, lepakol, feltölti a
+2–5. slotot, a fölötte lévő fuel-ládából tankol, majd ugyanazon az útvonalon
+visszatér. Ha a láda első kivehető tárgya nem a beállított építőanyag, a program
+biztonsági hibával megáll, hogy ne építsen véletlenül értékes blokkokból.
+
+A program a `nether_builder_state.txt` fájlba menti a pozíciót, irányt,
+elkészült lépésszámot és a teljes mozgási útvonalat. A `Q` vagy `Ctrl+T`
+hazatérést kér, az `S` állapotot ír ki. Automatikus folytatáskor először
+visszafejti a félbemaradt útvonalat, kiszolgálja magát, majd a legutóbbi teljes
+lépésig visszamegy. A turtle-t váratlan leállás után nem szabad kézzel
+elmozdítani vagy elforgatni.
+
 ## KISERLETI: automatikus faklyazas
 
 A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
@@ -329,6 +367,7 @@ downloader torch           # csak a kiserleti faklyakezelo modul
 downloader actionlog       # csak az inditasi naplo modul
 downloader inventory       # csak a kiserleti inventory modul
 downloader ore             # csak a kiserleti ercdetektalo modul
+downloader nether          # csak a Nether utepito program
 downloader downloader      # csak a downloader
 ```
 

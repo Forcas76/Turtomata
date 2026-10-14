@@ -123,8 +123,9 @@ local function configure()
         "Branch 1x3",
         "Egyenes 3x3",
         "Terulet asas",
+        "Nether utak",
         saved and "Auto folytatas" or "Auto (nincs mentes)",
-    }, saved and 5 or 1)
+    }, saved and 6 or 1)
 
     clearScreen()
 
@@ -132,6 +133,9 @@ local function configure()
         config.launchExperimental = true
         return
     elseif taskMode == 5 then
+        config.launchNetherBuilder = true
+        return
+    elseif taskMode == 6 then
         if not saved then
             printError("Nincs hasznalhato mentes.")
             sleep(2)
@@ -1265,6 +1269,14 @@ elseif config.launchExperimental then
         printError("Hianyzik az excavator program.")
     else
         shell.run("excavator")
+    end
+elseif config.launchNetherBuilder then
+    clearScreen()
+    print("Nether utepito inditasa...")
+    if not fs.exists("nether_builder") and not fs.exists("nether_builder.lua") then
+        printError("Hianyzik a nether_builder program.")
+    else
+        shell.run("nether_builder")
     end
 else
     parallel.waitForAll(miningTask, stopListener)

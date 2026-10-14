@@ -1,0 +1,1 @@
+Jelenleg, ha nem tudja lerakni a fákját, akkor próbálkozzon más módokon, pl üssön lyukat, ha az nem megy, akkor ásson be alul

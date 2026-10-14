@@ -57,10 +57,15 @@ local links = {
         githubPath = "ore_scanner.lua",
         fileName = "ore_scanner.lua",
     },
+    nether = {
+        pastebinID = "",
+        githubPath = "nether_builder.lua",
+        fileName = "nether_builder.lua",
+    },
 }
 
 local downloadOrder = {
-    "main", "excavator", "torch", "actionlog", "inventory", "ore", "downloader",
+    "main", "excavator", "torch", "actionlog", "inventory", "ore", "nether", "downloader",
 }
 
 local function delTerm()
@@ -240,6 +245,9 @@ local fileMap = {
     o = "ore",
     ore = "ore",
     scanner = "ore",
+    n = "nether",
+    nether = "nether",
+    builder = "nether",
 }
 
 delTerm()
@@ -249,7 +257,7 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or "all"
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|inventory|ore|downloader]")
+    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|inventory|ore|nether|downloader]")
 elseif requested == "all" then
     if downloadAll() then print("Minden komponens frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end
