@@ -10,6 +10,8 @@ local actionLogOk, actionLogger = pcall(require, "action_log")
 if not actionLogOk then actionLogger = nil end
 local inventoryModuleOk, inventoryManager = pcall(require, "inventory_manager")
 if not inventoryModuleOk then inventoryManager = nil end
+local oreModuleOk, oreScanner = pcall(require, "ore_scanner")
+if not oreModuleOk then oreScanner = nil end
 
 local headings = {
     [0] = { x = 0, z = 1, name = "elore (+Z)" },
@@ -29,6 +31,7 @@ local runtime = {
     activity = "menu",
     mainCompleted = 0,
     branchesCompletedAt = 0,
+    oreScan = nil,
 }
 
 local function saveState()
@@ -39,6 +42,7 @@ local function saveState()
         activity = runtime.activity,
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
+        oreScan = runtime.oreScan,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         config = config,
@@ -143,6 +147,7 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.mainCompleted = saved.mainCompleted or 0
         runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
+        runtime.oreScan = saved.oreScan
     else
         config.tunnelMode = taskMode
         config.autoResume = false
@@ -196,6 +201,25 @@ local function configure()
             config.branchTorchInterval = 0
             config.torchPlacementMode = 1
         end
+
+        if config.tunnelMode ~= 3 then
+            print("")
+            config.oreScanEnabled = promptChoice("KISERLETI erckereses:", {
+                "Kikapcsolva",
+                "Bekapcsolva",
+            }, 1) == 2
+            if config.oreScanEnabled then
+                if not oreScanner then error("Hianyzik az ore_scanner.lua modul.", 0) end
+                local edited, editReason = oreScanner.editTargets()
+                if not edited then error(editReason or "Az erclista nem mentheto.", 0) end
+                clearScreen()
+                print("KISERLETI erckereses")
+                config.oreScanMaxDepth = promptInteger("Max melyseg", 4, 1)
+                config.oreScanMaxBlocks = promptInteger("Max erc/telep", 16, 1)
+            end
+        else
+            config.oreScanEnabled = false
+        end
     end
 
     config.experimentalInventory = config.experimentalInventory == true
@@ -204,6 +228,12 @@ local function configure()
     end
     if config.torchEnabled and not torchManager then
         error("Hianyzik a torch_manager.lua modul.", 0)
+    end
+    config.oreScanEnabled = config.oreScanEnabled == true
+    config.oreScanMaxDepth = config.oreScanMaxDepth or 4
+    config.oreScanMaxBlocks = config.oreScanMaxBlocks or 16
+    if config.oreScanEnabled and not oreScanner then
+        error("Hianyzik az ore_scanner.lua modul.", 0)
     end
     if config.torchEnabled then
         config.mainTorchInterval = config.mainTorchInterval or config.torchInterval or 12
@@ -239,6 +269,13 @@ local function configure()
         print("Faklya hely: " .. (config.torchPlacementMode == 2 and "fej folott" or "oldalt"))
     else
         print("Faklya: ki")
+    end
+    if config.oreScanEnabled then
+        print("Erckereses: KISERLETI (" .. oreScanner.selectedCount() .. " blokk)")
+        print("Erc limit: " .. config.oreScanMaxDepth .. " mely / "
+            .. config.oreScanMaxBlocks .. " blokk")
+    else
+        print("Erckereses: ki")
     end
     local tunnelNames = {
         "2 blokk magas",
@@ -310,6 +347,16 @@ local function status(prefix)
             "KIS-INV:%d/%d Ures:%d",
             inventoryStatus.used, inventoryStatus.total,
             inventoryStatus.empty
+        ))
+    end
+    if runtime.oreScan and runtime.oreScan.active then
+        print(string.format(
+            "ERC:%s %s ag=%d mely=%d db=%d",
+            runtime.oreScan.phase or "vizsgalat",
+            runtime.oreScan.side or "?",
+            runtime.oreScan.branchStep or 0,
+            runtime.oreScan.scanLevel or 0,
+            runtime.oreScan.veinMined or 0
         ))
     end
 end
@@ -684,14 +731,16 @@ local function tripFuelRequirement(targetX, targetZ)
     return (2 * distance) + verticalRoundTrip + config.fuelReserve + nextWorkCost
 end
 
-serviceAndResume = function(reasonText)
+serviceAndResume = function(reasonText, extraFuel)
     local savedX, savedY, savedZ = position.x, position.y, position.z
     local savedHeading = heading
     local savedActivity = runtime.activity
     clearScreen()
     print("Megszakitas: " .. reasonText)
     if not returnHome() then return false, "Nem sikerult hazaterni." end
-    local fueled, serviceReason = serviceHome(tripFuelRequirement(savedX, savedZ))
+    local fueled, serviceReason = serviceHome(
+        tripFuelRequirement(savedX, savedZ) + (extraFuel or 0)
+    )
     if not fueled then return false, serviceReason end
     if stopRequested then return false, "Felhasznaloi leallitas." end
     print(string.format("Visszateres a munkapontra: x=%d z=%d", savedX, savedZ))
@@ -783,12 +832,96 @@ local function mineForward(steps, label, carveCrossSection)
     return true
 end
 
-local function mineBranch(turnFunction, sideName)
+local function oreMoveOpen(move)
+    if not refuelFromInventory(1) then
+        return false, "Nincs fuel az erc-utvonal mozgasahoz."
+    end
+    if move.kind == "h" then
+        face(move.heading)
+        local nextX, nextY, nextZ = nextPositionForward()
+        if not turtle.forward() then
+            return false, "Az elmentett erc-utvonal elott akadaly van."
+        end
+        position.x, position.y, position.z = nextX, nextY, nextZ
+    elseif move.kind == "u" then
+        if not turtle.up() then return false, "Nem tudok felfele lepni az erc-utvonalon." end
+        position.y = position.y + 1
+    elseif move.kind == "d" then
+        if not turtle.down() then return false, "Nem tudok lefele lepni az erc-utvonalon." end
+        position.y = position.y - 1
+    else
+        return false, "Ismeretlen erc-utvonal lepes."
+    end
+    saveState()
+    return true
+end
+
+local function oreInspectAndDig(move)
+    local inspect, dig
+    if move.kind == "u" then
+        inspect, dig = turtle.inspectUp, turtle.digUp
+    elseif move.kind == "d" then
+        inspect, dig = turtle.inspectDown, turtle.digDown
+    else
+        face(move.heading)
+        inspect, dig = turtle.inspect, turtle.dig
+    end
+
+    local hasBlock, blockData = inspect()
+    if not hasBlock or not oreScanner.matches(blockData) then
+        return false, "changed", "A kijelolt erc mar nincs a helyen."
+    end
+    if not config.experimentalInventory or not inventoryManager then
+        if inventoryFull() then
+            return false, "service", "Az inventory megtelt az erc elott."
+        end
+        if not dig() then return false, "blocked", "A kijelolt erc nem banyaszhato." end
+        return true
+    end
+
+    local ready, beforeOrReason = inventoryManager.prepareForDig(config, blockData)
+    if not ready then
+        return false, "service", "KISERLETI inventory: " .. tostring(beforeOrReason)
+    end
+    if not dig() then return false, "blocked", "A kijelolt erc nem banyaszhato." end
+    local recorded, recordReason = inventoryManager.afterDig(
+        config, blockData, beforeOrReason
+    )
+    if not recorded then return false, "blocked", recordReason end
+    return true
+end
+
+local function buildOreApi()
+    return {
+        maxDepth = config.oreScanMaxDepth,
+        maxBlocks = config.oreScanMaxBlocks,
+        fuelReserve = config.fuelReserve,
+        getPose = function()
+            return { x = position.x, y = position.y, z = position.z, heading = heading }
+        end,
+        face = face,
+        moveOpen = oreMoveOpen,
+        digOre = oreInspectAndDig,
+        ensureFuel = refuelFromInventory,
+        shouldStop = function() return stopRequested end,
+        checkpoint = function(oreState)
+            runtime.oreScan = oreState
+            saveState()
+        end,
+        service = function(reason, extraFuel)
+            return serviceAndResume(reason, extraFuel)
+        end,
+    }
+end
+
+local function mineBranch(turnFunction, sideName, placeTorches, carveCrossSection)
+    if placeTorches == nil then placeTorches = true end
+    if carveCrossSection == nil then carveCrossSection = true end
     turnFunction()
     local completed, reason = mineForward(
         config.branchLength,
         sideName .. " agat",
-        true
+        carveCrossSection
     )
     if not completed then return false, reason end
     turnAround()
@@ -796,7 +929,7 @@ local function mineBranch(turnFunction, sideName)
     returningHome = true
 
     local function placePlannedTorch(branchStep)
-        if not config.torchEnabled
+        if not placeTorches or not config.torchEnabled
             or branchStep <= 0
             or branchStep % config.branchTorchInterval ~= 0 then
             return true
@@ -863,13 +996,43 @@ local function minePendingBranches(absoluteStep)
     end
     if runtime.branchesCompletedAt >= absoluteStep then return true end
 
+    local delayTorches = config.oreScanEnabled and config.torchEnabled
+
     setActivity("bal_oldalagat")
-    local leftOk, leftReason = mineBranch(turnLeft, "Bal")
+    local leftOk, leftReason = mineBranch(
+        turnLeft, "Bal", not delayTorches, true
+    )
     if not leftOk then return false, leftReason end
 
     setActivity("jobb_oldalagat")
-    local rightOk, rightReason = mineBranch(turnRight, "Jobb")
+    local rightOk, rightReason = mineBranch(
+        turnRight, "Jobb", not delayTorches, true
+    )
     if not rightOk then return false, rightReason end
+
+    if config.oreScanEnabled then
+        local oreApi = buildOreApi()
+        setActivity("bal_ag_erckereses")
+        local scanned, scanReason = oreScanner.scanBranch(
+            "left", config.branchLength, config.tunnelMode, oreApi
+        )
+        if not scanned then return false, scanReason end
+
+        setActivity("jobb_ag_erckereses")
+        scanned, scanReason = oreScanner.scanBranch(
+            "right", config.branchLength, config.tunnelMode, oreApi
+        )
+        if not scanned then return false, scanReason end
+    end
+
+    if delayTorches then
+        setActivity("bal_ag_faklyazas")
+        leftOk, leftReason = mineBranch(turnLeft, "Bal", true, false)
+        if not leftOk then return false, leftReason end
+        setActivity("jobb_ag_faklyazas")
+        rightOk, rightReason = mineBranch(turnRight, "Jobb", true, false)
+        if not rightOk then return false, rightReason end
+    end
 
     runtime.branchesCompletedAt = absoluteStep
     setActivity("agak_keszen")
@@ -958,7 +1121,8 @@ local function runMining()
         local modeNames = { "Branch 1x2", "Branch 1x3", "Egyenes 3x3" }
         local startType = config.autoResume and "auto folytatas"
             or (config.startMode == 2 and "kezi folytatas" or "uj munka")
-        actionLogger.log(modeNames[config.tunnelMode] .. " - " .. startType)
+        local oreText = config.oreScanEnabled and " - erckereses=be" or " - erckereses=ki"
+        actionLogger.log(modeNames[config.tunnelMode] .. " - " .. startType .. oreText)
     end
     print("Branch miner indul.")
     local checkpoint
@@ -966,6 +1130,17 @@ local function runMining()
     if config.autoResume then
         runtime.active = true
         setActivity("auto_ujrainditas")
+        if runtime.oreScan and runtime.oreScan.active then
+            print("Erc-utvonal biztonsagos visszafejtese...")
+            local recovered, recoverReason = oreScanner.recover(
+                runtime.oreScan, buildOreApi()
+            )
+            if not recovered then
+                printError("Nem tudtam visszafejteni az erc-utvonalat: "
+                    .. tostring(recoverReason))
+                return
+            end
+        end
         if not returnHome() then return end
         checkpoint = config.startOffset + runtime.mainCompleted
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, checkpoint))
@@ -997,6 +1172,7 @@ local function runMining()
         runtime.activity = "indulas"
         runtime.mainCompleted = 0
         runtime.branchesCompletedAt = 0
+        runtime.oreScan = nil
         saveState()
 
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, config.startOffset))

@@ -163,6 +163,38 @@ is kiirja. A funkcio a branch mining, az egyenes
 banyaszmuveletet ellenorzi. A fenti mukodes tesztfunkcio; rovid munkaval erdemes
 kiprobalni, mielott kotelezo alapmechanikava valik.
 
+## KÍSÉRLETI: ércdetektálás
+
+Az ércdetektálás csak a `Branch 1x2` és `Branch 1x3` módoknál kapcsolható be.
+Egy főági beásásnál először mindkét oldalág elkészül, ezután a turtle külön
+végigvizsgálja a padlót, mennyezetet, oldalfalakat és az ág végét. Csak az
+érclistában kijelölt blokkazonosítókat bányássza ki. A kapcsolódó érctelepet a
+beállított mélység- és blokklimitig követi, majd az eltárolt útvonalon ugyanarra
+az ágpontjára tér vissza. Az oldalági fáklyák csak az ércvizsgálat után kerülnek
+a helyükre.
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
+| `KISERLETI erckereses` | KÍSÉRLETI érckeresés | Be- vagy kikapcsolja az oldalágak utólagos ércvizsgálatát. |
+| `Keresett ercek` | Keresett ércek | A kibányászandó blokkazonosítók mentett listája. |
+| `A:+ uj` | Új blokk hozzáadása | `namespace:block_name` alakú vanilla vagy modolt blokkazonosítót vesz fel. |
+| `D:- torles` | Saját blokk törlése | A kijelölt, kézzel felvett azonosítót törli. |
+| `K: kesz` | Kész | Elmenti az `ore_targets.txt` fájlt és visszatér a beállításokhoz. |
+| `Max melyseg` | Maximális mélység | Egy érctelepen belül engedélyezett követési mélység. Alapértéke 4. |
+| `Max erc/telep` | Maximális érc/telep | Egyetlen kitérő alatt kibányászható ércek felső korlátja. Alapértéke 16. |
+
+Advanced Turtle esetén a lista sorai és alsó gombjai kattinthatók. Normál
+turtle esetén a nyílbillentyűk, Enter vagy Space, továbbá az `A`, `D` és `K`
+billentyűk használhatók. A vanilla ércek csoportosan jelölhetők; például a
+gyémánt kiválasztása a normál és a deepslate változatot is bekapcsolja. Modolt
+ércek kézzel vehetők fel.
+
+Az ércjárás külön útvonalvermet vezet. Inventoryürítés vagy tankolás előtt a
+turtle ezen hátrál ki a főági csomópontig, onnan megy a ládákhoz, majd ugyanazt
+az utat játssza vissza. A `Q`/`Ctrl+T` leállítás és az automatikus folytatás is
+ezt a mentett útvonalat használja. Az állapot a `branch_miner_state.txt`, az
+érclista az `ore_targets.txt` egyetlen felülírt sorában található.
+
 ## Automatikus folytatas
 
 A program a `branch_miner_state.txt` fajl egyetlen soraba menti az aktualis
@@ -296,6 +328,7 @@ downloader excavator       # csak a teruletkitore program
 downloader torch           # csak a kiserleti faklyakezelo modul
 downloader actionlog       # csak az inditasi naplo modul
 downloader inventory       # csak a kiserleti inventory modul
+downloader ore             # csak a kiserleti ercdetektalo modul
 downloader downloader      # csak a downloader
 ```
 
