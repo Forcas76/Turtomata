@@ -4,6 +4,48 @@ local Protocol = require("remote_protocol")
 local turtles = {}
 local selected = 1
 local opened = {}
+local nativeTerm = term.current()
+local display, displayName = nativeTerm, nil
+
+local function hasPeripheralType(name, wanted)
+    if peripheral.hasType then
+        local ok, result = pcall(peripheral.hasType, name, wanted)
+        if ok and result then return true end
+    end
+    local called = { pcall(peripheral.getType, name) }
+    if not called[1] then return false end
+    for index = 2, #called do
+        local value = called[index]
+        if value == wanted then return true end
+    end
+    return false
+end
+
+local function selectDisplay(force)
+    if not force and displayName and peripheral.isPresent(displayName)
+        and hasPeripheralType(displayName, "monitor") then
+        return display
+    end
+    display, displayName = nativeTerm, nil
+    if not peripheral then return display end
+    local names = peripheral.getNames()
+    table.sort(names)
+    for _, name in ipairs(names) do
+        if hasPeripheralType(name, "monitor") then
+            local monitor = peripheral.wrap(name)
+            if monitor then
+                pcall(monitor.setTextScale, 1)
+                local ok, width, height = pcall(monitor.getSize)
+                if ok and (width < 35 or height < 16) then
+                    pcall(monitor.setTextScale, 0.5)
+                end
+                display, displayName = monitor, name
+                return display
+            end
+        end
+    end
+    return display
+end
 
 local function nowMs()
     return os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000)
@@ -74,7 +116,7 @@ local function line(label, value, width)
     print(clip(prefix .. tostring(value or "-"), width))
 end
 
-local function render()
+local function renderBody()
     local width, height = term.getSize()
     local list = ordered()
     if selected > #list then selected = math.max(1, #list) end
@@ -91,7 +133,7 @@ local function render()
         term.setTextColor(colors.orange)
         print("Turtle keresese...")
         print("Bekapcsolas utan automatikusan megjelenik.")
-    elseif width < 35 then
+    elseif width < 35 or height < 16 then
         local item = list[selected]
         term.setTextColor(online(item) and colors.lime or colors.red)
         print(clip((item.label or ("Turtle #" .. item.turtleId))
@@ -138,6 +180,21 @@ local function render()
     end
 end
 
+local function render()
+    local target = selectDisplay(false)
+    local previous = term.redirect(target)
+    local ok, reason = pcall(renderBody)
+    term.redirect(previous)
+    if not ok then error(reason, 0) end
+end
+
+local function displaySize()
+    local target = selectDisplay(false)
+    local ok, width, height = pcall(target.getSize)
+    if ok then return width, height end
+    return nativeTerm.getSize()
+end
+
 discover()
 local discoverTimer = os.startTimer(Protocol.DISCOVER_INTERVAL)
 local refreshTimer = os.startTimer(1)
@@ -160,6 +217,7 @@ while true do
         render()
     elseif event == "peripheral" or event == "peripheral_detach" then
         openModems()
+        selectDisplay(true)
         discover()
         render()
     elseif event == "key" then
@@ -167,12 +225,25 @@ while true do
         elseif p1 == keys.left or p1 == keys.up then selected = math.max(1, selected - 1)
         elseif p1 == keys.right or p1 == keys.down then selected = math.min(#ordered(), selected + 1) end
         render()
-    elseif event == "mouse_click" then
-        local _, height = term.getSize()
+    elseif event == "mouse_click" and not displayName then
+        local _, height = displaySize()
         if p3 >= 4 and p3 < height - 7 then selected = math.max(1, p3 - 3) end
+        render()
+    elseif event == "monitor_touch" and p1 == displayName then
+        local list = ordered()
+        local width, height = displaySize()
+        if width < 35 or height < 16 then
+            if p2 <= math.floor(width / 2) then selected = math.max(1, selected - 1)
+            else selected = math.min(#list, selected + 1) end
+        elseif p3 >= 4 and p3 < height - 7 then
+            selected = math.min(#list, math.max(1, p3 - 3))
+        end
         render()
     end
 end
 
+local finalTarget = selectDisplay(false)
+local previous = term.redirect(finalTarget)
 clear()
 print("Megfigyelo leallitva.")
+term.redirect(previous)

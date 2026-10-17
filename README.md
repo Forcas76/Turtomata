@@ -117,6 +117,12 @@ Computeren és normál/Advanced Computeren. A nézet a terminál méretéhez iga
 és egyszerre több turtle-t, illetve ugyanazt a turtle-t több megfigyelőről is
 lehet nézni.
 
+Ha a megfigyelő Computerhez `monitor` periféria csatlakozik, a program
+automatikusan az első megtalált külső monitorra irányítja a teljes felületet.
+Monitor csatlakoztatásakor vagy eltávolításakor futás közben is automatikusan
+átvált. Monitor nélkül a Computer/Pocket saját terminálját használja. Advanced
+Monitoron érintéssel, a gépen pedig nyilakkal vagy egérrel választható turtle.
+
 Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
 üzenetet küld, a már dolgozó turtle pedig teljes állapotcsomaggal válaszol. Ezt
 követően két másodpercenként érkezik heartbeat. Nyolc másodperc jelkimaradás
