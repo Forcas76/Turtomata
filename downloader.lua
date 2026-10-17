@@ -77,24 +77,35 @@ local links = {
     telemetry = { pastebinID = "", githubPath = "telemetry.lua", fileName = "telemetry.lua" },
     estimator = { pastebinID = "", githubPath = "work_estimator.lua", fileName = "work_estimator.lua" },
     request = { pastebinID = "", githubPath = "job_request.lua", fileName = "job_request.lua" },
+    remoteprotocol = { pastebinID = "", githubPath = "remote_protocol.lua", fileName = "remote_protocol.lua" },
+    remote = { pastebinID = "", githubPath = "remote.lua", fileName = "remote.lua" },
+    monitor = { pastebinID = "", githubPath = "remote_monitor.lua", fileName = "remote_monitor.lua" },
+    startupturtle = { pastebinID = "", githubPath = "startup_turtle.lua", fileName = "startup.lua" },
+    startupmonitor = { pastebinID = "", githubPath = "startup_monitor.lua", fileName = "startup.lua" },
 }
 
 local downloadOrder = {
     "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings", "request",
     "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-    "coordinatetask", "main", "downloader",
+    "coordinatetask", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
 }
 
 local componentGroups = {
     main = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings",
         "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
-        "nether", "coordinatetask", "main",
+        "nether", "coordinatetask", "remoteprotocol", "remote", "main",
     },
     branch = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
     excavator = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
     nether = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "nether" },
     coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "request", "coordinatetask" },
+    turtleinstall = {
+        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings",
+        "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
+        "coordinatetask", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+    },
+    monitorinstall = { "remoteprotocol", "monitor", "startupmonitor", "downloader" },
 }
 
 local function delTerm()
@@ -298,21 +309,57 @@ local fileMap = {
     telemetry = "telemetry",
     estimator = "estimator",
     situations = "situations",
+    turtleinstall = "turtleinstall",
+    turtle = "turtleinstall",
+    monitorinstall = "monitorinstall",
+    monitor = "monitorinstall",
+    observer = "monitorinstall",
 }
+
+local function installMenu()
+    local items = {
+        { label = "Turtle program telepitese", value = "turtleinstall" },
+        { label = "Megfigyelo telepitese", value = "monitorinstall" },
+    }
+    local selected = 1
+    while true do
+        delTerm()
+        print("CCTURTLE TELEPITO")
+        print("Forras: " .. DOWNLOAD_SOURCE)
+        print("")
+        for index, item in ipairs(items) do
+            print((index == selected and "> " or "  ") .. item.label)
+        end
+        print("")
+        print("Nyilak + ENTER, vagy kattintas")
+        local event, p1, p2, p3 = os.pullEvent()
+        if event == "key" then
+            if p1 == keys.up then selected = math.max(1, selected - 1)
+            elseif p1 == keys.down then selected = math.min(#items, selected + 1)
+            elseif p1 == keys.enter then return items[selected].value end
+        elseif event == "mouse_click" and p3 >= 4 and p3 < 4 + #items then
+            selected = p3 - 3
+            return items[selected].value
+        end
+    end
+end
 
 delTerm()
 print("Komponensek frissitese")
 print("Forras: " .. DOWNLOAD_SOURCE)
 print("")
 
-local requested = args[1] and fileMap[string.lower(args[1])] or "all"
+local requested = args[1] and fileMap[string.lower(args[1])] or installMenu()
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]")
+    printError("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]")
 elseif requested == "all" then
-    if downloadAll() then print("Minden komponens frissitve.")
+    if downloadGroup(componentGroups.turtleinstall) then print("A turtle program telepitve/frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end
 elseif componentGroups[requested] then
-    if downloadGroup(componentGroups[requested]) then print("A komponenscsomag frissitve.")
+    if downloadGroup(componentGroups[requested]) then
+        if requested == "turtleinstall" then print("Turtle telepites kesz. A startup.lua a main programot inditja.")
+        elseif requested == "monitorinstall" then print("Megfigyelo telepites kesz. A startup.lua a monitort inditja.")
+        else print("A komponenscsomag frissitve.") end
     else printError("A komponenscsomag frissitese nem teljes.") end
 else
     downloadThat(requested)

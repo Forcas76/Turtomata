@@ -106,6 +106,35 @@ célkoordinátát és opcionálisan a végső irányt. Az irányok:
 
 A koordinátát a program nem GPS-szel méri: a beírt kezdőadatokból számol.
 
+### Élő Rednet-megfigyelés
+
+A turtle program opcionálisan automatikusan megnyit minden csatlakoztatott
+vezeték nélküli modemet. A hagyományos Wireless Modem és az Ender Modem is
+támogatott. Ha nincs modem, a bányászati rendszer változatlanul működik.
+
+A `remote_monitor.lua` ugyanazon a programon keresztül használható Pocket
+Computeren és normál/Advanced Computeren. A nézet a terminál méretéhez igazodik,
+és egyszerre több turtle-t, illetve ugyanazt a turtle-t több megfigyelőről is
+lehet nézni.
+
+Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
+üzenetet küld, a már dolgozó turtle pedig teljes állapotcsomaggal válaszol. Ezt
+követően két másodpercenként érkezik heartbeat. Nyolc másodperc jelkimaradás
+után a megfigyelő `OFFLINE` állapotot mutat, de tovább keresi az eszközt.
+
+### Downloader telepítési menü
+
+A `downloader` paraméter nélküli indításakor két csomag választható:
+
+| Menüszöveg | Telepített rendszer |
+|---|---|
+| `Turtle program telepitese` | A teljes bányászati rendszer, Rednet-telemetria és egy `startup.lua`, amely bekapcsoláskor a `main` programot indítja. |
+| `Megfigyelo telepitese` | A Rednet protokoll, a pocket/computer megfigyelő és egy `startup.lua`, amely bekapcsoláskor a `remote_monitor` programot indítja. |
+
+Parancssorból ugyanez a `downloader turtle`, illetve `downloader monitor`
+paranccsal indítható. A telepítés a már létező `startup.lua` fájlt lecseréli;
+a downloader a sikeres csere idejére biztonsági másolatot használ.
+
 A területásásnál külön bekapcsolható a `KISERLETI koordinatas indulas`.
 Ilyenkor a ládabázis világkoordinátája és facingje változatlan marad, a program
 pedig egy megadott munkapontra küldi a turtle-t. Az ásás kezdőiránya a

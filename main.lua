@@ -7,6 +7,7 @@ local jobRequest = require("job_request")
 local WorkEstimator = require("work_estimator")
 
 local currentSettings = Settings.load()
+local remoteOk, Remote = pcall(require, "remote")
 
 local function boolText(value) return value and "BE" or "KI" end
 
@@ -406,27 +407,35 @@ local function diagnostics()
     ui.waitForEnter()
 end
 
-while true do
-    local hasResume = activeState("branch_miner_state.txt")
-        or activeState("excavator_state.txt")
-        or activeState("nether_builder_state.txt")
-        or activeState("coordinate_state.txt")
-    local choice = ui.menu("CCTURTLE", {
-        { label = "Branch mining", value = "branch" },
-        { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
-        { label = "Nether utepito", value = "nether" },
-        { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
-        { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
-        { label = "Beallitasok", value = "settings" },
-        { label = "Diagnosztika", value = "diagnostics" },
-        { label = "Kilepes", value = "exit" },
-    }, { allowBack = false })
-    if choice == "branch" then configureBranch()
-    elseif choice == "excavator" then configureExcavator()
-    elseif choice == "nether" then configureNether()
-    elseif choice == "coordinate" then coordinateTask()
-    elseif choice == "resume" then resumeMenu()
-    elseif choice == "settings" then settingsMenu()
-    elseif choice == "diagnostics" then diagnostics()
-    elseif choice == "exit" then ui.clear() return end
+local function menuLoop()
+    while true do
+        local hasResume = activeState("branch_miner_state.txt")
+            or activeState("excavator_state.txt")
+            or activeState("nether_builder_state.txt")
+            or activeState("coordinate_state.txt")
+        local choice = ui.menu("CCTURTLE", {
+            { label = "Branch mining", value = "branch" },
+            { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
+            { label = "Nether utepito", value = "nether" },
+            { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
+            { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
+            { label = "Beallitasok", value = "settings" },
+            { label = "Diagnosztika", value = "diagnostics" },
+            { label = "Kilepes", value = "exit" },
+        }, { allowBack = false })
+        if choice == "branch" then configureBranch()
+        elseif choice == "excavator" then configureExcavator()
+        elseif choice == "nether" then configureNether()
+        elseif choice == "coordinate" then coordinateTask()
+        elseif choice == "resume" then resumeMenu()
+        elseif choice == "settings" then settingsMenu()
+        elseif choice == "diagnostics" then diagnostics()
+        elseif choice == "exit" then ui.clear() return end
+    end
+end
+
+if remoteOk and Remote and parallel then
+    parallel.waitForAny(menuLoop, Remote.run)
+else
+    menuLoop()
 end
