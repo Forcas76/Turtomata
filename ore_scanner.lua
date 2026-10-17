@@ -383,6 +383,21 @@ local function retreatToAnchor(session, api)
     return true
 end
 
+local function retreatWithBranchTorches(session, api, side)
+    while #session.path > 0 do
+        -- A normal ag-visszauton a path hossza megegyezik az aktualis
+        -- agat-lepessel. Igy a fáklya a mar teljesen atvizsgalt cellara kerul.
+        if api.placeBranchTorch then
+            local placed, reason = api.placeBranchTorch(side, #session.path)
+            if not placed then return false, reason end
+        end
+        local ok, reason = leaveMove(session, api)
+        if not ok then return false, reason end
+    end
+    api.face(session.anchor.heading)
+    return true
+end
+
 local function replayPath(session, api, path)
     for _, move in ipairs(path) do
         local ok, reason = enterMove(session, api, move)
@@ -675,7 +690,7 @@ function scanner.scanBranch(side, branchLength, mode, api, skipSteps)
         end
     end
 
-    local returned, returnReason = retreatToAnchor(session, api)
+    local returned, returnReason = retreatWithBranchTorches(session, api, side)
     if not returned then return false, returnReason end
     api.checkpoint(nil)
     return true

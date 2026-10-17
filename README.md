@@ -105,6 +105,17 @@ célkoordinátát és opcionálisan a végső irányt. Az irányok:
 - nyugat: `-X`.
 
 A koordinátát a program nem GPS-szel méri: a beírt kezdőadatokból számol.
+
+A területásásnál külön bekapcsolható a `KISERLETI koordinatas indulas`.
+Ilyenkor a ládabázis világkoordinátája és facingje változatlan marad, a program
+pedig egy megadott munkapontra küldi a turtle-t. Az ásás kezdőiránya a
+ládabázis kezdőirányához képest választható: egyenesen, jobbra, hátra vagy
+balra. Ürítéshez, tankoláshoz és fáklyáért mindig az eredeti ládákhoz tér
+vissza, majd ugyanarra a munkapontra és facingre áll vissza.
+
+Érckeresés mellett az oldalági fáklyák az érckereső visszaútján kerülnek le.
+Így nincs külön fáklyázó bejárás. Az élő állapotpanel az érckeresés lépései
+alatt is frissíti a pozíciót, az eltelt időt és a hátralévő becslést.
 Indítás után a turtle-t nem szabad kézzel elmozgatni vagy elforgatni. Nyílt
 út módban akadálynál biztonságosan megáll és ment; ásó módban megpróbál utat
 nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.

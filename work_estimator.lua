@@ -74,10 +74,6 @@ function estimator.branch(config, state)
         if config.oreScanEnabled then
             add(plan, "move", junctions * 4 * branchLength)
             add(plan, "inspect", junctions * 2 * branchLength * (height + 2))
-            if config.torchEnabled then
-                add(plan, "move", junctions * 4 * branchLength)
-                add(plan, "turn", junctions * 8)
-            end
             formula[#formula + 1] = "Erc: bejaras + dinamikus talalat"
         end
     end
@@ -137,6 +133,21 @@ function estimator.excavator(config, state)
         string.format("Blokk: %d x %d x %d = %d", whole(config.width), whole(config.depth), whole(config.height), volume),
         string.format("Ut: %d cella + %d hazaut", remainingBases, finalHome),
     }
+    if config.remoteStart and config.remoteStart.enabled
+        and config.remoteStart.base and config.remoteStart.work then
+        local base, work = config.remoteStart.base, config.remoteStart.work
+        local distance = math.abs(base.x - work.x) + math.abs(base.y - work.y)
+            + math.abs(base.z - work.z)
+        -- Egy odaut az indulasnal, egy visszaut a befejezesnel. A kozbeni
+        -- kiszolgalasi utak dinamikus tobbletet a telemetry tanulja meg.
+        local remoteMoves = state.remoteMoves ~= nil
+            and whole(state.remoteMoves) or (distance * 2)
+        add(plan, "move", remoteMoves)
+        add(plan, "turn", 4)
+        formula[#formula + 1] = state.remoteMoves ~= nil
+            and string.format("Koordinatas hatralevo: %d lepes", remoteMoves)
+            or string.format("Kihelyezes: 2 x %d koordinata-lepes", distance)
+    end
     if config.torchEnabled then
         local torches = math.floor(remainingBases / math.max(1, whole(config.torchInterval)))
         add(plan, "place", torches)

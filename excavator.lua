@@ -5,6 +5,7 @@ local programArgs = { ... }
 local jobRequest = require("job_request")
 local stateStore = require("state_store")
 local Navigation = require("navigation")
+local Coordinate = require("coordinate_navigation")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
@@ -38,6 +39,7 @@ local navigationState = nil
 local sharedTelemetry = nil
 local telemetryState = nil
 local sharedSituations = nil
+local remoteNav = nil
 
 local headings = {
     [0] = { x = 0, z = 1 },
@@ -65,6 +67,7 @@ local function saveState()
         heading = heading,
         navigation = sharedNav and sharedNav:snapshot() or navigationState,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
+        remote = runtime.remote,
         config = config,
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
@@ -142,6 +145,7 @@ local function configure()
             runtime.torchSteps = saved.torchSteps or 0
             navigationState = saved.navigation
             telemetryState = saved.telemetry
+            runtime.remote = saved.remote
         else
             config = centralRequest.config or {}
             config.autoResume = false
@@ -184,6 +188,7 @@ local function configure()
         runtime.torchSteps = saved.torchSteps or 0
         navigationState = saved.navigation
         telemetryState = saved.telemetry
+        runtime.remote = saved.remote
     else
         config.autoResume = false
         print("Terulet: szeles=jobbra, mely=elore, magas=felfele")
@@ -314,17 +319,40 @@ local function status(prefix)
             events[#events + 1] = warning
         end
     end
+    local remoteMoves = nil
+    if config.remoteStart and config.remoteStart.enabled
+        and config.remoteStart.base and config.remoteStart.work
+        and runtime.remote then
+        local base, work = config.remoteStart.base, config.remoteStart.work
+        local remotePose = runtime.remote.navigation and runtime.remote.navigation.pose
+        if runtime.remote.phase == "at_work" then
+            remoteMoves = Coordinate.distance(work, base)
+        elseif runtime.remote.phase == "to_work" and remotePose then
+            remoteMoves = Coordinate.distance(remotePose, work) + Coordinate.distance(work, base)
+        elseif runtime.remote.phase == "to_base" and remotePose then
+            remoteMoves = Coordinate.distance(remotePose, base)
+        elseif runtime.remote.phase == "at_base" then
+            remoteMoves = 0
+        end
+    end
     local estimate = WorkEstimator.excavator(config, {
         baseCompleted = runtime.baseCompleted,
         visited = visited,
+        remoteMoves = remoteMoves,
     })
     local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
         or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
+    local shownPosition = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading)
+    if runtime.remote and runtime.remote.phase ~= "at_work"
+        and runtime.remote.navigation and runtime.remote.navigation.pose then
+        local pose = runtime.remote.navigation.pose
+        shownPosition = string.format("vilag %d,%d,%d irany=%d", pose.x, pose.y, pose.z, pose.heading)
+    end
     UI.renderDashboard({
         task = "Terulet asas KISERLETI",
         status = prefix .. " / " .. tostring(runtime.activity),
         progress = string.format("%d/%d (%d%%)", visited, total, percent),
-        position = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading),
+        position = shownPosition,
         fuel = fuelText() .. "  haza=" .. distanceHome(),
         inventory = inventoryUsage() .. "/16 slot",
         supplies = config.torchEnabled and ("faklya=" .. turtle.getItemCount(2)) or "faklya=ki",
@@ -426,6 +454,11 @@ end
 
 local function requiredForMove(nextX, nextY, nextZ)
     local homeAfterMove = math.abs(nextX) + math.abs(nextY) + math.abs(nextZ)
+    if config.remoteStart and config.remoteStart.enabled
+        and config.remoteStart.base and config.remoteStart.work then
+        homeAfterMove = homeAfterMove
+            + Coordinate.distance(config.remoteStart.base, config.remoteStart.work)
+    end
     if not returningHome then homeAfterMove = homeAfterMove + config.fuelReserve end
     return 1 + homeAfterMove
 end
@@ -611,7 +644,7 @@ local function fuelFromUpperChest(requiredAfterService)
     return true
 end
 
-local function serviceHome(requiredForTrip)
+local function serviceAtBase(requiredForTrip)
     if position.x ~= 0 or position.y ~= 0 or position.z ~= 0 then
         return false, "Nem vagyok a kezdohelyen."
     end
@@ -627,6 +660,64 @@ local function serviceHome(requiredForTrip)
         )
         if not refreshed then return false, inventoryReason end
     end
+    return true
+end
+
+local function remoteEnabled()
+    return config.remoteStart and config.remoteStart.enabled
+        and config.remoteStart.base and config.remoteStart.work
+end
+
+local function remoteDistance()
+    if not remoteEnabled() then return 0 end
+    return Coordinate.distance(config.remoteStart.base, config.remoteStart.work)
+end
+
+local function remoteMoveOptions()
+    local function directionApi(move)
+        if move.kind == "u" then return turtle.inspectUp, turtle.digUp, turtle.attackUp end
+        if move.kind == "d" then return turtle.inspectDown, turtle.digDown, turtle.attackDown end
+        return turtle.inspect, turtle.dig, turtle.attack
+    end
+    return {
+        shouldStop = function() return stopRequested end,
+        onBlocked = function(move, moveResult)
+            if config.remoteStart.mode ~= "dig" then
+                return { result = {
+                    ok = false, code = "blocked",
+                    reason = "Akadaly a koordinatas utvonalon (csak szabad ut mod).",
+                } }
+            end
+            local inspect, dig, attack = directionApi(move)
+            local exists, data = inspect()
+            if exists then
+                local name = data and data.name or ""
+                if string.find(name, "water", 1, true)
+                    or string.find(name, "lava", 1, true) then
+                    return { result = { ok = false, code = "blocked",
+                        reason = "Folyadek van a koordinatas utvonalon." } }
+                end
+                if dig() then return { action = "retry" } end
+            elseif attack() then
+                return { action = "retry" }
+            end
+            return { result = { ok = false, code = "blocked", reason = moveResult.reason } }
+        end,
+    }
+end
+
+local function travelRemote(targetName)
+    if not remoteEnabled() then return true end
+    local target = config.remoteStart[targetName]
+    runtime.remote.phase = targetName == "base" and "to_base" or "to_work"
+    setActivity(targetName == "base" and "koordinatas_hazateres" or "koordinatas_munkapont")
+    local plan, reason = Coordinate.plan(remoteNav:getPose(), target, config.remoteStart.axisOrder)
+    if not plan then return false, reason end
+    local result = Coordinate.execute(remoteNav, plan, remoteMoveOptions())
+    if not result.ok then return false, result.reason or result.code end
+    runtime.remote.phase = targetName == "base" and "at_base" or "at_work"
+    runtime.remote.navigation = remoteNav:snapshot()
+    saveState()
     return true
 end
 
@@ -652,9 +743,16 @@ serviceAndResume = function(reasonText)
     print("Megszakitas: " .. reasonText)
     local homeOk, homeReason = returnHome()
     if not homeOk then return false, homeReason end
-    local serviced, serviceReason = serviceHome(tripRequirement(savedX, savedY, savedZ))
+    local atBase, baseReason = travelRemote("base")
+    if not atBase then return false, baseReason end
+    local remoteTrip = remoteDistance() * 2
+    local serviced, serviceReason = serviceAtBase(
+        tripRequirement(savedX, savedY, savedZ) + remoteTrip
+    )
     if not serviced then return false, serviceReason end
     if stopRequested then return false, "Felhasznaloi leallitas." end
+    local atWork, workReason = travelRemote("work")
+    if not atWork then return false, workReason end
     print("Vissza a munkapontra...")
     setActivity("vissza_munkapontra")
     local resumed, resumeReason = navigateFromHome(savedX, savedY, savedZ, savedHeading)
@@ -820,6 +918,38 @@ local function runExcavation()
         printError("Navigacios menteshiba: " .. tostring(navRecovered.reason))
         return
     end
+    if remoteEnabled() then
+        runtime.remote = runtime.remote or {
+            phase = "at_base",
+            navigation = {
+                pose = {
+                    x = config.remoteStart.base.x,
+                    y = config.remoteStart.base.y,
+                    z = config.remoteStart.base.z,
+                    heading = config.remoteStart.base.heading,
+                },
+                path = {}, pending = nil, anchors = {},
+            },
+        }
+        remoteNav = Coordinate.createNavigator({
+            state = runtime.remote.navigation,
+            telemetry = sharedTelemetry,
+            retryLimit = config.safety and config.safety.retryLimit,
+            ensureFuel = function(required, distanceToBase)
+                return refuelSlotOne(required + distanceToBase + config.fuelReserve)
+            end,
+            checkpoint = function(navState)
+                runtime.remote.navigation = navState
+                saveState()
+                status("Koordinatas navigacio")
+            end,
+        })
+        local remoteRecovered = remoteNav:recoverPending()
+        if not remoteRecovered.ok then
+            printError("Koordinatas menteshiba: " .. tostring(remoteRecovered.reason))
+            return
+        end
+    end
     if config.experimentalInventory and inventoryManager then
         local initialized, inventoryReason = inventoryManager.initialize(config)
         if not initialized then
@@ -838,6 +968,16 @@ local function runExcavation()
     if config.autoResume then
         runtime.active = true
         setActivity("auto_ujrainditas")
+        if remoteEnabled() and runtime.remote.phase ~= "at_work" then
+            if runtime.remote.phase == "to_base" or runtime.remote.phase == "at_base" then
+                local atBase, baseReason = travelRemote("base")
+                if not atBase then printError(baseReason) return end
+                local serviced, reason = serviceAtBase(config.fuelReserve + remoteDistance() * 2 + 4)
+                if not serviced then printError(reason) return end
+            end
+            local atWork, workReason = travelRemote("work")
+            if not atWork then printError(workReason) return end
+        end
         if not returnHome() then return end
     else
         runtime.active = true
@@ -847,9 +987,21 @@ local function runExcavation()
         setActivity("indulas")
     end
 
-    local serviced, serviceReason = serviceHome(config.fuelReserve + 4)
+    local atBase, baseReason = travelRemote("base")
+    if not atBase then
+        printError("Inditasi hiba: " .. tostring(baseReason))
+        return
+    end
+    local serviced, serviceReason = serviceAtBase(
+        config.fuelReserve + (remoteDistance() * 2) + 4
+    )
     if not serviced then
         printError("Inditasi hiba: " .. serviceReason)
+        return
+    end
+    local atWork, workReason = travelRemote("work")
+    if not atWork then
+        printError("Munkapont hiba: " .. tostring(workReason))
         return
     end
 
@@ -872,7 +1024,9 @@ local function runExcavation()
     else print("A teljes terulet ki lett asva.") end
 
     if returnHome() then
-        local finalOk, finalReason = serviceHome(config.fuelReserve)
+        local baseOk, finalReason = travelRemote("base")
+        local finalOk = false
+        if baseOk then finalOk, finalReason = serviceAtBase(config.fuelReserve) end
         if finalOk then
             if not stopReason then
                 runtime.active = false

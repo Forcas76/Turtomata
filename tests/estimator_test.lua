@@ -20,6 +20,18 @@ local area = Estimator.excavator({
 }, { baseCompleted = 0, visited = 0 })
 assert(area.totalActions == 16, "Hibas teruletkeplet: " .. area.totalActions)
 
+local remoteArea = Estimator.excavator({
+    width = 2, depth = 2, height = 2, torchEnabled = false,
+    remoteStart = {
+        enabled = true,
+        base = { x = 0, y = 64, z = 0, heading = 0 },
+        work = { x = 3, y = 65, z = -2, heading = 1 },
+    },
+}, { baseCompleted = 0, visited = 0 })
+assert(remoteArea.plan.move == area.plan.move + 12,
+    "A koordinatas oda-vissza ut nincs a teruletbecslesben.")
+assert(remoteArea.plan.turn == area.plan.turn + 4)
+
 local nether = Estimator.nether({
     mode = 2, length = 1, torchEnabled = false,
 }, { completed = 0, pathLength = 0 })

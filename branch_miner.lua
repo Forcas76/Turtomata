@@ -1022,6 +1022,26 @@ buildOreApi = function()
         checkpoint = function(oreState)
             runtime.oreScan = oreState
             saveState()
+            if oreState then status("Erckereses") end
+        end,
+        placeBranchTorch = function(side, branchStep)
+            if not config.torchEnabled or branchStep <= 0
+                or branchStep % config.branchTorchInterval ~= 0 then
+                return true
+            end
+            runtime.oreAheadVisited.torches = runtime.oreAheadVisited.torches
+                or { left = {}, right = {} }
+            local placedBySide = runtime.oreAheadVisited.torches[side]
+            if placedBySide[branchStep] then return true end
+            local previousReturning = returningHome
+            returningHome = false
+            local placed, reason = placeTorchNow()
+            returningHome = previousReturning
+            if placed then
+                placedBySide[branchStep] = true
+                saveState()
+            end
+            return placed, reason
         end,
         service = function(reason, extraFuel)
             return serviceAndResume(reason, extraFuel)
@@ -1121,7 +1141,10 @@ local function minePendingBranches(absoluteStep)
 
     local delayTorches = config.oreScanEnabled and config.torchEnabled
     if not runtime.oreAheadVisited or runtime.oreAheadVisited.at ~= absoluteStep then
-        runtime.oreAheadVisited = { at = absoluteStep, left = {}, right = {} }
+        runtime.oreAheadVisited = {
+            at = absoluteStep, left = {}, right = {},
+            torches = { left = {}, right = {} },
+        }
         saveState()
     end
 
@@ -1152,15 +1175,6 @@ local function minePendingBranches(absoluteStep)
             runtime.oreAheadVisited.right
         )
         if not scanned then return false, scanReason end
-    end
-
-    if delayTorches then
-        setActivity("bal_ag_faklyazas")
-        leftOk, leftReason = mineBranch(turnLeft, "Bal", true, false)
-        if not leftOk then return false, leftReason end
-        setActivity("jobb_ag_faklyazas")
-        rightOk, rightReason = mineBranch(turnRight, "Jobb", true, false)
-        if not rightOk then return false, rightReason end
     end
 
     runtime.branchesCompletedAt = absoluteStep

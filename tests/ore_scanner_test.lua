@@ -86,6 +86,11 @@ assert(pose.x == 0 and pose.y == 0 and pose.z == 0 and pose.heading == 0)
 pose = { x = 0, y = 0, z = 0, heading = 0 }
 world = {}
 inspectedAt = {}
+local torchSteps = {}
+api.placeBranchTorch = function(side, step)
+    torchSteps[#torchSteps + 1] = side .. ":" .. step
+    return true
+end
 local scanned, scanReason = Scanner.scanBranch(
     "right", 2, 1, api, { ["1,0,0"] = true }
 )
@@ -93,5 +98,7 @@ assert(scanned, scanReason)
 assert((inspectedAt["1,0,0"] or 0) == 0)
 assert((inspectedAt["2,0,0"] or 0) > 0)
 assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
+assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1",
+    "Az erckereses visszautja nem kezelte a faklyapontokat.")
 
 return true

@@ -267,6 +267,32 @@ local function configureExcavator()
         fuelReserve = ui.integer("UZEMANYAG", "Fuel tartalek", currentSettings.general.fuelReserve, 2),
         experimentalInventory = yesNo("KISERLETI inventory", currentSettings.inventory.experimental),
     }
+    config.remoteStart = { enabled = yesNo("KISERLETI koordinatas indulas", false) }
+    if config.remoteStart.enabled then
+        local facing = ui.choice("LADABAZIS IRANYA", {
+            "Eszak (-Z)", "Kelet (+X)", "Del (+Z)", "Nyugat (-X)"
+        }, 1) - 1
+        local base = {
+            x = ui.integer("LADABAZIS", "Vilag X", 0),
+            y = ui.integer("LADABAZIS", "Vilag Y", 64),
+            z = ui.integer("LADABAZIS", "Vilag Z", 0),
+            heading = facing,
+        }
+        local work = {
+            x = ui.integer("MUNKAPONT", "Vilag X", base.x),
+            y = ui.integer("MUNKAPONT", "Vilag Y", base.y),
+            z = ui.integer("MUNKAPONT", "Vilag Z", base.z),
+        }
+        local turn = ui.choice("ASAS IRANYA A KEZDO IRANYHOZ", {
+            "Egyenesen", "Jobbra", "Hatra", "Balra"
+        }, 1) - 1
+        work.heading = (base.heading + turn) % 4
+        config.remoteStart.base = base
+        config.remoteStart.work = work
+        config.remoteStart.relativeTurn = turn
+        config.remoteStart.mode = currentSettings.navigation.coordinateMode
+        config.remoteStart.axisOrder = { "y", "x", "z" }
+    end
     torchConfig(config, false)
     config.torchInterval = config.mainTorchInterval
     config.safety = currentSettings.safety
@@ -276,6 +302,14 @@ local function configureExcavator()
         "Fuel tartalek: " .. config.fuelReserve,
         "Faklya: " .. boolText(config.torchEnabled),
     }
+    if config.remoteStart.enabled then
+        local base, work = config.remoteStart.base, config.remoteStart.work
+        local turnNames = { "egyenesen", "jobbra", "hatra", "balra" }
+        summary[#summary + 1] = string.format("Bazis: %d,%d,%d", base.x, base.y, base.z)
+        summary[#summary + 1] = string.format("Munkapont: %d,%d,%d", work.x, work.y, work.z)
+        summary[#summary + 1] = "Asas iranya: " .. turnNames[(config.remoteStart.relativeTurn or 0) + 1]
+        summary[#summary + 1] = "Koordinata mod: " .. config.remoteStart.mode
+    end
     local estimate = WorkEstimator.excavator(config, { baseCompleted = 0, visited = 0 })
     launch("excavator", "excavator", "new", config, appendEstimate(summary, estimate))
 end
