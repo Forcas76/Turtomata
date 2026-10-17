@@ -1046,7 +1046,8 @@ local function stopListener()
     while not taskFinished do
         local event, key = os.pullEventRaw()
         if event == "nether_builder_finished" then return end
-        if event == "terminate" or (event == "key" and key == keys.q) then
+        if event == "terminate" or (event == "key" and key == keys.q)
+            or (event == "ccturtle_remote_command" and key == "return_home") then
             stopRequested = true
             print("Leallitas kerese fogadva.")
         elseif event == "key" and key == keys.s then

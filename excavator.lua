@@ -1052,7 +1052,8 @@ local function stopListener()
     while not miningFinished do
         local event, key = os.pullEventRaw()
         if event == "excavator_finished" then return end
-        if event == "terminate" or (event == "key" and key == keys.q) then
+        if event == "terminate" or (event == "key" and key == keys.q)
+            or (event == "ccturtle_remote_command" and key == "return_home") then
             if not stopRequested then
                 stopRequested = true
                 print("Leallitas kerese fogadva. Biztonsagos hazateres indul...")

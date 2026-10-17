@@ -144,6 +144,25 @@ local function worker()
             string.format("Pozicio: %d, %d, %d", config.target.x, config.target.y, config.target.z),
             "Eltelt: " .. Telemetry.formatDuration(telemetry:elapsedMs()),
         })
+    elseif moved.code == "stopped" and stopRequested then
+        state.phase = "hazateres"
+        save(nav:snapshot(), state.phase)
+        local homePlan, homeReason = Coordinate.plan(nav:getPose(), config.start, config.axisOrder)
+        local homeOptions = {
+            shouldStop = function() return false end,
+            onBlocked = moveOptions.onBlocked,
+        }
+        local home = homePlan and Coordinate.execute(nav, homePlan, homeOptions)
+            or { ok = false, reason = homeReason }
+        if home.ok then
+            state.phase = "megallitva_otthon"
+            save(nav:snapshot(), state.phase)
+            ui.message("KOORDINATAS NAVIGACIO", "A turtle visszatert a kezdopontra.")
+        else
+            state.phase = "hazateres_elakadt"
+            save(nav:snapshot(), state.phase)
+            ui.message("HAZATERES ELakadt", home.reason or home.code, "error")
+        end
     else
         state.phase = moved.code == "stopped" and "megallitva" or "elakadt"
         save(nav:snapshot(), state.phase)
@@ -157,7 +176,10 @@ local function listener()
     while not finished do
         local event, key = os.pullEventRaw()
         if event == "coordinate_finished" then return end
-        if event == "terminate" or (event == "key" and key == keys.q) then stopRequested = true end
+        if event == "terminate" or (event == "key" and key == keys.q)
+            or (event == "ccturtle_remote_command" and key == "return_home") then
+            stopRequested = true
+        end
     end
 end
 

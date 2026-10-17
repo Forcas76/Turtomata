@@ -4,6 +4,10 @@ local Protocol = require("remote_protocol")
 local turtles = {}
 local selected = 1
 local opened = {}
+local page = "status"
+local commandSelected = 1
+local armedCommand = nil
+local feedback = ""
 local nativeTerm = term.current()
 local display, displayName = nativeTerm, nil
 
@@ -82,6 +86,42 @@ local function ordered()
     return result
 end
 
+local commands = {
+    { label = "Allapot frissitese", command = "status", confirm = false },
+    { label = "Leallitas es hazateres", command = "return_home", confirm = true },
+}
+
+local function selectedTurtle()
+    return ordered()[selected]
+end
+
+local function sendCommand(command)
+    local target = selectedTurtle()
+    if not target then feedback = "Nincs kivalasztott turtle." return false end
+    if openModems() == 0 then feedback = "Nincs vezetek nelkuli modem." return false end
+    local requestId = tostring(os.getComputerID()) .. "-" .. tostring(nowMs())
+    local sent = rednet.send(target.turtleId, Protocol.message("command", {
+        targetId = target.turtleId,
+        command = command,
+        requestId = requestId,
+    }), Protocol.CONTROL)
+    feedback = sent and "Parancs elkuldve; visszaigazolasra var."
+        or "A parancs kuldese sikertelen."
+    return sent
+end
+
+local function activateCommand()
+    local item = commands[commandSelected]
+    if not item then return end
+    if item.confirm and armedCommand ~= item.command then
+        armedCommand = item.command
+        feedback = "Veszelyes parancs: valaszd ki ujra a megerositeshez."
+        return
+    end
+    armedCommand = nil
+    sendCommand(item.command)
+end
+
 local function clip(value, width)
     value = tostring(value or "-")
     if #value <= width then return value end
@@ -116,7 +156,7 @@ local function line(label, value, width)
     print(clip(prefix .. tostring(value or "-"), width))
 end
 
-local function renderBody()
+local function renderStatusBody()
     local width, height = term.getSize()
     local list = ordered()
     if selected > #list then selected = math.max(1, #list) end
@@ -150,7 +190,7 @@ local function renderBody()
             line("Pozicio", string.format("%d,%d,%d", item.position.x, item.position.y, item.position.z), width)
         end
         term.setCursorPos(1, height)
-        write(clip("< > turtle  Q kilepes", width))
+        write(clip("< > oldal | ^v turtle | Q", width))
     else
         print(string.format("%-4s %-16s %-8s %s", "ID", "Nev", "Allapot", "Haladas"))
         local maximum = math.max(1, height - 13)
@@ -176,17 +216,53 @@ local function renderBody()
                 item.position.y, item.position.z, tostring(item.position.heading or "-")), width)
         end
         term.setCursorPos(1, height)
-        write(clip("Nyilak/kattintas: valtas | Q: kilepes", width))
+        write(clip("< > oldal | ^v/katt: turtle | Q", width))
     end
+end
+
+local function renderCommandBody()
+    local width, height = term.getSize()
+    local target = selectedTurtle()
+    clear()
+    term.setTextColor(colors.orange)
+    print(clip("CCTURTLE | PARANCSOK", width))
+    term.setTextColor(colors.lightGray)
+    print(string.rep("-", math.min(width, 39)))
+    if not target then
+        term.setTextColor(colors.red)
+        print("Nincs elerheto turtle.")
+    else
+        term.setTextColor(online(target) and colors.lime or colors.red)
+        print(clip((target.label or ("Turtle #" .. target.turtleId))
+            .. (online(target) and " ONLINE" or " OFFLINE"), width))
+        print("")
+        for index, item in ipairs(commands) do
+            term.setTextColor(index == commandSelected and colors.yellow or colors.white)
+            print(clip((index == commandSelected and "> " or "  ") .. item.label, width))
+        end
+        if feedback ~= "" then
+            print("")
+            term.setTextColor(armedCommand and colors.orange or colors.lightGray)
+            print(clip(feedback, width))
+        end
+    end
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(1, height)
+    write(clip("< > oldal | ^v opcio | ENTER | Q", width))
 end
 
 local function render()
     selectDisplay(false)
     local targets = { nativeTerm }
-    if displayName and display ~= nativeTerm then targets[#targets + 1] = display end
     for _, target in ipairs(targets) do
         local previous = term.redirect(target)
-        local ok, reason = pcall(renderBody)
+        local ok, reason = pcall(page == "commands" and renderCommandBody or renderStatusBody)
+        term.redirect(previous)
+        if not ok then error(reason, 0) end
+    end
+    if displayName and display ~= nativeTerm then
+        local previous = term.redirect(display)
+        local ok, reason = pcall(renderStatusBody)
         term.redirect(previous)
         if not ok then error(reason, 0) end
     end
@@ -212,6 +288,10 @@ while true do
         p2.receivedAt = nowMs()
         turtles[p2.turtleId or p1] = p2
         render()
+    elseif event == "rednet_message" and p3 == Protocol.ACK
+        and Protocol.valid(p2, "ack") then
+        feedback = (p2.accepted and "OK: " or "HIBA: ") .. tostring(p2.reason or "Nincs reszlet.")
+        render()
     elseif event == "timer" and p1 == discoverTimer then
         discover()
         discoverTimer = os.startTimer(Protocol.DISCOVER_INTERVAL)
@@ -226,12 +306,34 @@ while true do
         render()
     elseif event == "key" then
         if p1 == keys.q then break
-        elseif p1 == keys.left or p1 == keys.up then selected = math.max(1, selected - 1)
-        elseif p1 == keys.right or p1 == keys.down then selected = math.min(#ordered(), selected + 1) end
+        elseif p1 == keys.left or p1 == keys.right then
+            page = page == "status" and "commands" or "status"
+            armedCommand = nil
+        elseif p1 == keys.up then
+            if page == "commands" then
+                commandSelected = math.max(1, commandSelected - 1)
+                armedCommand = nil
+            else selected = math.max(1, selected - 1) end
+        elseif p1 == keys.down then
+            if page == "commands" then
+                commandSelected = math.min(#commands, commandSelected + 1)
+                armedCommand = nil
+            else selected = math.min(#ordered(), selected + 1) end
+        elseif p1 == keys.enter and page == "commands" then
+            activateCommand()
+        end
         render()
     elseif event == "mouse_click" then
         local _, height = nativeTerm.getSize()
-        if p3 >= 4 and p3 < height - 7 then selected = math.max(1, p3 - 3) end
+        if page == "commands" then
+            local commandIndex = p3 - 4
+            if commands[commandIndex] then
+                commandSelected = commandIndex
+                activateCommand()
+            end
+        elseif p3 >= 4 and p3 < height - 7 then
+            selected = math.min(#ordered(), math.max(1, p3 - 3))
+        end
         render()
     elseif event == "monitor_touch" and p1 == displayName then
         local list = ordered()

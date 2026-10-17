@@ -8,6 +8,8 @@ local WorkEstimator = require("work_estimator")
 
 local currentSettings = Settings.load()
 local remoteOk, Remote = pcall(require, "remote")
+local REMOTE_ACTIVE_FILE = ".remote_active_job"
+if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
 
 local function boolText(value) return value and "BE" or "KI" end
 
@@ -222,7 +224,11 @@ local function launch(task, program, action, config, summary)
         return
     end
     ui.clear()
+    stateStore.write(REMOTE_ACTIVE_FILE, {
+        task = task, program = program, action = action, config = config,
+    })
     shell.run(program, "--request", token)
+    if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
     ui.waitForEnter("ENTER = vissza a fomenube")
 end
 

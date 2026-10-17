@@ -8,6 +8,9 @@ os.epoch = function() return 123456 end
 
 package.loaded["state_store"] = {
     read = function(path)
+        if path == ".remote_active_job" then
+            return { task = "branch_miner" }
+        end
         if path == "branch_miner_state.txt" then
             return {
                 active = true, activity = "bal_ag_erckereses", mainCompleted = 5,
@@ -29,7 +32,19 @@ turtle = {
     getItemCount = function(slot) return slot <= 3 and slot or 0 end,
 }
 peripheral = { getNames = function() return {} end }
-rednet = {}
+local sentMessages, queued = {}, {}
+rednet = {
+    send = function(recipient, message, protocol)
+        sentMessages[#sentMessages + 1] = {
+            recipient = recipient, message = message, protocol = protocol,
+        }
+        return true
+    end,
+}
+local oldQueueEvent = os.queueEvent
+os.queueEvent = function(...)
+    queued[#queued + 1] = { ... }
+end
 
 local Protocol = require("remote_protocol")
 local Remote = require("remote")
@@ -43,5 +58,14 @@ assert(snapshot.position.x == 1 and snapshot.position.z == 5)
 assert(snapshot.fuel == 900 and snapshot.inventoryUsed == 3)
 assert(snapshot.remainingActions and snapshot.remainingMs)
 
+Remote.handleCommand(7, {
+    type = "command", version = Protocol.VERSION, targetId = 42,
+    command = "return_home", requestId = "test-1",
+})
+assert(#sentMessages == 1 and sentMessages[1].protocol == Protocol.ACK)
+assert(sentMessages[1].message.accepted == true)
+assert(queued[1][1] == "ccturtle_remote_command" and queued[1][2] == "return_home")
+
 os.getComputerID, os.getComputerLabel, os.epoch = oldId, oldLabel, oldEpoch
+os.queueEvent = oldQueueEvent
 return true

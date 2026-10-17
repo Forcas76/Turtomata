@@ -124,6 +124,14 @@ egyszerre frissül, mindegyik a saját méretéhez igazodó elrendezéssel. Moni
 csatlakoztatását vagy eltávolítását futás közben is felismeri. Advanced
 Monitoron érintéssel, a gépen pedig nyilakkal vagy egérrel választható turtle.
 
+A megfigyelő saját terminálján a bal/jobb nyíl vált az `Állapot` és a
+`Parancsok` oldal között. Külső monitor esetén a monitor mindig az élő
+állapotoldalon marad, miközben a Computer terminálján használható a
+parancsmenü. Pocket Computeren ugyanazon a kijelzőn történik az oldalváltás.
+A parancsmenüben a fel/le nyíl vagy a kattintás választ, az Enter végrehajt.
+A biztonságos leállítás és hazatérés kétszeri megerősítést kér. A turtle minden
+parancsot elfogadási vagy hibaüzenettel igazol vissza.
+
 Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
 üzenetet küld, a már dolgozó turtle pedig teljes állapotcsomaggal válaszol. Ezt
 követően két másodpercenként érkezik heartbeat. Nyolc másodperc jelkimaradás

@@ -7,6 +7,7 @@ local WorkEstimator = require("work_estimator")
 local remote = {}
 local opened = {}
 local sequence = 0
+local ACTIVE_JOB_FILE = ".remote_active_job"
 
 local stateFiles = {
     { task = "Branch mining", path = "branch_miner_state.txt", kind = "branch" },
@@ -53,9 +54,18 @@ local function inventoryValue()
 end
 
 local function activeState()
+    local marker = StateStore.read(ACTIVE_JOB_FILE)
+    if type(marker) ~= "table" or type(marker.task) ~= "string" then return nil, nil end
     for _, entry in ipairs(stateFiles) do
-        local value = StateStore.read(entry.path)
-        if type(value) == "table" and value.active == true then
+        local matches = (marker.task == "branch_miner" and entry.kind == "branch")
+            or (marker.task == "excavator" and entry.kind == "excavator")
+            or (marker.task == "nether_builder" and entry.kind == "nether")
+            or (marker.task == "coordinate" and entry.kind == "coordinate")
+        if matches then
+            local value = StateStore.read(entry.path)
+            if type(value) ~= "table" then
+                value = { active = true, activity = "indulas", config = marker.config or {} }
+            end
             return entry, value
         end
     end
@@ -159,6 +169,36 @@ function remote.publish(recipient)
     return true
 end
 
+local function acknowledge(recipient, command, requestId, accepted, reason)
+    return rednet.send(recipient, Protocol.message("ack", {
+        turtleId = os.getComputerID(),
+        command = command,
+        requestId = requestId,
+        accepted = accepted == true,
+        reason = reason,
+    }), Protocol.ACK)
+end
+
+function remote.handleCommand(sender, message)
+    if message.targetId ~= os.getComputerID() then return end
+    if message.command == "status" then
+        acknowledge(sender, message.command, message.requestId, true, "Allapot elkuldve.")
+        remote.publish(sender)
+    elseif message.command == "return_home" then
+        local entry = activeState()
+        if not entry then
+            acknowledge(sender, message.command, message.requestId, false,
+                "Nincs aktiv munka; a turtle mar a fomenuben van.")
+            return
+        end
+        acknowledge(sender, message.command, message.requestId, true,
+            "Biztonsagos leallitas es hazateres kerese fogadva.")
+        os.queueEvent("ccturtle_remote_command", "return_home", sender, message.requestId)
+    else
+        acknowledge(sender, message.command, message.requestId, false, "Ismeretlen parancs.")
+    end
+end
+
 function remote.run()
     openModems()
     local timer = os.startTimer(0.1)
@@ -170,6 +210,9 @@ function remote.run()
         elseif event == "rednet_message" and messageProtocol == Protocol.CONTROL
             and Protocol.valid(message, "discover") then
             remote.publish(p1)
+        elseif event == "rednet_message" and messageProtocol == Protocol.CONTROL
+            and Protocol.valid(message, "command") then
+            remote.handleCommand(p1, message)
         elseif event == "peripheral" or event == "peripheral_detach" then
             openModems()
         end

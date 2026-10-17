@@ -4,6 +4,7 @@ local protocol = {
     VERSION = 1,
     STATUS = "ccturtle.status.v1",
     CONTROL = "ccturtle.control.v1",
+    ACK = "ccturtle.ack.v1",
     DISCOVER_INTERVAL = 10,
     HEARTBEAT_INTERVAL = 2,
     OFFLINE_AFTER = 8,
