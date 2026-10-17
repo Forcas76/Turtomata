@@ -1,397 +1,270 @@
-# CC:Tweaked Branch Miner
+# CCTurtle
 
-A `branch_miner.lua` interaktiv menubol allithato banyaszprogram.
-Nem kell parancssori parametereket megadni: inditas utan kerdesenkent bekeri a
-beallitasokat, osszefoglalja oket, majd a vegso ENTER-re indul el.
-Minden szambeviteli mezonel az ures ENTER az alapertelmezett erteket valasztja.
-Az oldalagatok alapertelmezett tavolsaga 3 blokk.
+Moduláris CC:Tweaked turtle-rendszer branch mininghoz, területásáshoz,
+Nether-útépítéshez és kísérleti koordinátás navigációhoz.
 
-## Inditas
+Az indítandó központi program a `main` (`main.lua`). A feladatok beállítása,
+folytatása és az általános beállítások kezelése innen történik. A
+feladatmodulok közvetlen indítása átmenetileg továbbra is használható
+vésztartalékként.
 
-Masold a fajlt a turtle gepere `branch_miner` nevvel, majd futtasd:
+## Indítás
 
 ```text
-branch_miner
+main
 ```
+
+A menük nyílbillentyűkkel és Enterrel használhatók. Advanced Turtle esetén a
+sorokra kattintani és görgetni is lehet. Backspace vagy Escape visszalép.
+Számbevitelnél az üres Enter elfogadja a kijelzett alapértéket. A feladat csak
+az összefoglaló után, a végső Enterre indul el.
 
 ## Menümagyarázó
 
-Az első oszlopban pontosan az a rövid, ékezet nélküli felirat szerepel,
-amely a turtle kijelzőjén látható. Mellette található az ékezetes cím és a
-választás jelentése.
+Az első oszlopban a turtle képernyőjén látható, ékezet nélküli felirat áll.
+A második oszlop az ékezetes cím, a harmadik pedig a működés rövid leírása.
 
 ### Főmenü
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
+| `Branch mining` | Branch mining | 1×2, 1×3 vagy egyenes 3×3-as bányajárat. |
+| `Terulet kiasasa` | Terület kiásása | KÍSÉRLETI: megadott szélességű, mélységű és magasságú téglatest kitermelése. |
+| `Nether utepito` | Nether-útépítő | Lépcső vagy körbeépített 1×2-es védett alagút. |
+| `Koordinatara navigalas` | Koordinátára navigálás | KÍSÉRLETI: kézzel megadott világkoordinátáról célkoordinátára halad. |
+| `Felbehagyott munka` | Félbehagyott munka | Aktív mentés kiválasztása és automatikus folytatása. |
+| `Beallitasok` | Beállítások | Közös navigációs, biztonsági, inventory-, fáklya- és ércbeállítások. |
+| `Diagnosztika` | Diagnosztika | Ellenőrzi a szükséges modulokat és kijelzi a fuel-szintet. |
+| `Kilepes` | Kilépés | Bezárja a központi programot. |
+
+### Branch mining
+
+| A kijelzőn | Ékezetes cím | Magyarázat |
+| --- | --- | --- |
 | `Branch 1x2` | Branch mining – 1×2 | Egy blokk széles, két blokk magas főutat és oldalágakat ás. |
 | `Branch 1x3` | Branch mining – 1×3 | Egy blokk széles, három blokk magas főutat és oldalágakat ás. |
-| `Egyenes 3x3` | Egyenes 3×3-as alagút | Oldalágak nélküli, három blokk széles és magas alagutat készít. Induláskor egy blokkal feljebb megy, így a kezdőszint lesz az alagút alja. |
-| `Terulet asas` | Területásás | Elindítja a kísérleti területásó programot, ahol egy teljes téglatest méretei adhatók meg. |
-| `Nether utak` | Nether útépítő | Elindítja a lépcsőzetes út és a burkolt 1×2-es alagút külön programját. |
-| `Auto folytatas` | Automatikus folytatás | Betölti a mentett munkát, visszamegy a mentett pontra, majd onnan folytatja. |
-| `Auto (nincs mentes)` | Automatikus folytatás (nincs mentés) | Jelenleg nincs használható mentés, ezért az automatikus folytatás nem választható. |
+| `Egyenes 3x3` | Egyenes 3×3-as alagút | Oldalág nélküli 3×3-as járat. Induláskor egyet felmegy, így a kezdőszint lesz az alagút alja. |
+| `Uj munka` | Új munka | A kezdőponttól indít új munkát. |
+| `Kezi folytatas` | Kézi folytatás | A már kész főúton a megadott távolságig előremegy, majd ott kezdi az új szakaszt. |
+| `Kezdo tavolsag` | Kezdő távolság | A kézi folytatáskor bejárandó, már meglévő főút hossza. |
+| `Fotengely` | Főtengely | Az új főút hossza. |
+| `Oldalagat` | Oldalág | Egy bal vagy jobb oldali ág hossza. |
+| `Agak tavolsaga` | Ágak távolsága | Két oldalág közötti távolság; alapértéke 3. |
+| `Alagut hossza` | Alagút hossza | Az egyenes 3×3-as alagút hossza. |
 
-### Branch mining és 3×3-as alagút beállításai
+Az 1×2 és 1×3 módnál opcionális a kísérleti érckeresés. A turtle előbb
+elkészíti a bal és jobb ágat, majd végigjárja azokat, és a padlón, mennyezeten,
+oldalfalakon, illetve az ág végén keresi a beállított érceket. A kapcsolódó
+érctelepet a mélység- és blokklimitig követi, majd pontosan visszatér az ág
+azon pontjára, ahonnan kitért.
 
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Uj munka` | Új munka | Új bányászást indít a kezdőponttól. |
-| `Kezi folytatas` | Kézi folytatás | A turtle előbb végigmegy a már meglévő alagúton a megadott kezdő távolságig, majd ott kezdi az új szakaszt. Vésztartalék arra az esetre, ha nincs megfelelő mentés. |
-| `Kezdo tavolsag` | Kezdő távolság | A már elkészült főút hossza, amelyen a turtle ásás nélkül előremegy. |
-| `Alagut hossza` | Alagút hossza | Az egyenes 3×3-as alagút teljes hossza. |
-| `Fotengely` | Főtengely hossza | A branch mining során elkészítendő új főút hossza. |
-| `Oldalagat` | Oldalág hossza | Egy bal vagy jobb oldali bányaág hossza. |
-| `Agak tavolsaga` | Ágak távolsága | Ennyi blokk marad két egymást követő oldalág között. Alapértéke 3. |
-| `Fuel tartalek` | Üzemanyag-tartalék | Ennyi extra üzemanyagot tartson meg a program a kezdőpontra való visszaút kiszámított igényén felül. |
-| `KISERLETI inv.` | KÍSÉRLETI inventory-kezelés | Bekapcsolja a következő drop tényleges helyigényét vizsgáló, kapacitásalapú lepakolási rendszert. Alapértelmezetten kikapcsolt. |
-
-### Kísérleti automatikus fáklyázás
+### Területásás
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
-| `KISERLETI faklyazas` | KÍSÉRLETI fáklyázás | Beállítja, hogy a turtle használjon-e automatikusan fáklyákat. Bekapcsolva a 2-es inventory slot a fáklyáké. |
-| `Kikapcsolva` | Kikapcsolva | Nem használ fáklyát, és nem keresi a fáklyás ládát. |
-| `Bekapcsolva` | Bekapcsolva | Engedélyezi a fáklyázást; ha elfogy a fáklya, a turtle visszatér és újratölti a 2-es slotot. |
-| `Fout: hany beasas` | Főút: hány beásásonként | Megadja, hogy a főúton hány elkészült oldalág után legyen fáklya. A főúti fáklyákat a kész útvonalon, a végső visszatéréskor rakja le. |
-| `Ag: hany blokkonkent` | Ág: hány blokkonként | Az oldalág fáklyái közötti távolság. A turtle előbb kiássa az egész ágat, majd visszafelé rakja le a fáklyákat. |
-| `Faklya tavolsag` | Fáklyák távolsága | Területásásnál a fáklyák közötti beállított távolság. |
-| `Faklya helye (KISERLETI)` | Fáklya helye (KÍSÉRLETI) | Kiválasztja a fáklya lerakási módját. |
-| `Oldalt: blokk ki, faklya be` | Oldalt: blokk ki, fáklya be | A turtle oldalra fordul, kiüt egy blokkot, majd a kialakított helyre próbálja tenni a fáklyát. |
-| `A turtle feje fole` | A turtle feje fölé | A turtle felfelé próbálja elhelyezni a fáklyát. Ez a lerakási mód kísérleti. |
+| `Szelesseg` | Szélesség | A turtle nézőpontjából jobbra mért méret. |
+| `Melyseg` | Mélység | Az előre nézési irányban mért méret. |
+| `Magassag` | Magasság | A kezdőszinttől felfelé mért méret. |
 
-### Területásás beállításai
+A turtle kígyózó útvonalon járja be a téglatestet. Ha van még felette
+feldolgozandó réteg, felfelé is ás, így egy bejárással két réteget készíthet
+el. A funkció kísérleti, ezért először kis területen érdemes kipróbálni.
+
+### Nether-útépítő
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
-| `Uj terulet` | Új terület | Új, téglatest alakú terület kiását állítja be. |
-| `Auto folytatas` | Automatikus folytatás | Betölti a területásó mentését, visszamegy a mentett pontra, majd folytatja a munkát. |
-| `Auto (nincs mentes)` | Automatikus folytatás (nincs mentés) | Nincs használható területásó-mentés. |
-| `Szelesseg` | Szélesség | A turtle nézőpontjából a kiásandó terület oldalirányú mérete. |
-| `Melyseg` | Mélység | A turtle előtti irányban mért hossz. |
-| `Magassag` | Magasság | A kiásandó terület függőleges mérete. |
-| `Fuel tartalek` | Üzemanyag-tartalék | A kiszámított visszaúthoz szükséges mennyiségen felül megtartandó extra üzemanyag. |
-| `KISERLETI inv.` | KÍSÉRLETI inventory-kezelés | A területásásnál is bekapcsolja a kapacitásalapú ellenőrzést és az `inventory_state.txt` frissítését. |
+| `Lepcso fel/le` | Lépcső fel/le | Blokkonként egy szintet emelkedő vagy süllyedő, két blokk fejterű lépcső. |
+| `Vedett 1x2 alagut` | Védett 1×2-es alagút | Szabad térben padlót, oldalfalakat és mennyezetet épít a járat köré. |
+| `Felfele` | Felfelé | Emelkedő lépcső. |
+| `Lefele` | Lefelé | Süllyedő lépcső. |
+| `Epitoanyag / Blokk` | Építőanyag / blokk | A használt blokk azonosítója, például `minecraft:cobblestone`. |
 
-### Futás közbeni vezérlés
+Fáklyázás nélkül a 2–5. slot építőanyag, a 6–16. slot bányászati tárhely.
+Fáklyázással a 2. slot a fáklyáé, az építőanyag a 3–5. slotba kerül. Ha az
+anyag elfogy, a turtle a mentett útvonalon hazamegy, a leadóládából feltölti,
+majd visszatér.
+
+### KÍSÉRLETI koordinátás navigáció
+
+A menü bekéri a turtle jelenlegi világkoordinátáját, a nézési irányát, a
+célkoordinátát és opcionálisan a végső irányt. Az irányok:
+
+- észak: `-Z`;
+- kelet: `+X`;
+- dél: `+Z`;
+- nyugat: `-X`.
+
+A koordinátát a program nem GPS-szel méri: a beírt kezdőadatokból számol.
+Indítás után a turtle-t nem szabad kézzel elmozgatni vagy elforgatni. Nyílt
+út módban akadálynál biztonságosan megáll és ment; ásó módban megpróbál utat
+nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
+
+### Beállítások
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
-| `Q/Ctrl+T: leallitas` | Q/Ctrl+T: leállítás | Biztonságos leállítást kér. A turtle elmenti az állapotát, visszatér a kezdőpontra, lepakol és feltankol. |
-| `S: allapot` | S: állapot | Kiírja az aktuális munkafázist, pozíciót, irányt, üzemanyagszintet és a visszaúthoz szükséges mennyiséget. |
+| `Navigacio es altalanos` | Navigáció és általános | Kezdő műveletidő, koordinátás mód és fuel-tartalék. |
+| `Biztonsag es helyzetkezeles` | Biztonság és helyzetkezelés | Víz/láva lezárása, ismétlési limit, tömítőblokk és fáklyahiba viselkedése. |
+| `Inventory KISERLETI` | KÍSÉRLETI inventory-kezelés | A következő blokk dropjának tényleges elférését vizsgáló rendszer. |
+| `Faklyazas` | Fáklyázás | Alapértelmezett engedélyezés, távolság és elhelyezési mód. |
+| `Erckereses` | Érckeresés | Alapértelmezett engedélyezés, érclista és követési limitek. |
+| `Alapertekek visszaallitasa` | Alapértékek visszaállítása | Újra létrehozza a közös alapbeállításokat. |
 
-## Ladak elhelyezese
+Az érclistában az új blokk teljes alakja `<mod_neve>:<blokk_neve>`, például
+`minecraft:coal_ore`. A vanilla rövid forma (`coal_ore`) automatikusan
+`minecraft:` előtagot kap. A listában az `A` hozzáad, a `D` töröl vagy
+kikapcsol, a `K` ment és kilép; egérrel is kezelhető.
 
-A turtle a kezdohelyen a banya fele nezzen. A ket lada mogotte legyen:
+## Automatikus fáklyázás – KÍSÉRLETI
+
+Bekapcsolva a 2. slot mindig a fáklyáé. A fáklyás láda a fuel-láda fölött
+legyen. Ha a fáklya elfogy, a turtle hazatér és feltölti a slotot.
+
+Branch miningnál külön állítható:
+
+- a főúti gyakoriság: hány teljes beásás után legyen fáklya;
+- az oldalági távolság: hány blokkonként legyen fáklya.
+
+A turtle előbb kiássa az érintett járatot, és csak visszafelé helyezi el a
+fáklyákat, ezért nem üti ki őket a következő lépésben. Az `Oldalt` mód falba
+helyez, a `Fej folott` mód felfelé próbál fali fáklyát rögzíteni. Sikertelen
+lerakásnál másik oldalt, fej fölötti helyet, majd szükség esetén támaszblokkot
+próbál; alapbeállítással a fáklyahiba figyelmeztetés, nem feladatmegszakítás.
+
+## Ládák és fenntartott slotok
+
+A turtle a kezdőhelyen a munka irányába nézzen:
 
 ```text
-Oldalnezet:
+Oldalnézet:
 
-                    banya iranya ->
-  [faklya lada]  (csak bekapcsolt faklyazasnal)
-  [fuel lada]
-  [leado lada] [TURTLE]
+                    munka iránya ->
+  [fáklyás láda]  (csak bekapcsolt fáklyázásnál)
+  [fuel-láda]
+  [leadóláda] [TURTLE]
 ```
 
-- A leado lada kozvetlenul a turtle mogott van.
-- Az uzemanyaglada kozvetlenul a leado lada folott van.
-- A turtle feletti blokk maradjon szabad, mert tankolaskor felmegy egyet.
-- Az uzemanyagladaba csak egetheto targyat (peldaul szenet) tegyel.
-- Kiserleti faklyazasnal a faklyas lada a fuel lada folott van, es csak
-  faklyat tartalmazzon. A turtle feletti ket blokk maradjon szabad.
-- A biztonsagi tartalek legalabb 2, igy a turtle a felso ladat eleri.
-- A legelso inditas elott legyen legalabb 2 fuel a turtle-ben vagy legyen
-  egetheto targy a sajat inventoryjaban. Ez kell ahhoz, hogy fel tudjon menni
-  a felso uzemanyagladahoz; kesobb a program mar nem engedi teljesen kifogyni.
-- Bekapcsolt faklyazasnal a harom lada bejarasahoz legalabb 4 kezdo fuel kell.
+- A leadóláda közvetlenül a turtle mögött van.
+- A fuel-láda a leadóláda fölött van.
+- A fáklyás láda bekapcsolt fáklyázásnál a fuel-láda fölött van.
+- Az 1. slot kizárólag tankolási slot. Nem éghető tartalmát a turtle lerakja.
+- A fuel-ládából felvett teljes stacket betankolja; 64 szén esetén mind a 64-et.
+- A 2. slot bekapcsolt fáklyázásnál kizárólag fáklyaslot.
+- A ládák eléréséhez a turtle fölötti helyet szabadon kell hagyni.
 
-## Mukodes
+## Inventory-kezelés – KÍSÉRLETI
 
-- A `Branch 1x2` es `Branch 1x3` modnal fotengelyt, oldalaghosszt es agak
-  kozotti tavolsagot lehet megadni.
-- Az `Egyenes 3x3` mod eloszor valaszthato ki, es csak az alagut hosszat keri;
-  ebben a modban nincsenek oldalagatok.
-- A 3x3-as alagutnal a turtle minden szeletnel balra es jobbra is
-  kiter, kiassa mindharom oszlop also es felso blokkjat, majd visszaall a
-  kozepvonalra es az eredeti iranyba. A plusz oldaliranyu lepeseket a
-  fuel-szamitas tartalmazza.
-- A 3x3-as mod indulasakor a turtle egy blokkot felmegy. Igy az eredeti
-  indulasi szint lesz az alagut also sora, a turtle pedig a kozepso sorban
-  halad. Hazafele is a kozepso soron jon, es csak a kezdohelyen ereszkedik le.
-- A turtle relativ koordinatakat vezet. A pontos hazautigeny:
-  `abs(x) + abs(y) + abs(z)`.
-- Minden bovito lepes elott ellenorzi a hazaut uzemanyag-igenyet.
-- Teljes inventory vagy keves uzemanyag eseten megjegyzi a munkapontot,
-  hazater, urit, tankol, visszamegy ugyanoda, es folytatja.
-- A munka vegen hazater, kiuriti az inventoryt, es az eredeti iranyba fordul.
+Bekapcsolva a program minden ládától való elinduláskor frissíti az
+`inventory_state.txt` fájlt. Új blokk detektálásakor ellenőrzi, hogy annak
+várható dropja elfér-e meglévő stackben vagy üres bányászslotban. Csak akkor
+tér haza, ha a detektált item már ténylegesen nem fér be. A fájl egyetlen
+felülírt JSON-sort tartalmaz; nem eseménynapló.
 
-## Fenntartott inventory slotok
+## Navigáció, mentés és helyreállítás
 
-- Az 1-es slot kizarolag tankolasi slot.
-- Faklyazas nelkul a turtle a kitermelt targyakhoz a 2-es slotot hasznalja.
-- Bekapcsolt kiserleti faklyazasnal a 2-es slot a faklyake, a kitermelt
-  targyak pedig a 3-as slottol kezdodnek.
-- Otthon az 1-es slot nem egetheto tartalmat lerakja a leado ladaba.
-- Az uzemanyagladabol mindig az 1-es slotba vesz fel, es csak ebbol tankol.
-- Az uzemanyagladabol felvett teljes stacket betankolja. Ha 64 szenet vesz
-  fel, mind a 64 darabot felhasznalja, nem csak a pillanatnyi uthoz elegendot.
+Minden feladat a közös `navigation.lua` modult használja. A modul tartja
+nyilván a relatív pozíciót és irányt, számolja a hazautat, kezeli az egzakt
+útvonalvermet, és minden mozgás előtt ment egy függő tranzakciót. Váratlan
+újraindítás után ezt egyezteti a mentett pozícióval, így nem alkalmazza kétszer
+ugyanazt a lépést.
 
-## KISERLETI: kapacitasalapu inventory-kezeles
+Állapotfájlok:
 
-Uj munka beallitasakor a `KISERLETI inv.` opcio kulon be- vagy kikapcsolhato.
-Alapertelmezetten ki van kapcsolva. Kikapcsolva a korabbi inventory-ellenorzes
-mukodik; bekapcsolva az `inventory_manager.lua` modul vizsgalja meg minden
-blokk kiutese elott, hogy a varhato drop tenylegesen elfer-e.
+- `branch_miner_state.txt`;
+- `excavator_state.txt`;
+- `nether_builder_state.txt`;
+- `coordinate_state.txt`;
+- `settings.txt`;
+- `inventory_state.txt`;
+- `ore_targets.txt`.
 
-Az uj rendszer nem csak azt nezi, hogy van-e valamelyik stackben szabad hely.
-Ismert dropnal megfelelo, reszben toltott stacket vagy ures banyaszslotot keres.
-Nincs allandoan fenntartott biztonsagi puffer: uj blokkfajta szamara egyetlen
-ures slot eleg. A turtle csak akkor ter haza, amikor a mar detektalt blokk
-varhato dropja sem megfelelo stackbe, sem ures banyaszslotba nem fer be. Ilyenkor
-meg a blokk kiutese elott lepakol, majd ugyanoda es ugyanabba az iranyba megy
-vissza.
+Az állapotírás ideiglenes fájlt és biztonsági másolatot használ. A turtle-t
+egy váratlan leállás után ne mozgasd el kézzel. A központi menü `Felbehagyott
+munka` pontja csak a valóban aktív mentéseket listázza.
 
-A modul az `inventory_state.txt` egyetlen JSON-soraban tarolja az inventory
-pillanatkepet, a mar latott blokkokat es a futas kozben megtanult blokk-drop
-kapcsolatokat. Programinditaskor, automatikus folytataskor es minden ladaktol
-torteno elindulas elott a turtle valodi inventory-ja felulirja ezt a fajlt.
-Ezert a TXT csak folytatasi segedadat; soha nem elozheti meg a slotok valos
-tartalmat.
+## Futás közbeni kijelzés és vezérlés
 
-Az `S` allapotkijelzes bekapcsolt kiserleti modban az ures banyaszslotok szamat
-is kiirja. A funkcio a branch mining, az egyenes
-3x3-as alagut es a teruletasas minden elore, felfele es lefele vegzett
-banyaszmuveletet ellenorzi. A fenti mukodes tesztfunkcio; rovid munkaval erdemes
-kiprobalni, mielott kotelezo alapmechanikava valik.
+A státuszképernyő minden frissítéskor törlődik és ugyanazokat a sorokat írja
+újra: feladat, fázis, haladás, pozíció/irány, fuel, inventory, ellátmány,
+eltelt idő, hátralévő becslés és figyelmeztetések. Így a terminál nem telik meg
+állapotüzenetekkel.
 
-## KÍSÉRLETI: ércdetektálás
+- `Q` vagy `Ctrl+T`: biztonságos leállítás kérése;
+- `S`: azonnali állapotfrissítés a régi közvetlen feladatindításnál.
 
-Az ércdetektálás csak a `Branch 1x2` és `Branch 1x3` módoknál kapcsolható be.
-Egy főági beásásnál először mindkét oldalág elkészül, ezután a turtle külön
-végigvizsgálja a padlót, mennyezetet, oldalfalakat és az ág végét. Csak az
-érclistában kijelölt blokkazonosítókat bányássza ki. A kapcsolódó érctelepet a
-beállított mélység- és blokklimitig követi, majd az eltárolt útvonalon ugyanarra
-az ágpontjára tér vissza. Az oldalági fáklyák csak az ércvizsgálat után kerülnek
-a helyükre.
+A branch miner, a területásó és a Nether-építő leállításkor hazatér, lepakol és
+ment. A koordinátás feladat biztonságosan megáll és menti az aktuális világpozíciót.
 
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `KISERLETI erckereses` | KÍSÉRLETI érckeresés | Be- vagy kikapcsolja az oldalágak utólagos ércvizsgálatát. |
-| `Keresett ercek` | Keresett ércek | A kibányászandó blokkazonosítók mentett listája. |
-| `A:+ uj` | Új blokk hozzáadása | Elfogadja a `coal_ore` rövid alakot (`minecraft:coal_ore`), illetve a teljes `namespace:block_name` modolt azonosítót. |
-| `D: torol/ki` | Törlés vagy kikapcsolás | Saját elemet töröl; beépített vanilla csoportnál minden változat kijelölését kikapcsolja, de a választható sor megmarad. |
-| `K: kesz` | Kész | Elmenti az `ore_targets.txt` fájlt és visszatér a beállításokhoz. |
-| `Max melyseg` | Maximális mélység | Egy érctelepen belül engedélyezett követési mélység. Alapértéke 4. |
-| `Max erc/telep` | Maximális érc/telep | Egyetlen kitérő alatt kibányászható ércek felső korlátja. Alapértéke 16. |
+Az időbecslés kezdetben a beállított másodperc/művelet értékből indul, majd a
+valóban mért mozgási és ásási idők súlyozott átlagával folyamatosan újraszámol.
+Ez becslés, a folyadékok, leeső blokkok, mobok és kiszolgálóutak módosíthatják.
 
-Advanced Turtle esetén a lista sorai és alsó gombjai kattinthatók. Normál
-turtle esetén a nyílbillentyűk, Enter vagy Space, továbbá az `A`, `D` és `K`
-billentyűk használhatók. A vanilla ércek csoportosan jelölhetők; például a
-gyémánt kiválasztása a normál és a deepslate változatot is bekapcsolja. Modolt
-ércek kézzel vehetők fel.
+## Helyzetkezelés
 
-Az ércjárás külön útvonalvermet vezet. Inventoryürítés vagy tankolás előtt a
-turtle ezen hátrál ki a főági csomópontig, onnan megy a ládákhoz, majd ugyanazt
-az utat játssza vissza. A `Q`/`Ctrl+T` leállítás és az automatikus folytatás is
-ezt a mentett útvonalat használja. Az állapot a `branch_miner_state.txt`, az
-érclista az `ore_targets.txt` egyetlen felülírt sorában található.
+A `situation_manager.lua` közös, strukturált eredményt ad a feladatoknak.
+Kezeli az ismételhető akadályokat, a fáklya tartalék elhelyezési sorrendjét,
+valamint a felülről, alulról vagy elölről érzékelt víz/láva tömítését. Egy
+nem létfontosságú hiba – például egy kihagyott fáklya – alapból nem szakítja
+félbe a teljes munkát. Navigációs bizonytalanságnál viszont a program ment és
+megáll, nem talál ki ellenőrizetlen pozíciót.
 
-## Automatikus folytatas
+## Indítási napló
 
-A program a `branch_miner_state.txt` fajl egyetlen soraba menti az aktualis
-koordinatat, iranyt, beallitasokat, elvegzett fotengelyhosszt es az eppen vegzett
-muveletet. Minden sikeres mozgas vagy fordulas utan ugyanazt a sort irja felul.
+Az `action_log.lua` az `action_log.txt` fájlba csak az indítás időpontját, a
+feladat nevét és az induláskori fuel-szintet fűzi hozzá. Mozgást vagy fordulást
+nem naplóz.
 
-Ujrainditas utan az `Auto folytatas` mod betolti ezt az allapotot. Feltetelezi,
-hogy a turtle-t a leallas ota nem mozgattak el es nem forgattak el. Eloszor
-visszater a kezdohelyre, urit es tankol, majd visszamegy az utolso mentett
-fotengely-ellenorzoponthoz. Ha egy oldalagat felbeszakadt, biztonsagosan ujra
-bejárja az adott pont oldalágait, majd folytatja a munkat.
+## Fájlok
 
-A `Kezi folytatas` mod tovabbra is elerheto, ha a mentes hianyzik, serult, vagy
-a turtle-t kezzel athelyeztek.
+| Fájl | Szerep |
+| --- | --- |
+| `main.lua` | Központi indító és menürendszer. |
+| `ui.lua` | Nyilas, kattintós menük és strukturált dashboard. |
+| `settings.lua` | Verziózott közös beállítások. |
+| `navigation.lua` | Relatív pozíció, útvonal, mozgás és helyreállítás. |
+| `coordinate_navigation.lua` | KÍSÉRLETI világkoordinátás útvonaltervezés. |
+| `situation_manager.lua` | Akadály-, folyadék- és fáklyahibák kezelése. |
+| `telemetry.lua` | Eltelt idő, mért műveletidő és ETA. |
+| `state_store.lua` | Atomi JSON-állapotmentés és visszaállítás. |
+| `job_request.lua` | A központi menü egyszer használható feladatátadása. |
+| `branch_miner.lua` | Branch mining és egyenes 3×3. |
+| `excavator.lua` | KÍSÉRLETI területásás. |
+| `nether_builder.lua` | Lépcső és védett Nether-alagút. |
+| `coordinate_task.lua` | KÍSÉRLETI koordinátás feladat futtatója. |
+| `inventory_manager.lua` | KÍSÉRLETI kapacitásalapú inventory-kezelés. |
+| `torch_manager.lua` | KÍSÉRLETI automatikus fáklyázás. |
+| `ore_scanner.lua` | KÍSÉRLETI érclista és érctelepkövetés. |
 
-## Kezi leallitas futas kozben
+## Downloader: GitHub vagy Pastebin
 
-A banyaszat alatt a program folyamatosan figyeli a billentyuzetet. A `Q` vagy
-a `Ctrl+T` biztonsagos leallitast ker: a turtle befejezi az aktualis atomi
-3x3-as vagasi lepest, megorzi a mentest, hazater, lepakol es tankol. A munka
-kesobb az `Auto folytatas` menuponttal folytathato.
-
-Az `S` billentyu futas kozben kiirja az aktualis muveletet, haladast,
-koordinatat, fuel-szintet, hazatavolsagot es inventory-kihasznaltsagot.
-
-## Tetszoleges terulet
-
-A fomenu `Terulet asas` pontja a kulon `excavator.lua` programot inditja.
-A meretek a turtle nezopontjabol ertendok:
-
-- szelesseg: a turtle-tol jobbra;
-- melyseg: a turtle elore nezesi iranyaba;
-- magassag: felfele.
-
-A turtle a kiemelendo teglatest bal-also-elso sarka elott alljon, es a melyseg
-iranyaba nezzen. A program kigyozo utvonalon jarja be a teljes terfogatot.
-Amikor van meg felette kijelolt reteg, az also reteg bejarasa kozben minden
-cellanal felfele is as, igy egy menetben ket fuggoleges reteget dolgoz fel.
-Paratlan magassagnal a legfelso, utolso reteget kulon jarja be. Megtelt
-inventory vagy keves fuel eseten hazater, urit es tankol, majd visszamegy az
-aktualis munkapontra. Ugyanazt a ketladas elrendezest hasznalja, mint a branch
-miner.
-
-Az `excavator.lua` az `excavator_state.txt` egyetlen soraba menti a fizikai
-poziciot, iranyt, beallitasokat, a teljesen feldolgozott cellak szamat es az
-aktualis muveletet. A `Q` vagy `Ctrl+T` biztonsagosan leallitja es hazakuldi;
-az `S` allapotot ir ki. Ujrainditas utan az `Auto folytatas` hazater, urit,
-tankol, majd a kovetkezo meg nem kesz cellatol folytatja. A turtle-t a
-varatlan leallas utan nem szabad kezzel elmozditani vagy elforgatni.
-
-## Nether útépítő
-
-A főmenü `Nether utak` pontja a külön `nether_builder.lua` programot indítja.
-Két mód választható:
-
-- `Lepcso fel/le`: megadott hosszban blokkonként egy szintet emelkedik vagy
-  süllyed. Két blokk magas járatot bont, és ha nincs természetes padló, a
-  kiválasztott építőblokkból elkészíti a lépcső fokát.
-- `Vedett 1x2 alagut`: egy blokk széles, két blokk magas utat bont. Minden
-  elkészült cellánál pótolja a hiányzó padlót, a két-két oldalfalblokkot és a
-  mennyezetet. Meglévő szilárd blokkot nem cserél le, csak a levegős vagy
-  folyadékos réseket zárja le.
-
-Az építőanyag blokkazonosítója a menüben adható meg. A teljes formátum
-`<mod_neve>:<blokk_neve>`, például `minecraft:cobblestone`; vanilla blokknál a
-rövid `cobblestone` alak is elfogadott.
-
-Fenntartott slotok:
-
-- 1-es slot: üzemanyag;
-- 2–5. slot: kizárólag a beállított építőanyag;
-- 6–16. slot: kibányászott tárgyak.
-
-Ugyanazt a lepakoló- és fuel-ládát használja, mint a branch miner. Az
-építőanyagot a turtle mögötti lepakolóláda első elérhető stackjeibe kell tenni.
-Anyaghiánynál a turtle az elmentett útvonalon hazajön, lepakol, feltölti a
-2–5. slotot, a fölötte lévő fuel-ládából tankol, majd ugyanazon az útvonalon
-visszatér. Ha a láda első kivehető tárgya nem a beállított építőanyag, a program
-biztonsági hibával megáll, hogy ne építsen véletlenül értékes blokkokból.
-
-A program a `nether_builder_state.txt` fájlba menti a pozíciót, irányt,
-elkészült lépésszámot és a teljes mozgási útvonalat. A `Q` vagy `Ctrl+T`
-hazatérést kér, az `S` állapotot ír ki. Automatikus folytatáskor először
-visszafejti a félbemaradt útvonalat, kiszolgálja magát, majd a legutóbbi teljes
-lépésig visszamegy. A turtle-t váratlan leállás után nem szabad kézzel
-elmozdítani vagy elforgatni.
-
-### Lepcso fejtere
-
-A lepcso nem egyszeru vizszintes 1x2-es vagas. Minden foknal a ket blokkos
-jarat mellett az atlos fel- vagy lelepes belso felso sarkat is kibontja. Ez a
-plusz sarokcella kell ahhoz, hogy a lepcso tenylegesen jarhato legyen.
-
-### KISERLETI faklyazas a Nether epitonel
-
-Mindket Nether epito modnal bekapcsolhato az automatikus faklyazas, es
-megadhato a faklyak kozotti lepesek szama. Kikapcsolva a 2-5. slot az
-epitoanyage. Bekapcsolva a 2-es slot a faklyake, az epitoanyag pedig a 3-5.
-slotba kerul; a 6-16. slot tovabbra is a kibanyaszott targyake.
-
-A faklyas ladat a fuel-lada fole kell tenni. Ha a 2-es slot kiurul, a turtle
-a mentett utvonalon hazater, lepakol, feltankol, feltolti a faklyat es az
-epitoanyagot, majd folytatja a munkat. A kesz cellaknal a feje folotti
-jaratreszbe probal fali faklyat rogzitani. Nyilt terepen szukseg eseten egy
-oldalso tamaszblokkot is epit hozza. Felfele vezeto lepcson az elozo foknal
-faklyaz, hogy a kovetkezo felfele lepes ne usse ki a friss faklyat.
-
-Ez a lehetoseg kiserleti; eloszor rovid utvonallal ajanlott kiprobalni.
-
-## KISERLETI: automatikus faklyazas
-
-A `torch_manager.lua` kulon tesztmodul. Uj branch mining vagy teruletkitores
-beallitasakor a faklyazas opcionalisan bekapcsolhato. Branch miningnal a
-foutvonal beasasainak gyakorisaga es az oldalagi blokk-tavolsag kulon adhato
-meg. Minden oldalagat sajat tavolsagszamlalast kezd. Az agat eloszor teljesen
-kiassa, feljegyzi a kijelolt pontokat, majd visszafele rakja le a faklyakat.
-A foutvonalon is eloszor befejezi a teljes kijelolt szakaszt es az oldalagat,
-majd a vegso hazauton helyezi el a kiszamitott faklyakat. Ha egy fej folotti
-faklya elagazasi pontra esne, a kovetkezo ep oldalfalu pontig halasztja.
-
-Ket lerakasi mod valaszthato:
-
-- `Oldalt`: elfordul, kiut egy oldalso blokkot, majd a helyere teszi a faklyat.
-- `Fej folott`: a kiserleti `placeUp` muvelettel a turtle feletti szabad
-  mezobe probalja rakni. Eloszor a jobb, majd a bal oldalfal fele fordul, hogy
-  ne a kovetkezo kibontando blokkhoz tapadjon, utana visszaall az eredeti
-  iranyba. A jatek donti el, talal-e megfelelo tapadasi feluletet.
-
-Teruletkitoresnel az oldalso mod csak a kijelolt terulet kulso peremen rak.
-A fej folotti mod a megadott cellatavolsagot hasznalja, ezert a kitermelt
-terfogaton belul is maradhat faklya.
-
-Ha a 2-es slot kiurul, a turtle hazater. A fuel lada folotti faklyas ladabol
-legfeljebb egy stacket vesz fel, majd visszamegy a mentett munkapontra. Ez a
-funkcio kiserleti: eloszor rovid alaguttal vagy kis terulettel probald ki,
-mert egyes modolt faklyak elhelyezesi szabalyai elterhetnek.
-
-## Inditasi naplo
-
-Az `action_log.lua` modul az `action_log.txt` fajlba minden programinditasnal
-egyetlen sort fuz. A sor az idopontot, az elinditott banyaszati modot es az
-indulaskori fuel-szintet tartalmazza. Mozgast, fordulast, koordinatat vagy mas
-reszletes esemenyt nem naploz.
-
-## Folytatasi mod
-
-A `Meglevo alagutban eloremegyek` modban add meg, hany blokk hosszu a mar
-letezo fotengely. A turtle ezen a tavon eloremegy, majd onnan kezdi az uj
-szakaszt. Az oldalagatok kiosztasanal ezt a tavolsagot is figyelembe veszi,
-ezert az agak ritmusa folytatodik.
-
-Fontos: a program nem hasznal GPS-t. Futas kozben ne mozgasd kezzel a turtle-t,
-es ujrainditasnal mindig az eredeti kezdohelyre, az eredeti iranyban tedd le.
-
-## Downloader: Pastebin vagy GitHub
-
-A `downloader.lua` elejen a `DOWNLOAD_SOURCE` erteke valasztja ki a forrast:
+A `downloader.lua` elején választható a forrás:
 
 ```lua
 local DOWNLOAD_SOURCE = "github" -- vagy: "pastebin"
 ```
 
-A GitHub-beallitasok ugyanitt talalhatok. Publikus reponal a `token` maradjon
-ures. Privat reponal egy `Contents: Read-only` jogosultsagu fine-grained token
-adhato meg:
-
-```lua
-local GITHUB = {
-    owner = "Forcas76",
-    repo = "CCTurtle",
-    branch = "main",
-    token = "IDE_KERUL_A_TOKEN",
-    tokenFile = ".github_token",
-}
-```
-
-Biztonsagosabb megoldas, ha a token nem a programkodba, hanem a turtle
-`.github_token` nevu fajljaba kerul egyetlen sorban. A fajlt a downloader nem
-frissiti es nem irja felul. Igy a token nem tunik el a downloader sajat
-frissitesekor, es veletlenul sem kerul bele a GitHub repoba. Ha ez a fajl
-letezik, elsobbseget kap a kodban megadott `token` ertekevel szemben.
-
-A fajlok forras- es celneve a `links` tablaban allithato. Jelenleg a repo
-`branch_miner.lua` fajlja a turtle `main` programjakent telepul.
+Publikus GitHub-repónál a token maradjon üres. Privát repónál használható
+`Contents: Read-only` jogosultságú fine-grained token, lehetőleg a turtle
+`.github_token` fájljának egyetlen sorában. Ez elsőbbséget kap a kódba írt
+tokenhez képest.
 
 ```text
-downloader                 # minden komponens
-downloader main            # csak a banyaszprogram
-downloader excavator       # csak a teruletkitore program
-downloader torch           # csak a kiserleti faklyakezelo modul
-downloader actionlog       # csak az inditasi naplo modul
-downloader inventory       # csak a kiserleti inventory modul
-downloader ore             # csak a kiserleti ercdetektalo modul
-downloader nether          # csak a Nether utepito program
+downloader                 # minden GitHub-komponens
+downloader main            # a teljes központi rendszer
+downloader branch          # branch miner és függőségei
+downloader excavator       # területásó és függőségei
+downloader nether          # Nether-építő és függőségei
+downloader coordinate      # koordinátás navigáció és függőségei
 downloader downloader      # csak a downloader
 ```
 
-A letoltes eloszor ideiglenes fajlba tortenik. A mar mukodo program csak
-sikeres letoltes utan cserelodik le.
+Az új modulokhoz jelenleg nincs Pastebin ID, ezért a teljes moduláris rendszer
+telepítéséhez a GitHub-forrás szükséges. A letöltés először ideiglenes fájlba
+történik, és a működő példány csak sikeres letöltés után cserélődik le.
+
+## Tesztelés
+
+A `tests/navigation_test.lua` mock turtle-lel ellenőrzi a relatív mozgást, az
+egzakt hazatérést, a félbemaradt tranzakció helyreállítását, az akadály utáni
+újrapróbálást és az észak=`-Z` világkoordináta-konvenciót.

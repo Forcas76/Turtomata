@@ -23,9 +23,14 @@ local GITHUB = {
 -- githubPath: a fajl helye a GitHub repoban.
 local links = {
     main = {
+        pastebinID = "",
+        githubPath = "main.lua",
+        fileName = "main",
+    },
+    branch = {
         pastebinID = "YAdymjRk",
         githubPath = "branch_miner.lua",
-        fileName = "main",
+        fileName = "branch_miner.lua",
     },
     downloader = {
         pastebinID = "hnT1J5cK",
@@ -62,10 +67,33 @@ local links = {
         githubPath = "nether_builder.lua",
         fileName = "nether_builder.lua",
     },
+    ui = { pastebinID = "", githubPath = "ui.lua", fileName = "ui.lua" },
+    settings = { pastebinID = "", githubPath = "settings.lua", fileName = "settings.lua" },
+    state = { pastebinID = "", githubPath = "state_store.lua", fileName = "state_store.lua" },
+    navigation = { pastebinID = "", githubPath = "navigation.lua", fileName = "navigation.lua" },
+    coordinate = { pastebinID = "", githubPath = "coordinate_navigation.lua", fileName = "coordinate_navigation.lua" },
+    coordinatetask = { pastebinID = "", githubPath = "coordinate_task.lua", fileName = "coordinate_task.lua" },
+    situations = { pastebinID = "", githubPath = "situation_manager.lua", fileName = "situation_manager.lua" },
+    telemetry = { pastebinID = "", githubPath = "telemetry.lua", fileName = "telemetry.lua" },
+    request = { pastebinID = "", githubPath = "job_request.lua", fileName = "job_request.lua" },
 }
 
 local downloadOrder = {
-    "main", "excavator", "torch", "actionlog", "inventory", "ore", "nether", "downloader",
+    "state", "navigation", "coordinate", "situations", "telemetry", "ui", "settings", "request",
+    "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
+    "coordinatetask", "main", "downloader",
+}
+
+local componentGroups = {
+    main = {
+        "state", "navigation", "coordinate", "situations", "telemetry", "ui", "settings",
+        "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
+        "nether", "coordinatetask", "main",
+    },
+    branch = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
+    excavator = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
+    nether = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "nether" },
+    coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "ui", "request", "coordinatetask" },
 }
 
 local function delTerm()
@@ -225,11 +253,22 @@ local function downloadAll()
     return allSuccessful
 end
 
+local function downloadGroup(names)
+    local allSuccessful = true
+    for _, name in ipairs(names) do
+        if not downloadThat(name) then allSuccessful = false end
+        if not DEBUG then sleep(1) end
+    end
+    return allSuccessful
+end
+
 local args = { ... }
 local fileMap = {
     all = "all",
     m = "main",
     main = "main",
+    b = "branch",
+    branch = "branch",
     d = "downloader",
     downloader = "downloader",
     e = "excavator",
@@ -248,6 +287,15 @@ local fileMap = {
     n = "nether",
     nether = "nether",
     builder = "nether",
+    nav = "navigation",
+    navigation = "navigation",
+    coord = "coordinate",
+    coordinate = "coordinate",
+    ui = "ui",
+    settings = "settings",
+    state = "state",
+    telemetry = "telemetry",
+    situations = "situations",
 }
 
 delTerm()
@@ -257,10 +305,13 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or "all"
 if #args > 1 or not requested then
-    printError("Hasznalat: downloader [all|main|excavator|torch|actionlog|inventory|ore|nether|downloader]")
+    printError("Hasznalat: downloader [all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]")
 elseif requested == "all" then
     if downloadAll() then print("Minden komponens frissitve.")
     else printError("Legalabb egy komponens frissitese sikertelen.") end
+elseif componentGroups[requested] then
+    if downloadGroup(componentGroups[requested]) then print("A komponenscsomag frissitve.")
+    else printError("A komponenscsomag frissitese nem teljes.") end
 else
     downloadThat(requested)
 end

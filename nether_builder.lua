@@ -2,6 +2,15 @@
 -- 1-es slot: fuel. Faklya nelkul 2-5., faklyaval 3-5. slot: epitoanyag.
 -- KISERLETI faklyazasnal a 2-es slot a faklyake. A 6-16. slot banyaszslot.
 
+local programArgs = { ... }
+local jobRequest = require("job_request")
+local stateStore = require("state_store")
+local Navigation = require("navigation")
+local UI = require("ui")
+local Telemetry = require("telemetry")
+local Situations = require("situation_manager")
+local centralRequest, centralRequestError = jobRequest.consume("nether_builder", programArgs)
+
 local config = {}
 local position = { x = 0, y = 0, z = 0 }
 local heading = 0
@@ -36,9 +45,19 @@ local runtime = {
     serviceLevel = 0,
     blockDrops = {},
 }
+local sharedNav = nil
+local sharedTelemetry = nil
+local telemetryState = nil
+local sharedSituations = nil
 
 local function saveState()
     if not persistenceEnabled then return end
+    if sharedNav then
+        sharedNav.state.pose.x = position.x
+        sharedNav.state.pose.y = position.y
+        sharedNav.state.pose.z = position.z
+        sharedNav.state.pose.heading = heading
+    end
     local payload = {
         version = 1,
         active = runtime.active,
@@ -48,16 +67,13 @@ local function saveState()
         pending = runtime.pending,
         serviceLevel = runtime.serviceLevel,
         blockDrops = runtime.blockDrops,
+        telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         config = config,
     }
-    local file = fs.open(STATE_TEMP_FILE, "w")
-    if not file then error("Nem irhato a Nether allapotfajl.", 0) end
-    file.write(textutils.serializeJSON(payload))
-    file.close()
-    if fs.exists(STATE_FILE) then fs.delete(STATE_FILE) end
-    fs.move(STATE_TEMP_FILE, STATE_FILE)
+    local ok, reason = stateStore.write(STATE_FILE, payload)
+    if not ok then error(reason or "Nem irhato a Nether allapotfajl.", 0) end
 end
 
 local function setActivity(value)
@@ -66,13 +82,8 @@ local function setActivity(value)
 end
 
 local function loadState()
-    if not fs.exists(STATE_FILE) then return nil end
-    local file = fs.open(STATE_FILE, "r")
-    if not file then return nil end
-    local content = file.readAll()
-    file.close()
-    local ok, saved = pcall(textutils.unserializeJSON, content)
-    if not ok or type(saved) ~= "table" or saved.version ~= 1
+    local saved = stateStore.read(STATE_FILE)
+    if type(saved) ~= "table" or saved.version ~= 1
         or not saved.active or type(saved.config) ~= "table"
         or type(saved.position) ~= "table" then return nil end
     return saved
@@ -135,6 +146,38 @@ end
 
 local function configure()
     local saved = loadState()
+    if centralRequestError then error(centralRequestError, 0) end
+    if centralRequest then
+        if centralRequest.action == "resume" then
+            if not saved then error("Nincs hasznalhato Nether mentes.", 0) end
+            config = saved.config
+            config.autoResume = true
+            position.x = saved.position.x or 0
+            position.y = saved.position.y or 0
+            position.z = saved.position.z or 0
+            heading = saved.heading or 0
+            runtime.active = true
+            runtime.activity = saved.activity or "ismeretlen"
+            runtime.completed = saved.completed or 0
+            runtime.path = type(saved.path) == "table" and saved.path or {}
+            runtime.pending = saved.pending
+            runtime.serviceLevel = saved.serviceLevel or 0
+            runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+            telemetryState = saved.telemetry
+        else
+            config = centralRequest.config or {}
+            config.autoResume = false
+        end
+        config.fuelReserve = config.fuelReserve or 8
+        config.torchEnabled = config.torchEnabled == true
+        config.torchInterval = config.torchEnabled and (config.torchInterval or 8) or 0
+        if config.torchEnabled and not torchManager then error("Hianyzik a torch_manager.lua.", 0) end
+        buildFirstSlot = config.torchEnabled and 3 or 2
+        config.builderBlock = normalizeBlockName(config.builderBlock)
+        if not config.mode or not config.length or not config.builderBlock then error("Hianyos Nether konfiguracio.", 0) end
+        clearScreen()
+        return
+    end
     clearScreen()
     print("=== NETHER UTEPITO ===\n")
     local mode = promptChoice("Feladat:", {
@@ -159,6 +202,7 @@ local function configure()
         runtime.pending = saved.pending
         runtime.serviceLevel = saved.serviceLevel or 0
         runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+        telemetryState = saved.telemetry
     else
         config.autoResume = false
         config.mode = mode
@@ -236,15 +280,13 @@ local function refuelFromSlotOne(required)
 end
 
 local function turnLeft()
-    turtle.turnLeft()
-    heading = (heading + 3) % 4
-    saveState()
+    local turned = assert(sharedNav, "A navigacios modul nincs inicializalva."):turnLeft()
+    if not turned.ok then error(turned.reason, 0) end
 end
 
 local function turnRight()
-    turtle.turnRight()
-    heading = (heading + 1) % 4
-    saveState()
+    local turned = assert(sharedNav, "A navigacios modul nincs inicializalva."):turnRight()
+    if not turned.ok then error(turned.reason, 0) end
 end
 
 local function turnAround()
@@ -253,6 +295,11 @@ local function turnAround()
 end
 
 local function face(target)
+    if sharedNav then
+        local turned = sharedNav:face(target)
+        if not turned.ok then error(turned.reason, 0) end
+        return
+    end
     local difference = (target - heading) % 4
     if difference == 1 then turnRight()
     elseif difference == 2 then turnAround()
@@ -292,67 +339,18 @@ local function pathEndpoint(path)
 end
 
 local function normalizePending()
-    if type(runtime.pending) ~= "table" then return true end
-    local before = pathEndpoint(runtime.path)
-    local move = runtime.pending.move
-    if runtime.pending.operation == "push" then
-        local after = positionAfter(before, move)
-        if samePosition(position, after) then runtime.path[#runtime.path + 1] = copyMove(move)
-        elseif not samePosition(position, before) then return false end
-    elseif runtime.pending.operation == "pop" then
-        local parent = {}
-        for index = 1, math.max(0, #runtime.path - 1) do parent[index] = copyMove(runtime.path[index]) end
-        if samePosition(position, pathEndpoint(parent)) then table.remove(runtime.path)
-        elseif not samePosition(position, before) then return false end
-    end
-    runtime.pending = nil
-    saveState()
-    return true
-end
-
-local function rawMove(move)
-    if not refuelFromSlotOne(1) then return false, "Nincs fuel a mozgasra." end
-    if move.kind == "h" then
-        face(move.heading)
-        if not turtle.forward() then return false, "Akadaly van az elmentett utvonalon." end
-        local direction = headings[heading]
-        position.x = position.x + direction.x
-        position.z = position.z + direction.z
-    elseif move.kind == "u" then
-        if not turtle.up() then return false, "Nem tudok felfele lepni." end
-        position.y = position.y + 1
-    elseif move.kind == "d" then
-        if not turtle.down() then return false, "Nem tudok lefele lepni." end
-        position.y = position.y - 1
-    else
-        return false, "Ismeretlen utvonallepes."
-    end
-    saveState()
-    return true
+    local recovered = assert(sharedNav, "A navigacios modul nincs inicializalva."):recoverPending()
+    return recovered.ok
 end
 
 local function pushMove(move)
-    runtime.pending = { operation = "push", move = copyMove(move) }
-    saveState()
-    local ok, reason = rawMove(move)
-    if not ok then runtime.pending = nil saveState() return false, reason end
-    runtime.path[#runtime.path + 1] = copyMove(move)
-    runtime.pending = nil
-    saveState()
-    return true
+    local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):push(move)
+    return moved.ok, moved.reason
 end
 
 local function popMove()
-    local move = runtime.path[#runtime.path]
-    if not move then return true end
-    runtime.pending = { operation = "pop", move = copyMove(move) }
-    saveState()
-    local ok, reason = rawMove(inverseMove(move))
-    if not ok then runtime.pending = nil saveState() return false, reason end
-    table.remove(runtime.path)
-    runtime.pending = nil
-    saveState()
-    return true
+    local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):pop()
+    return moved.ok, moved.reason
 end
 
 local function clonePath(path)
@@ -547,11 +545,11 @@ local function refuelFromUpperChest(requiredFuel, refillTorch)
         turnAround()
         return false, "Nincs eleg kezdo fuel a kiszolgalo ladak eleresehez."
     end
-    if not turtle.up() then
+    local moved = sharedNav:step({ kind = "u" })
+    if not moved.ok then
         turnAround()
         return false, "A turtle feletti hely nem szabad."
     end
-    position.y = position.y + 1
     runtime.serviceLevel = 1
     saveState()
 
@@ -579,26 +577,26 @@ local function refuelFromUpperChest(requiredFuel, refillTorch)
     end
 
     if not reason and config.torchEnabled and refillTorch ~= false then
-        if not turtle.up() then
+        moved = sharedNav:step({ kind = "u" })
+        if not moved.ok then
             reason = "Nem tudok felmenni a faklyas ladahoz."
         else
-            position.y = position.y + 1
             runtime.serviceLevel = 2
             saveState()
             local torchOk, torchReason = torchManager.refillFromChest()
             if not torchOk then reason = torchReason end
-            if not turtle.down() then
+            moved = sharedNav:step({ kind = "d" })
+            if not moved.ok then
                 return false, "Nem tudok lejonni a faklyas ladatol."
             end
-            position.y = position.y - 1
             runtime.serviceLevel = 1
             saveState()
         end
     end
 
     if fuelLevel() < 1 then return false, reason or "Nincs fuel a leereszkedeshez." end
-    if not turtle.down() then return false, "Nem tudok lejonni a fuel ladatol." end
-    position.y = position.y - 1
+    moved = sharedNav:step({ kind = "d" })
+    if not moved.ok then return false, "Nem tudok lejonni a fuel ladatol." end
     runtime.serviceLevel = 0
     saveState()
     turnAround()
@@ -649,17 +647,24 @@ local function ensureWorkFuel(extraMoves)
 end
 
 local function status(prefix)
-    print(string.format(
-        "%s | %s | %d/%d",
-        prefix, runtime.activity, runtime.completed, config.length or 0
-    ))
-    print(string.format(
-        "Poz:%d,%d,%d Fuel:%s Ut:%d Epit:%d",
-        position.x, position.y, position.z, fuelText(), #runtime.path, builderCount()
-    ))
-    if config.torchEnabled then
-        print("Faklya: " .. turtle.getItemCount(2))
-    end
+    local remaining = math.max(0, (config.length or 0) - runtime.completed)
+    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs({
+        move = remaining * (config.mode == 1 and 2 or 3) + #runtime.path,
+        dig = remaining * (config.mode == 1 and 3 or 2),
+    }) or 0
+    UI.renderDashboard({
+        task = config.mode == 1 and "Nether lepcso" or "Nether vedett 1x2",
+        status = prefix .. " / " .. tostring(runtime.activity),
+        progress = string.format("%d/%d", runtime.completed, config.length or 0),
+        position = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading),
+        fuel = fuelText() .. "  ut=" .. #runtime.path,
+        inventory = "banyaszslot 6-16",
+        supplies = "epito=" .. builderCount()
+            .. (config.torchEnabled and (" faklya=" .. turtle.getItemCount(2)) or ""),
+        elapsed = sharedTelemetry and Telemetry.formatDuration(sharedTelemetry:elapsedMs()) or "00:00:00",
+        remaining = "kb. " .. Telemetry.formatDuration(remainingMs),
+        events = sharedSituations and sharedSituations:lastWarnings(2) or {},
+    })
 end
 
 local function managedDig(direction)
@@ -673,14 +678,30 @@ local function managedDig(direction)
         local hasBlock, blockData = inspect()
         if not hasBlock then return true end
         if stopRequested then return false, "Felhasznaloi leallitas." end
-        if not selectDropSlot(blockData) then
+        if sharedSituations and sharedSituations:fluidKind(direction) then
+            local cleared = sharedSituations:clearFluidSource(direction, function()
+                local ready, reason = ensureBuilder(1)
+                if not ready then return false, reason end
+                if selectBuilder() then return true end
+                return false, "Nem talalom a tomitoblokkot."
+            end, function()
+                return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            end)
+            if cleared.kind ~= "handled" then
+                return false, cleared.reason or "A folyadek nem zarhato le."
+            end
+            sleep(0.15)
+            attempts = attempts + 1
+            if attempts > 20 then return false, "Tul sok folyadek aramlik vissza az utba." end
+        elseif not selectDropSlot(blockData) then
             local serviced, reason = serviceAndResume(
                 "A kovetkezo drop mar nem fer el.", config.mode == 2 and 6 or 1
             )
             if not serviced then return false, reason end
         else
             local before = inventoryTotals()
-            if not dig() then return false, "A blokk nem banyaszhato." end
+            local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            if not dug then return false, "A blokk nem banyaszhato." end
             learnDrop(blockData, before)
             sleep(0.15)
             attempts = attempts + 1
@@ -713,7 +734,7 @@ local function placeIfAir(direction, targetHeading)
         return false, "Nem talalom az epitoanyagot a "
             .. buildFirstSlot .. "-5. slotban."
     end
-    local placed = place()
+    local placed = sharedTelemetry and sharedTelemetry:measure("place", place) or place()
     if direction == "forward" then face(originalHeading) end
     turtle.select(MINE_FIRST)
     if not placed then return false, "Nem sikerult epitoanyagot lerakni." end
@@ -734,7 +755,10 @@ local function placeTorchAboveWithSupport()
 
     -- Nyilt terepen a fali faklyanak nem feltetlenul van mihez tapadnia.
     -- Belepes a faklya cellajaba, oldalso tamasz epites, majd ujraprobalas.
-    if turtle.detectUp() then return false, reason end
+    if turtle.detectUp() then
+        sharedSituations:warn("Faklya kihagyva: " .. tostring(reason))
+        return true
+    end
     local moved, moveReason = pushMove({ kind = "u" })
     if not moved then return false, moveReason end
     local supported, supportReason = placeIfAir("forward", (heading + 1) % 4)
@@ -743,7 +767,10 @@ local function placeTorchAboveWithSupport()
     if not supported then return false, supportReason end
 
     placed, reason = torchManager.placeAbove(function() return heading end, face)
-    if not placed then return false, reason end
+    if not placed then
+        sharedSituations:warn("Faklya kihagyva: " .. tostring(reason))
+        return true
+    end
     return true
 end
 
@@ -868,10 +895,11 @@ local function recoverServicePosition()
         return false, "A fuel-lada pozicioja nem egyezik a mentessel."
     end
     while runtime.serviceLevel > 0 do
-        if not refuelFromSlotOne(1) or not turtle.down() then
+        if not refuelFromSlotOne(1) then
             return false, "Nem tudok lejonni a fuel ladatol."
         end
-        position.y = position.y - 1
+        local moved = sharedNav:step({ kind = "d" })
+        if not moved.ok then return false, "Nem tudok lejonni a fuel ladatol." end
         runtime.serviceLevel = runtime.serviceLevel - 1
         saveState()
     end
@@ -881,6 +909,33 @@ end
 
 local function runBuilder()
     persistenceEnabled = true
+    sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
+    sharedSituations = Situations.new(config.safety or {})
+    sharedNav = Navigation.new({
+        state = {
+            pose = { x = position.x, y = position.y, z = position.z, heading = heading },
+            path = runtime.path,
+            pending = runtime.pending,
+            anchors = {
+                home = { index = 0, pose = { x = 0, y = 0, z = 0, heading = 0 } },
+            },
+        },
+        ensureFuel = function(required)
+            if refuelFromSlotOne(required) then return true end
+            return false, "Nincs fuel a navigacios lepeshez."
+        end,
+        telemetry = sharedTelemetry,
+        retryLimit = config.safety and config.safety.retryLimit,
+        checkpoint = function(navState)
+            position.x = navState.pose.x
+            position.y = navState.pose.y
+            position.z = navState.pose.z
+            heading = navState.pose.heading
+            runtime.path = navState.path
+            runtime.pending = navState.pending
+            saveState()
+        end,
+    })
     if actionLogger then
         local modeName = config.mode == 1
             and (config.stairDirection == "up" and "Nether lepcso fel" or "Nether lepcso le")

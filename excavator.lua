@@ -1,6 +1,15 @@
 -- CC:Tweaked teglatest-kitorelo program.
 -- A turtle a terulet bal also elso sarka elott, a melyseg iranyaba nezzen.
 
+local programArgs = { ... }
+local jobRequest = require("job_request")
+local stateStore = require("state_store")
+local Navigation = require("navigation")
+local UI = require("ui")
+local Telemetry = require("telemetry")
+local Situations = require("situation_manager")
+local centralRequest, centralRequestError = jobRequest.consume("excavator", programArgs)
+
 local config = {}
 local position = { x = 0, y = 0, z = 0 }
 local heading = 0
@@ -23,6 +32,11 @@ local runtime = {
     baseCompleted = 0,
     torchSteps = 0,
 }
+local sharedNav = nil
+local navigationState = nil
+local sharedTelemetry = nil
+local telemetryState = nil
+local sharedSituations = nil
 
 local headings = {
     [0] = { x = 0, z = 1 },
@@ -33,6 +47,12 @@ local headings = {
 
 local function saveState()
     if not persistenceEnabled then return end
+    if sharedNav then
+        sharedNav.state.pose.x = position.x
+        sharedNav.state.pose.y = position.y
+        sharedNav.state.pose.z = position.z
+        sharedNav.state.pose.heading = heading
+    end
     local payload = {
         version = 1,
         active = runtime.active,
@@ -42,14 +62,12 @@ local function saveState()
         visited = visited,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
+        navigation = sharedNav and sharedNav:snapshot() or navigationState,
+        telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         config = config,
     }
-    local file = fs.open(STATE_TEMP_FILE, "w")
-    if not file then error("Nem irhato az allapotfajl.", 0) end
-    file.write(textutils.serializeJSON(payload))
-    file.close()
-    if fs.exists(STATE_FILE) then fs.delete(STATE_FILE) end
-    fs.move(STATE_TEMP_FILE, STATE_FILE)
+    local ok, reason = stateStore.write(STATE_FILE, payload)
+    if not ok then error(reason or "Nem irhato az allapotfajl.", 0) end
 end
 
 local function setActivity(activity)
@@ -58,13 +76,8 @@ local function setActivity(activity)
 end
 
 local function loadState()
-    if not fs.exists(STATE_FILE) then return nil end
-    local file = fs.open(STATE_FILE, "r")
-    if not file then return nil end
-    local content = file.readAll()
-    file.close()
-    local ok, saved = pcall(textutils.unserializeJSON, content)
-    if not ok or type(saved) ~= "table" or saved.version ~= 1 then return nil end
+    local saved = stateStore.read(STATE_FILE)
+    if type(saved) ~= "table" or saved.version ~= 1 then return nil end
     if not saved.active or type(saved.config) ~= "table"
         or type(saved.position) ~= "table" then return nil end
     return saved
@@ -111,6 +124,39 @@ end
 
 local function configure()
     local saved = loadState()
+    if centralRequestError then error(centralRequestError, 0) end
+    if centralRequest then
+        if centralRequest.action == "resume" then
+            if not saved then error("Nincs hasznalhato teruletaso mentes.", 0) end
+            config = saved.config
+            config.autoResume = true
+            position.x = saved.position.x or 0
+            position.y = saved.position.y or 0
+            position.z = saved.position.z or 0
+            heading = saved.heading or 0
+            visited = saved.visited or 0
+            runtime.active = true
+            runtime.activity = saved.activity or "ismeretlen"
+            runtime.baseCompleted = saved.baseCompleted or 0
+            runtime.torchSteps = saved.torchSteps or 0
+            navigationState = saved.navigation
+            telemetryState = saved.telemetry
+        else
+            config = centralRequest.config or {}
+            config.autoResume = false
+        end
+        config.fuelReserve = config.fuelReserve or 5
+        config.experimentalInventory = config.experimentalInventory == true
+        config.torchEnabled = config.torchEnabled == true
+        config.torchInterval = config.torchInterval or 0
+        config.torchPlacementMode = config.torchPlacementMode or 1
+        if not config.width or not config.depth or not config.height then error("Hianyos teruletaso konfiguracio.", 0) end
+        if config.experimentalInventory and not inventoryManager then error("Hianyzik az inventory_manager.lua modul.", 0) end
+        if config.torchEnabled and not torchManager then error("Hianyzik a torch_manager.lua modul.", 0) end
+        clearScreen()
+        banner()
+        return
+    end
     clearScreen()
     banner()
     print("")
@@ -135,6 +181,8 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.baseCompleted = saved.baseCompleted or 0
         runtime.torchSteps = saved.torchSteps or 0
+        navigationState = saved.navigation
+        telemetryState = saved.telemetry
     else
         config.autoResume = false
         print("Terulet: szeles=jobbra, mely=elore, magas=felfele")
@@ -253,34 +301,43 @@ end
 local function status(prefix)
     local total = (config.width or 0) * (config.depth or 0) * (config.height or 0)
     local percent = total > 0 and math.floor((visited / total) * 100) or 0
-    print(string.format(
-        "%s | %s | %d/%d (%d%%)",
-        prefix, runtime.activity, visited, total, percent
-    ))
-    print(string.format(
-        "Poz:%d,%d,%d Fuel:%s Haza:%d Inv:%d/16",
-        position.x, position.y, position.z, fuelText(), distanceHome(), inventoryUsage()
-    ))
+    local remaining = math.max(0, total - visited)
+    local events = {}
     if config.experimentalInventory and inventoryManager then
         local inventoryStatus = inventoryManager.status(config)
-        print(string.format(
-            "KIS-INV:%d/%d Ures:%d",
-            inventoryStatus.used, inventoryStatus.total,
-            inventoryStatus.empty
-        ))
+        events[#events + 1] = string.format("KIS-INV %d/%d, ures %d",
+            inventoryStatus.used, inventoryStatus.total, inventoryStatus.empty)
     end
+    if sharedSituations then
+        for _, warning in ipairs(sharedSituations:lastWarnings(2)) do
+            events[#events + 1] = warning
+        end
+    end
+    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs({
+        move = remaining + distanceHome(), dig = remaining,
+    }) or 0
+    UI.renderDashboard({
+        task = "Terulet asas KISERLETI",
+        status = prefix .. " / " .. tostring(runtime.activity),
+        progress = string.format("%d/%d (%d%%)", visited, total, percent),
+        position = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading),
+        fuel = fuelText() .. "  haza=" .. distanceHome(),
+        inventory = inventoryUsage() .. "/16 slot",
+        supplies = config.torchEnabled and ("faklya=" .. turtle.getItemCount(2)) or "faklya=ki",
+        elapsed = sharedTelemetry and Telemetry.formatDuration(sharedTelemetry:elapsedMs()) or "00:00:00",
+        remaining = "kb. " .. Telemetry.formatDuration(remainingMs),
+        events = events,
+    })
 end
 
 local function turnLeft()
-    turtle.turnLeft()
-    heading = (heading + 3) % 4
-    saveState()
+    local turned = assert(sharedNav, "A navigacios modul nincs inicializalva."):turnLeft()
+    if not turned.ok then error(turned.reason, 0) end
 end
 
 local function turnRight()
-    turtle.turnRight()
-    heading = (heading + 1) % 4
-    saveState()
+    local turned = assert(sharedNav, "A navigacios modul nincs inicializalva."):turnRight()
+    if not turned.ok then error(turned.reason, 0) end
 end
 
 local function turnAround()
@@ -289,6 +346,11 @@ local function turnAround()
 end
 
 local function face(target)
+    if sharedNav then
+        local turned = sharedNav:face(target)
+        if not turned.ok then error(turned.reason, 0) end
+        return
+    end
     local difference = (target - heading) % 4
     if difference == 1 then turnRight()
     elseif difference == 2 then turnAround()
@@ -296,6 +358,19 @@ local function face(target)
 end
 
 local serviceAndResume
+
+local function selectSealBlock()
+    local target = config.safety and config.safety.sealBlock or "minecraft:cobblestone"
+    local firstMiningSlot = config.torchEnabled and 3 or 2
+    for slot = firstMiningSlot, 16 do
+        local detail = turtle.getItemDetail(slot)
+        if detail and detail.name == target and turtle.getItemCount(slot) > 0 then
+            turtle.select(slot)
+            return true
+        end
+    end
+    return false, "Nincs " .. target .. " tomitoblokk az inventory-ban."
+end
 
 local function managedDig(direction)
     local inspect, dig
@@ -309,8 +384,16 @@ local function managedDig(direction)
 
     local hasBlock, blockData = inspect()
     if not hasBlock then return true end
+    if sharedSituations and sharedSituations:fluidKind(direction) then
+        local cleared = sharedSituations:clearFluidSource(direction, selectSealBlock, function()
+            return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+        end)
+        if cleared.kind == "handled" then return true end
+        return false, cleared.reason or "A folyadek nem zarhato le."
+    end
     if not config.experimentalInventory or not inventoryManager or returningHome then
-        if dig() then return true end
+        local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+        if dug then return true end
         return false, "A blokk nem ashato."
     end
 
@@ -324,7 +407,8 @@ local function managedDig(direction)
             hasBlock, blockData = inspect()
             if not hasBlock then return true end
         else
-            if not dig() then return false, "A blokk nem ashato." end
+            local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            if not dug then return false, "A blokk nem ashato." end
             local recorded, recordReason = inventoryManager.afterDig(
                 config, blockData, beforeOrReason
             )
@@ -360,17 +444,18 @@ local function forward()
     if not refuelSlotOne(requiredForMove(nextX, position.y, nextZ)) then
         return false, "fuel"
     end
-    local attempts = 0
-    while not turtle.forward() do
-        local dug, reason = digForward()
-        if not dug then
-            if turtle.attack() then sleep(0.2) else return false, reason end
-        end
-        attempts = attempts + 1
-        if attempts > 30 then return false, "Nem tudok elore menni." end
-    end
-    position.x, position.z = nextX, nextZ
-    saveState()
+    local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
+        { kind = "h", heading = heading }, {
+            onBlocked = function(_, moveResult)
+                local dug, reason = digForward()
+                if dug then
+                    if turtle.attack() then sleep(0.2) end
+                    return { action = "retry" }
+                end
+                return { result = { ok = false, code = "blocked", reason = reason or moveResult.reason } }
+            end,
+        })
+    if not moved.ok then return false, moved.reason or moved.code end
     return true
 end
 
@@ -379,24 +464,22 @@ local function vertical(upward)
     if not refuelSlotOne(requiredForMove(position.x, nextY, position.z)) then
         return false, "fuel"
     end
-    local move = upward and turtle.up or turtle.down
-    local detect = upward and turtle.detectUp or turtle.detectDown
-    local attack = upward and turtle.attackUp or turtle.attackDown
-    local attempts = 0
-    while not move() do
-        if detect() then
-            local dug, digReason = managedDig(upward and "up" or "down")
-            if not dug then return false, digReason or "A fuggoleges blokk nem ashato." end
-        elseif attack() then
-            sleep(0.2)
-        else
-            return false, "Nem tudok fuggolegesen mozogni."
-        end
-        attempts = attempts + 1
-        if attempts > 30 then return false, "Tul sok fuggoleges kiserlet." end
-    end
-    position.y = nextY
-    saveState()
+    local direction = upward and "up" or "down"
+    local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
+        { kind = upward and "u" or "d" }, {
+            onBlocked = function(_, moveResult)
+                local detect = upward and turtle.detectUp or turtle.detectDown
+                local attack = upward and turtle.attackUp or turtle.attackDown
+                if detect() then
+                    local dug, reason = managedDig(direction)
+                    if dug then return { action = "retry" } end
+                    return { result = { ok = false, code = "blocked", reason = reason } }
+                end
+                if attack() then return { action = "retry" } end
+                return { result = moveResult }
+            end,
+        })
+    if not moved.ok then return false, moved.reason or moved.code end
     return true
 end
 
@@ -470,37 +553,30 @@ local function fuelFromUpperChest(requiredAfterService)
         turnAround()
         return false, "Nincs eleg kezdo fuel a kiszolgalasi ladakhoz."
     end
-    if not turtle.up() then
+    local moved = sharedNav:step({ kind = "u" })
+    if not moved.ok then
         turnAround()
         return false, "A turtle feletti hely nem szabad."
     end
-    position.y = position.y + 1
-    saveState()
     local requiredAtTop = requiredAfterService + (config.torchEnabled and 3 or 1)
     turtle.select(1)
     if turtle.getItemCount(1) > 0 then
         if turtle.refuel(0) then turtle.refuel()
         else
-            turtle.down()
-            position.y = position.y - 1
-            saveState()
+            sharedNav:step({ kind = "d" })
             turnAround()
             return false, "Az 1-es slot nem egetheto."
         end
     end
     while fuelLevel() < requiredAtTop do
         if not turtle.suck(64) then
-            turtle.down()
-            position.y = position.y - 1
-            saveState()
+            sharedNav:step({ kind = "d" })
             turnAround()
             return false, "Az uzemanyaglada ures."
         end
         if not turtle.refuel(0) then
             turtle.drop()
-            turtle.down()
-            position.y = position.y - 1
-            saveState()
+            sharedNav:step({ kind = "d" })
             turnAround()
             return false, "Nem egetheto targy van a fuel ladaban."
         end
@@ -508,30 +584,23 @@ local function fuelFromUpperChest(requiredAfterService)
     end
 
     if config.torchEnabled then
-        if not turtle.up() then
-            turtle.down()
-            position.y = position.y - 1
-            saveState()
+        moved = sharedNav:step({ kind = "u" })
+        if not moved.ok then
+            sharedNav:step({ kind = "d" })
             turnAround()
             return false, "Nem tudok felmenni a faklyas ladahoz."
         end
-        position.y = position.y + 1
-        saveState()
         local torchOk, torchReason = torchManager.refillFromChest()
-        if not turtle.down() then return false, "Nem tudok lejonni a faklyas ladatol." end
-        position.y = position.y - 1
-        saveState()
+        moved = sharedNav:step({ kind = "d" })
+        if not moved.ok then return false, "Nem tudok lejonni a faklyas ladatol." end
         if not torchOk then
-            turtle.down()
-            position.y = position.y - 1
-            saveState()
+            sharedNav:step({ kind = "d" })
             turnAround()
             return false, torchReason
         end
     end
-    if not turtle.down() then return false, "Nem tudok leereszkedni." end
-    position.y = position.y - 1
-    saveState()
+    moved = sharedNav:step({ kind = "d" })
+    if not moved.ok then return false, "Nem tudok leereszkedni." end
     turnAround()
     turtle.select(config.torchEnabled and 3 or 2)
     return true
@@ -696,21 +765,22 @@ local function processTorchStep(x, z)
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
         if not resumed then return false, reason end
     end
-    local placed, placeReason
-    if config.torchPlacementMode == 2 then
-        placed, placeReason = torchManager.placeAbove(
-            function() return heading end,
-            face
-        )
-    else
-        placed, placeReason = torchManager.placeInDirection(
-            direction,
-            function() return heading end,
-            face,
-            managedDig
-        )
+    local originalHeading = heading
+    local function side(target)
+        if target == nil then return nil end
+        return function()
+            return torchManager.placeInDirection(target, function() return heading end, face, managedDig)
+        end
     end
-    if not placed then return false, placeReason end
+    local function above()
+        return torchManager.placeAbove(function() return heading end, face)
+    end
+    local outcome = sharedSituations:placeTorchWithFallback({
+        preferred = config.torchPlacementMode == 2 and above or side(direction),
+        otherSide = side(direction and ((direction + 2) % 4) or nil),
+        above = config.torchPlacementMode == 2 and nil or above,
+    })
+    if outcome.kind == "fatal" then return false, outcome.reason end
     if not torchManager.hasTorch() then
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
         if not resumed then return false, reason end
@@ -720,6 +790,31 @@ end
 
 local function runExcavation()
     persistenceEnabled = true
+    sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
+    sharedSituations = Situations.new(config.safety or {})
+    sharedNav = Navigation.new({
+        state = navigationState or {
+            pose = { x = position.x, y = position.y, z = position.z, heading = heading },
+            path = {}, pending = nil, anchors = {},
+        },
+        ensureFuel = function(required)
+            if refuelSlotOne(required) then return true end
+            return false, "Nincs fuel a navigacios lepeshez."
+        end,
+        telemetry = sharedTelemetry,
+        retryLimit = config.safety and config.safety.retryLimit,
+        checkpoint = function(navState)
+            position.x, position.y, position.z = navState.pose.x, navState.pose.y, navState.pose.z
+            heading = navState.pose.heading
+            navigationState = navState
+            saveState()
+        end,
+    })
+    local navRecovered = sharedNav:recoverPending()
+    if not navRecovered.ok then
+        printError("Navigacios menteshiba: " .. tostring(navRecovered.reason))
+        return
+    end
     if config.experimentalInventory and inventoryManager then
         local initialized, inventoryReason = inventoryManager.initialize(config)
         if not initialized then
