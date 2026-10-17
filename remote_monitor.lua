@@ -1,11 +1,20 @@
 -- CCTurtle megfigyelo Pocket Computerhez es normal/Advanced Computerhez.
 
 local Protocol = require("remote_protocol")
+local Version = require("version")
+local Settings = require("settings")
+local Localization = require("localization")
+local monitorSettings = Settings.load()
+Localization.setLanguage(monitorSettings.general.language)
+local function tr(value) return Localization.text(value) end
 local turtles = {}
 local selected = 1
 local opened = {}
-local page = "status"
+local pages = { "status", "commands", "settings" }
+local pageIndex = 1
+local page = pages[pageIndex]
 local commandSelected = 1
+local settingsSelected = monitorSettings.general.language == "en" and 2 or 1
 local armedCommand = nil
 local feedback = ""
 local nativeTerm = term.current()
@@ -87,8 +96,10 @@ local function ordered()
 end
 
 local commands = {
-    { label = "Allapot frissitese", command = "status", confirm = false },
-    { label = "Leallitas es hazateres", command = "return_home", confirm = true },
+    { label = "Adatok frissitese", command = "status", confirm = false },
+    { label = "Lepakolas es folytatas", command = "service", confirm = true },
+    { label = "Munka leallitasa, haza", command = "return_home", confirm = true },
+    { label = "Megfigyelo frissitese", command = "local_update", confirm = true },
 }
 
 local function selectedTurtle()
@@ -97,16 +108,16 @@ end
 
 local function sendCommand(command)
     local target = selectedTurtle()
-    if not target then feedback = "Nincs kivalasztott turtle." return false end
-    if openModems() == 0 then feedback = "Nincs vezetek nelkuli modem." return false end
+    if not target then feedback = tr("Nincs kivalasztott turtle.") return false end
+    if openModems() == 0 then feedback = tr("Nincs vezetek nelkuli modem.") return false end
     local requestId = tostring(os.getComputerID()) .. "-" .. tostring(nowMs())
     local sent = rednet.send(target.turtleId, Protocol.message("command", {
         targetId = target.turtleId,
         command = command,
         requestId = requestId,
     }), Protocol.CONTROL)
-    feedback = sent and "Parancs elkuldve; visszaigazolasra var."
-        or "A parancs kuldese sikertelen."
+    feedback = tr(sent and "Parancs elkuldve; visszaigazolasra var."
+        or "A parancs kuldese sikertelen.")
     return sent
 end
 
@@ -115,11 +126,23 @@ local function activateCommand()
     if not item then return end
     if item.confirm and armedCommand ~= item.command then
         armedCommand = item.command
-        feedback = "Veszelyes parancs: valaszd ki ujra a megerositeshez."
+        feedback = tr("Megeroses: valaszd ki meg egyszer.")
         return
     end
     armedCommand = nil
-    sendCommand(item.command)
+    if item.command == "local_update" then
+        feedback = tr("Program frissitese...")
+        local ok = shell.run("downloader", "monitor")
+        if ok then
+            feedback = tr("Frissites kesz. Ujrainditas...")
+            sleep(1)
+            os.reboot()
+        else
+            feedback = tr("A frissites sikertelen.")
+        end
+    else
+        sendCommand(item.command)
+    end
 end
 
 local function clip(value, width)
@@ -152,8 +175,64 @@ local function clear()
 end
 
 local function line(label, value, width)
-    local prefix = label .. ": "
+    local prefix = tr(label) .. ": "
     print(clip(prefix .. tostring(value or "-"), width))
+end
+
+local activityNames = {
+    idle = "Varakozik",
+    menu = "Fomenu",
+    indulas = "Indulas",
+    kitores = "Terulet kitermelese",
+    hazateres = "Hazateres",
+    urites_tankolas = "Lepakolas es tankolas",
+    vissza_munkapontra = "Visszateres a munkahoz",
+    auto_ujrainditas = "Mentett munka folytatasa",
+    lepcso_epites = "Lepcso epites",
+    alagut_epites = "Alagut epites",
+    bal_oldalagat = "Bal oldalagat asasa",
+    jobb_oldalagat = "Jobb oldalagat asasa",
+    bal_ag_erckereses = "Erckereses a bal agban",
+    jobb_ag_erckereses = "Erckereses a jobb agban",
+    agak_keszen = "Oldalagak keszen",
+    navigalas = "Navigalas",
+    kesz = "Befejezve",
+    megallitva_otthon = "Megallitva a bazison",
+}
+
+local taskNames = {
+    ["Branch mining"] = "Agas banyaszat",
+    ["Terulet asas"] = "Terulet kiasasa",
+    ["Nether utepito"] = "Nether utepites",
+    ["Koordinatas navigacio"] = "Koordinatas mozgas",
+    ["Varakozas a fomenuben"] = "Fomenu",
+}
+
+local function readableActivity(value)
+    value = tostring(value or "Ismeretlen")
+    if activityNames[value] then return tr(activityNames[value]) end
+    value = value:gsub("_", " ")
+    return value:sub(1, 1):upper() .. value:sub(2)
+end
+
+local function readableTask(value)
+    return tr(taskNames[value] or tostring(value or "Ismeretlen"))
+end
+
+local function printWrapped(value, width, maximumLines)
+    value = tostring(value or "")
+    local lineText, printed = "", 0
+    for word in value:gmatch("%S+") do
+        if lineText == "" then lineText = word
+        elseif #lineText + #word + 1 <= width then lineText = lineText .. " " .. word
+        else
+            print(clip(lineText, width))
+            printed = printed + 1
+            if printed >= maximumLines then return end
+            lineText = word
+        end
+    end
+    if lineText ~= "" and printed < maximumLines then print(clip(lineText, width)) end
 end
 
 local function renderStatusBody()
@@ -162,61 +241,61 @@ local function renderStatusBody()
     if selected > #list then selected = math.max(1, #list) end
     clear()
     term.setTextColor(colors.cyan)
-    print(clip("CCTURTLE MEGFIGYELO", width))
+    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("MEGFIGYELO"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
     if openModems() == 0 then
         term.setTextColor(colors.red)
-        print("Nincs wireless/Ender modem.")
-        print("Csatlakoztass modemet; automatikusan felismerem.")
+        print(tr("Nincs wireless/Ender modem."))
+        print(tr("Csatlakoztass modemet; automatikusan felismerem."))
     elseif #list == 0 then
         term.setTextColor(colors.orange)
-        print("Turtle keresese...")
-        print("Bekapcsolas utan automatikusan megjelenik.")
+        print(tr("Turtle keresese..."))
+        print(tr("Bekapcsolas utan automatikusan megjelenik."))
     elseif width < 35 or height < 16 then
         local item = list[selected]
         term.setTextColor(online(item) and colors.lime or colors.red)
-        print(clip((item.label or ("Turtle #" .. item.turtleId))
-            .. (online(item) and " ONLINE" or " OFFLINE"), width))
+        print(clip((item.label or ("Teknos #" .. item.turtleId))
+            .. " " .. tr(online(item) and "ELERHETO" or "NEM ELERHETO"), width))
         term.setTextColor(colors.white)
-        line("Feladat", item.task, width)
-        line("Allapot", item.activity, width)
+        line("Feladat", readableTask(item.task), width)
+        line("Muvelet", readableActivity(item.activity), width)
         line("Haladas", percent(item), width)
-        line("Fuel", item.fuel == -1 and "vegtelen" or item.fuel, width)
-        line("Inventory", item.inventoryUsed and (item.inventoryUsed .. "/16") or "-", width)
+        line("Uzemanyag", item.fuel == -1 and "vegtelen" or item.fuel, width)
+        line("Tarhely", item.inventoryUsed and (item.inventoryUsed .. "/16 hely") or "-", width)
         line("Eltelt", duration(item.elapsedMs), width)
         line("Hatra", duration(item.remainingMs), width)
         if item.position then
             line("Pozicio", string.format("%d,%d,%d", item.position.x, item.position.y, item.position.z), width)
         end
         term.setCursorPos(1, height)
-        write(clip("< > oldal | ^v turtle | Q", width))
+        write(clip(tr("Bal/jobb: oldal | Fel/le: teki | Q"), width))
     else
-        print(string.format("%-4s %-16s %-8s %s", "ID", "Nev", "Allapot", "Haladas"))
+        print(string.format("%-4s %-16s %-12s %s", "ID", tr("Teknos"), tr("Kapcsolat"), tr("Kesz")))
         local maximum = math.max(1, height - 13)
         for index = 1, math.min(#list, maximum) do
             local item = list[index]
             term.setTextColor(index == selected and colors.yellow
                 or (online(item) and colors.white or colors.red))
-            print(clip(string.format("%-4d %-16s %-8s %s",
-                item.turtleId, item.label or "Turtle", online(item) and "ONLINE" or "OFFLINE",
+            print(clip(string.format("%-4d %-16s %-12s %s",
+                item.turtleId, item.label or tr("Teknos"), tr(online(item) and "ELERHETO" or "NINCS JEL"),
                 percent(item)), width))
         end
         local item = list[selected]
         term.setTextColor(colors.lightGray)
         print(string.rep("-", math.min(width, 39)))
         term.setTextColor(colors.white)
-        line("Feladat", item.task, width)
-        line("Allapot", item.activity, width)
-        line("Fuel / inv", tostring(item.fuel == -1 and "vegtelen" or item.fuel)
+        line("Feladat", readableTask(item.task), width)
+        line("Muvelet", readableActivity(item.activity), width)
+        line("Uzemanyag / tarhely", tostring(item.fuel == -1 and "vegtelen" or item.fuel)
             .. " / " .. tostring(item.inventoryUsed or "-") .. "/16", width)
-        line("Ido", duration(item.elapsedMs) .. " / hatra " .. duration(item.remainingMs), width)
+        line("Ido", "eltelt " .. duration(item.elapsedMs) .. " / hatra " .. duration(item.remainingMs), width)
         if item.position then
             line("Pozicio", string.format("%d,%d,%d h=%s", item.position.x,
                 item.position.y, item.position.z, tostring(item.position.heading or "-")), width)
         end
         term.setCursorPos(1, height)
-        write(clip("< > oldal | ^v/katt: turtle | Q", width))
+        write(clip(tr("Bal/jobb: oldal | Fel/le/katt: teki | Q"), width))
     end
 end
 
@@ -225,7 +304,7 @@ local function renderCommandBody()
     local target = selectedTurtle()
     clear()
     term.setTextColor(colors.orange)
-    print(clip("CCTURTLE | PARANCSOK", width))
+    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("PARANCSOK"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
     if not target then
@@ -233,22 +312,41 @@ local function renderCommandBody()
         print("Nincs elerheto turtle.")
     else
         term.setTextColor(online(target) and colors.lime or colors.red)
-        print(clip((target.label or ("Turtle #" .. target.turtleId))
-            .. (online(target) and " ONLINE" or " OFFLINE"), width))
+        print(clip((target.label or ("Teknos #" .. target.turtleId))
+            .. " " .. tr(online(target) and "ELERHETO" or "NEM ELERHETO"), width))
         print("")
         for index, item in ipairs(commands) do
             term.setTextColor(index == commandSelected and colors.yellow or colors.white)
-            print(clip((index == commandSelected and "> " or "  ") .. item.label, width))
+            print(clip((index == commandSelected and "> " or "  ") .. tr(item.label), width))
         end
         if feedback ~= "" then
             print("")
             term.setTextColor(armedCommand and colors.orange or colors.lightGray)
-            print(clip(feedback, width))
+            printWrapped(feedback, width, 3)
         end
     end
     term.setTextColor(colors.lightGray)
     term.setCursorPos(1, height)
-    write(clip("< > oldal | ^v opcio | ENTER | Q", width))
+    write(clip(tr("Bal/jobb: oldal | Fel/le: opcio | Enter"), width))
+end
+
+local function renderSettingsBody()
+    local width, height = term.getSize()
+    clear()
+    term.setTextColor(colors.cyan)
+    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("BEALLITASOK"), width))
+    term.setTextColor(colors.lightGray)
+    print(string.rep("-", math.min(width, 39)))
+    print(tr("Nyelv / Language"))
+    print("")
+    local languages = Localization.languages()
+    for index, value in ipairs(languages) do
+        term.setTextColor(index == settingsSelected and colors.yellow or colors.white)
+        print(clip((index == settingsSelected and "> " or "  ") .. tr(value.label), width))
+    end
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(1, height)
+    write(clip(tr("Bal/jobb: oldal | Fel/le: opcio | Enter"), width))
 end
 
 local function render()
@@ -256,7 +354,9 @@ local function render()
     local targets = { nativeTerm }
     for _, target in ipairs(targets) do
         local previous = term.redirect(target)
-        local ok, reason = pcall(page == "commands" and renderCommandBody or renderStatusBody)
+        local renderer = page == "commands" and renderCommandBody
+            or (page == "settings" and renderSettingsBody or renderStatusBody)
+        local ok, reason = pcall(renderer)
         term.redirect(previous)
         if not ok then error(reason, 0) end
     end
@@ -290,7 +390,8 @@ while true do
         render()
     elseif event == "rednet_message" and p3 == Protocol.ACK
         and Protocol.valid(p2, "ack") then
-        feedback = (p2.accepted and "OK: " or "HIBA: ") .. tostring(p2.reason or "Nincs reszlet.")
+        feedback = (p2.accepted and "OK: " or "HIBA: ")
+            .. tostring(tr(p2.reason or "Nincs reszlet."))
         render()
     elseif event == "timer" and p1 == discoverTimer then
         discover()
@@ -306,21 +407,35 @@ while true do
         render()
     elseif event == "key" then
         if p1 == keys.q then break
-        elseif p1 == keys.left or p1 == keys.right then
-            page = page == "status" and "commands" or "status"
+        elseif p1 == keys.left then
+            pageIndex = pageIndex == 1 and #pages or pageIndex - 1
+            page = pages[pageIndex]
+            armedCommand = nil
+        elseif p1 == keys.right then
+            pageIndex = pageIndex == #pages and 1 or pageIndex + 1
+            page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.up then
             if page == "commands" then
                 commandSelected = math.max(1, commandSelected - 1)
                 armedCommand = nil
+            elseif page == "settings" then
+                settingsSelected = math.max(1, settingsSelected - 1)
             else selected = math.max(1, selected - 1) end
         elseif p1 == keys.down then
             if page == "commands" then
                 commandSelected = math.min(#commands, commandSelected + 1)
                 armedCommand = nil
+            elseif page == "settings" then
+                settingsSelected = math.min(#Localization.languages(), settingsSelected + 1)
             else selected = math.min(#ordered(), selected + 1) end
         elseif p1 == keys.enter and page == "commands" then
             activateCommand()
+        elseif p1 == keys.enter and page == "settings" then
+            local selectedLanguage = Localization.languages()[settingsSelected]
+            monitorSettings.general.language = selectedLanguage.code
+            Settings.save(monitorSettings)
+            Localization.setLanguage(selectedLanguage.code)
         end
         render()
     elseif event == "mouse_click" then
@@ -330,6 +445,15 @@ while true do
             if commands[commandIndex] then
                 commandSelected = commandIndex
                 activateCommand()
+            end
+        elseif page == "settings" then
+            local languageIndex = p3 - 4
+            local selectedLanguage = Localization.languages()[languageIndex]
+            if selectedLanguage then
+                settingsSelected = languageIndex
+                monitorSettings.general.language = selectedLanguage.code
+                Settings.save(monitorSettings)
+                Localization.setLanguage(selectedLanguage.code)
             end
         elseif p3 >= 4 and p3 < height - 7 then
             selected = math.min(#ordered(), math.max(1, p3 - 3))

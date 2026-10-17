@@ -1,6 +1,8 @@
 -- Kozos billentyus/kattinthato menu es strukturalt munkakepernyo.
 
 local ui = {}
+local Localization = require("localization")
+local function tr(value) return Localization.text(value) end
 
 local function size()
     local width, height = term.getSize()
@@ -33,17 +35,17 @@ function ui.message(title, lines, kind)
     clear()
     local width = size()
     setTextColor(kind == "error" and color("red") or color("cyan"))
-    print(clip(title or "CCTURTLE", width))
+    print(clip(tr(title or "CCTURTLE"), width))
     setTextColor(color("white"))
     print(string.rep("-", math.min(width, 39)))
     if type(lines) == "string" then lines = { lines } end
-    for _, line in ipairs(lines or {}) do print(clip(line, width)) end
+    for _, line in ipairs(lines or {}) do print(clip(tr(line), width)) end
 end
 
 function ui.waitForEnter(label)
     local _, height = size()
     term.setCursorPos(1, height)
-    write(label or "ENTER = tovabb")
+    write(tr(label or "ENTER = tovabb"))
     while true do
         local event, key = os.pullEvent()
         if event == "key" and key == keys.enter then return true end
@@ -64,7 +66,7 @@ function ui.menu(title, items, options)
 
         clear()
         setTextColor(color("cyan"))
-        print(clip(title or "CCTURTLE", width))
+        print(clip(tr(title or "CCTURTLE"), width))
         setTextColor(color("lightGray"))
         print(string.rep("-", math.min(width, 39)))
         local hitRows = {}
@@ -77,15 +79,15 @@ function ui.menu(title, items, options)
                 if index == selected then setTextColor(color("yellow"))
                 elseif not enabled then setTextColor(color("gray"))
                 else setTextColor(color("white")) end
-                local suffix = item.suffix and ("  " .. tostring(item.suffix)) or ""
+                local suffix = item.suffix and ("  " .. tostring(tr(item.suffix))) or ""
                 term.setCursorPos(1, firstRow + row - 1)
-                write(clip(prefix .. tostring(item.label) .. suffix, width))
+                write(clip(prefix .. tostring(tr(item.label)) .. suffix, width))
                 hitRows[firstRow + row - 1] = index
             end
         end
         setTextColor(color("lightGray"))
         term.setCursorPos(1, height)
-        write(clip("Fel/le, Enter, kattintas", width))
+        write(clip(tr("Fel/le, Enter, kattintas"), width))
 
         local event, a, b, c = os.pullEvent()
         if event == "key" then
@@ -127,17 +129,17 @@ end
 function ui.input(title, label, defaultValue, validator, hint)
     while true do
         clear()
-        print(title or "Adatbevitel")
+        print(tr(title or "Adatbevitel"))
         print(string.rep("-", math.min(select(1, size()), 39)))
-        if hint then print(hint) print("") end
-        write(label .. " [" .. tostring(defaultValue or "") .. "]: ")
+        if hint then print(tr(hint)) print("") end
+        write(tr(label) .. " [" .. tostring(defaultValue or "") .. "]: ")
         local value = read()
         if value == "" then value = defaultValue end
         local ok, normalized, reason
         if validator then ok, normalized, reason = validator(value)
         else ok, normalized = true, value end
         if ok then return normalized end
-        printError(reason or "Hibas ertek.")
+        printError(tr(reason or "Hibas ertek."))
         sleep(1)
     end
 end
@@ -163,7 +165,7 @@ function ui.renderDashboard(model)
     local width, height = size()
     clear()
     setTextColor(color("cyan"))
-    print(clip("CCTURTLE | " .. tostring(model.task or "Munka"), width))
+    print(clip("CCTURTLE | " .. tostring(tr(model.task or "Munka")), width))
     setTextColor(color("lightGray"))
     print(string.rep("-", math.min(width, 39)))
     local rows = {
@@ -179,7 +181,7 @@ function ui.renderDashboard(model)
     for _, row in ipairs(rows) do
         if row[2] ~= nil and select(2, term.getCursorPos()) < height - 3 then
             setTextColor(color("lightGray"))
-            write(clip(row[1] .. ":", 13))
+            write(clip(tr(row[1]) .. ":", 13))
             setTextColor(color("white"))
             print(clip(" " .. tostring(row[2]), math.max(1, width - 13)))
         end
@@ -195,7 +197,7 @@ function ui.renderDashboard(model)
     end
     setTextColor(color("lightGray"))
     term.setCursorPos(1, height)
-    write(clip("Q: megallas es haza | S: reszletek", width))
+    write(clip(tr("Q: megallas es haza | S: reszletek"), width))
 end
 
 return ui

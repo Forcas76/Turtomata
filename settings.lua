@@ -11,6 +11,7 @@ local DEFAULTS = {
     general = {
         fuelReserve = 8,
         finalEnter = true,
+        language = "hu",
     },
     navigation = {
         defaultActionSeconds = 0.8,

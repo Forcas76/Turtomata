@@ -16,6 +16,7 @@ local config = {}
 local position = { x = 0, y = 0, z = 0 }
 local heading = 0
 local stopRequested = false
+local serviceRequested = false
 local taskFinished = false
 local persistenceEnabled = false
 local returningHome = false
@@ -982,6 +983,13 @@ local function runBuilder()
     local stopReason = nil
     for step = runtime.completed + 1, config.length do
         if stopRequested then stopReason = "Felhasznaloi leallitas." break end
+        if serviceRequested then
+            serviceRequested = false
+            local serviced, serviceReason = serviceAndResume(
+                "Tavoli lepakolas es feltoltes.", config.mode == 2 and 64 or 1
+            )
+            if not serviced then stopReason = serviceReason break end
+        end
         setActivity(config.mode == 1 and "lepcso_epites" or "alagut_epites")
         local fueled, fuelReason = ensureWorkFuel(config.mode == 1 and 4 or 5)
         if not fueled then stopReason = fuelReason break end
@@ -1052,6 +1060,9 @@ local function stopListener()
             print("Leallitas kerese fogadva.")
         elseif event == "key" and key == keys.s then
             status("Allapot")
+        elseif event == "ccturtle_remote_command" and key == "service" then
+            serviceRequested = true
+            print("Tavoli lepakolasi keres fogadva.")
         end
     end
 end

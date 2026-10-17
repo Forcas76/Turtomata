@@ -5,8 +5,11 @@ local Settings = require("settings")
 local stateStore = require("state_store")
 local jobRequest = require("job_request")
 local WorkEstimator = require("work_estimator")
+local Version = require("version")
+local Localization = require("localization")
 
 local currentSettings = Settings.load()
+Localization.setLanguage(currentSettings.general.language)
 local remoteOk, Remote = pcall(require, "remote")
 local REMOTE_ACTIVE_FILE = ".remote_active_job"
 if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
@@ -167,6 +170,7 @@ end
 local function settingsMenu()
     while true do
         local choice = ui.menu("BEALLITASOK", {
+            { label = "Nyelv / Language", suffix = currentSettings.general.language == "en" and "English" or "Magyar", value = "language" },
             { label = "Navigacio es altalanos", value = "navigation" },
             { label = "Biztonsag es helyzetkezeles", value = "safety" },
             { label = "Inventory KISERLETI", suffix = boolText(currentSettings.inventory.experimental), value = "inventory" },
@@ -176,7 +180,15 @@ local function settingsMenu()
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return end
-        if choice == "navigation" then navigationSettings()
+        if choice == "language" then
+            local selected = ui.choice("Nyelv / Language", { "Magyar", "Angol" },
+                currentSettings.general.language == "en" and 2 or 1)
+            if selected then
+                currentSettings.general.language = selected == 2 and "en" or "hu"
+                saveSettings()
+                Localization.setLanguage(currentSettings.general.language)
+            end
+        elseif choice == "navigation" then navigationSettings()
         elseif choice == "safety" then safetySettings()
         elseif choice == "inventory" then toggle("inventory.experimental")
         elseif choice == "torches" then torchSettings()
@@ -184,7 +196,9 @@ local function settingsMenu()
         elseif choice == "reset" then
             ui.confirm("ALAPERTEKEK", { "Az osszes kozponti beallitas visszaall.", "A folytatasi mentesek nem torlodnek." }, "ENTER = visszaallitas")
             local ok, reason, value = Settings.reset()
-            if ok then currentSettings = value
+            if ok then
+                currentSettings = value
+                Localization.setLanguage(currentSettings.general.language)
             else ui.message("Hiba", reason, "error") ui.waitForEnter() end
         end
     end
@@ -413,13 +427,35 @@ local function diagnostics()
     ui.waitForEnter()
 end
 
+local function updateTurtleProgram()
+    if not programExists("downloader") then
+        ui.message("Hianyzo program", "downloader nem talalhato.", "error")
+        ui.waitForEnter()
+        return
+    end
+    ui.confirm("Program frissitese", {
+        "A teljes turtle program frissul.",
+        "Siker utan az eszkoz ujraindul.",
+    }, "ENTER = frissites")
+    ui.message("Program frissitese...", "Kerlek varj.")
+    local ok = shell.run("downloader", "turtle")
+    if ok then
+        ui.message("Frissites kesz. Ujrainditas...", "")
+        sleep(1)
+        os.reboot()
+    else
+        ui.message("A frissites sikertelen.", "Ellenorizd a downloader uzeneteit.", "error")
+        ui.waitForEnter()
+    end
+end
+
 local function menuLoop()
     while true do
         local hasResume = activeState("branch_miner_state.txt")
             or activeState("excavator_state.txt")
             or activeState("nether_builder_state.txt")
             or activeState("coordinate_state.txt")
-        local choice = ui.menu("CCTURTLE", {
+        local choice = ui.menu("CCTURTLE " .. Version.label, {
             { label = "Branch mining", value = "branch" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
             { label = "Nether utepito", value = "nether" },
@@ -427,6 +463,7 @@ local function menuLoop()
             { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
             { label = "Beallitasok", value = "settings" },
             { label = "Diagnosztika", value = "diagnostics" },
+            { label = "Program frissitese", value = "update" },
             { label = "Kilepes", value = "exit" },
         }, { allowBack = false })
         if choice == "branch" then configureBranch()
@@ -436,6 +473,7 @@ local function menuLoop()
         elseif choice == "resume" then resumeMenu()
         elseif choice == "settings" then settingsMenu()
         elseif choice == "diagnostics" then diagnostics()
+        elseif choice == "update" then updateTurtleProgram()
         elseif choice == "exit" then ui.clear() return end
     end
 end

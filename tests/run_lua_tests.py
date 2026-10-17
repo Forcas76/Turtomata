@@ -8,6 +8,7 @@ lua.execute(f'package.path = "{package_path};" .. package.path')
 for name in (
     "navigation_test.lua", "situation_test.lua", "estimator_test.lua",
     "ore_scanner_test.lua",
+    "localization_test.lua",
     "remote_test.lua",
 ):
     test = (root / "tests" / name).read_text(encoding="utf-8")

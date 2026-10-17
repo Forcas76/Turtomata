@@ -1,5 +1,21 @@
 # CCTurtle
 
+Aktuális rendszerverzió: **v1.0.0**. A verzió központilag a `version.lua`
+fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
+parancsoldalán, valamint a downloader telepítési menüjében.
+
+A közös `localization.lua` magyar (`hu`) és angol (`en`) feliratokat tartalmaz.
+A turtle főmenüjében a `Beallitasok > Nyelv / Language` pontban váltható. A
+megfigyelőn a bal/jobb nyíllal elérhető harmadik, `Beallitasok` oldalon állítható
+ugyanez. A választás az adott eszköz `settings.txt` fájljába kerül, ezért
+újraindítás után is megmarad. Az ismeretlen vagy dinamikus technikai üzenetek
+biztonságos tartalékként az eredeti magyar szöveggel jelennek meg.
+
+A turtle főmenü `Program frissitese` pontja a `downloader turtle`, a megfigyelő
+parancsoldal `Megfigyelo frissitese` pontja pedig a `downloader monitor`
+csomagot futtatja. Sikeres letöltés után az eszköz automatikusan újraindul, és
+a hozzá tartozó `startup.lua` már a frissített programot tölti be.
+
 Moduláris CC:Tweaked turtle-rendszer branch mininghoz, területásáshoz,
 Nether-útépítéshez és kísérleti koordinátás navigációhoz.
 
@@ -131,6 +147,18 @@ parancsmenü. Pocket Computeren ugyanazon a kijelzőn történik az oldalváltá
 A parancsmenüben a fel/le nyíl vagy a kattintás választ, az Enter végrehajt.
 A biztonságos leállítás és hazatérés kétszeri megerősítést kér. A turtle minden
 parancsot elfogadási vagy hibaüzenettel igazol vissza.
+
+A jelenlegi távoli parancsok:
+
+- `Adatok frissitese`: azonnali teljes állapotcsomagot kér;
+- `Lepakolas es folytatas`: a branch mining, területásás vagy Nether-építés
+  biztonságos pontján visszatér a ládákhoz, lepakol, tankol és feltölti a
+  szükséges készleteket, majd visszamegy a munkapontra és folytatja;
+- `Munka leallitasa, haza`: befejezi az aktuális biztonságos műveletet,
+  hazatér, és nem folytatja automatikusan a munkát.
+
+A koordinátás navigációnak nincs ládakezelése, ezért annál a lepakolási
+parancsot a turtle érthető hibaüzenettel elutasítja.
 
 Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
 üzenetet küld, a már dolgozó turtle pedig teljes állapotcsomaggal válaszol. Ezt

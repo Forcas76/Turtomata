@@ -18,6 +18,7 @@ local heading = 0
 local returningHome = false
 local visited = 0
 local stopRequested = false
+local serviceRequested = false
 local miningFinished = false
 local persistenceEnabled = false
 local STATE_FILE = "excavator_state.txt"
@@ -765,6 +766,11 @@ local function moveToTarget(targetX, targetY, targetZ)
         if stopRequested and not returningHome then
             return false, "Felhasznaloi leallitas."
         end
+        if serviceRequested and not returningHome then
+            serviceRequested = false
+            local resumed, serviceReason = serviceAndResume("Tavoli lepakolas es feltoltes.")
+            if not resumed then return false, serviceReason end
+        end
         if inventoryFull() then
             local resumed, reason = serviceAndResume("Inventory tele.")
             if not resumed then return false, reason end
@@ -1060,6 +1066,9 @@ local function stopListener()
             end
         elseif event == "key" and key == keys.s then
             status("Allapot")
+        elseif event == "ccturtle_remote_command" and key == "service" then
+            serviceRequested = true
+            print("Tavoli lepakolasi keres fogadva.")
         end
     end
 end

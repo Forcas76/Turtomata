@@ -1,6 +1,11 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
+local INSTALLER_VERSION = "v1.0.0"
+local localizationOk, Localization = pcall(require, "localization")
+local function tr(value)
+    return localizationOk and Localization.text(value) or value
+end
 
 -- Itt valaszd ki a letoltesi forrast: "pastebin" vagy "github".
 local DOWNLOAD_SOURCE = "github"
@@ -77,6 +82,8 @@ local links = {
     telemetry = { pastebinID = "", githubPath = "telemetry.lua", fileName = "telemetry.lua" },
     estimator = { pastebinID = "", githubPath = "work_estimator.lua", fileName = "work_estimator.lua" },
     request = { pastebinID = "", githubPath = "job_request.lua", fileName = "job_request.lua" },
+    version = { pastebinID = "", githubPath = "version.lua", fileName = "version.lua" },
+    localization = { pastebinID = "", githubPath = "localization.lua", fileName = "localization.lua" },
     remoteprotocol = { pastebinID = "", githubPath = "remote_protocol.lua", fileName = "remote_protocol.lua" },
     remote = { pastebinID = "", githubPath = "remote.lua", fileName = "remote.lua" },
     monitor = { pastebinID = "", githubPath = "remote_monitor.lua", fileName = "remote_monitor.lua" },
@@ -85,27 +92,27 @@ local links = {
 }
 
 local downloadOrder = {
-    "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings", "request",
+    "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings", "request",
     "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-    "coordinatetask", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+    "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
 }
 
 local componentGroups = {
     main = {
-        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings",
+        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
-        "nether", "coordinatetask", "remoteprotocol", "remote", "main",
+        "nether", "coordinatetask", "version", "remoteprotocol", "remote", "main",
     },
-    branch = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
-    excavator = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
-    nether = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "nether" },
-    coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "request", "coordinatetask" },
+    branch = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
+    excavator = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
+    nether = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "nether" },
+    coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "request", "coordinatetask" },
     turtleinstall = {
-        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings",
+        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-        "coordinatetask", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+        "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
     },
-    monitorinstall = { "remoteprotocol", "monitor", "startupmonitor", "downloader" },
+    monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "monitor", "startupmonitor", "downloader" },
 }
 
 local function delTerm()
@@ -318,20 +325,20 @@ local fileMap = {
 
 local function installMenu()
     local items = {
-        { label = "Turtle program telepitese", value = "turtleinstall" },
-        { label = "Megfigyelo telepitese", value = "monitorinstall" },
+        { label = tr("Turtle program telepitese"), value = "turtleinstall" },
+        { label = tr("Megfigyelo telepitese"), value = "monitorinstall" },
     }
     local selected = 1
     while true do
         delTerm()
-        print("CCTURTLE TELEPITO")
-        print("Forras: " .. DOWNLOAD_SOURCE)
+        print("CCTURTLE " .. INSTALLER_VERSION .. " " .. tr("TELEPITO"))
+        print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
         print("")
         for index, item in ipairs(items) do
             print((index == selected and "> " or "  ") .. item.label)
         end
         print("")
-        print("Nyilak + ENTER, vagy kattintas")
+        print(tr("Nyilak + ENTER, vagy kattintas"))
         local event, p1, p2, p3 = os.pullEvent()
         if event == "key" then
             if p1 == keys.up then selected = math.max(1, selected - 1)
@@ -345,8 +352,8 @@ local function installMenu()
 end
 
 delTerm()
-print("Komponensek frissitese")
-print("Forras: " .. DOWNLOAD_SOURCE)
+print("CCTURTLE " .. INSTALLER_VERSION .. " " .. tr("komponensek"))
+print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
 print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or installMenu()

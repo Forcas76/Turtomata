@@ -143,11 +143,11 @@ function remote.snapshot()
     sequence = sequence + 1
     local message = Protocol.message("status", {
         turtleId = os.getComputerID(),
-        label = os.getComputerLabel() or ("Turtle #" .. os.getComputerID()),
+        label = os.getComputerLabel() or ("Teknos #" .. os.getComputerID()),
         sequence = sequence,
         online = true,
-        task = entry and entry.task or "Varakozas a fomenuben",
-        activity = state and (state.activity or state.phase or "dolgozik") or "idle",
+        task = entry and entry.task or "Fomenu",
+        activity = state and (state.activity or state.phase or "dolgozik") or "Varakozik",
         fuel = fuelValue(),
         inventoryUsed = used,
         inventoryItems = items,
@@ -194,6 +194,19 @@ function remote.handleCommand(sender, message)
         acknowledge(sender, message.command, message.requestId, true,
             "Biztonsagos leallitas es hazateres kerese fogadva.")
         os.queueEvent("ccturtle_remote_command", "return_home", sender, message.requestId)
+    elseif message.command == "service" then
+        local entry = activeState()
+        if not entry then
+            acknowledge(sender, message.command, message.requestId, false,
+                "Nincs aktiv munka, amit ki lehetne szolgalni.")
+        elseif entry.kind == "coordinate" then
+            acknowledge(sender, message.command, message.requestId, false,
+                "A koordinatas feladatnak nincs ladakezelese.")
+        else
+            acknowledge(sender, message.command, message.requestId, true,
+                "Lepakolas, feltoltes es folytatas kerese fogadva.")
+            os.queueEvent("ccturtle_remote_command", "service", sender, message.requestId)
+        end
     else
         acknowledge(sender, message.command, message.requestId, false, "Ismeretlen parancs.")
     end

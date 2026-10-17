@@ -35,6 +35,7 @@ local STATE_FILE = "branch_miner_state.txt"
 local STATE_TEMP_FILE = ".branch_miner_state.tmp"
 local persistenceEnabled = false
 local stopRequested = false
+local serviceRequested = false
 local miningFinished = false
 local runtime = {
     active = false,
@@ -925,6 +926,11 @@ local function mineForward(steps, label, carveCrossSection)
         if stopRequested and not returningHome then
             return false, "Felhasznaloi leallitas."
         end
+        if serviceRequested and not returningHome then
+            serviceRequested = false
+            local resumed, serviceReason = serviceAndResume("Tavoli lepakolas es feltoltes.")
+            if not resumed then return false, serviceReason end
+        end
         if not returningHome and inventoryFull() then
             local resumed, reason = serviceAndResume("Az inventory megtelt.")
             if not resumed then return false, reason end
@@ -1422,6 +1428,9 @@ local function stopListener()
             end
         elseif event == "key" and key == keys.s then
             status("Allapot")
+        elseif event == "ccturtle_remote_command" and key == "service" then
+            serviceRequested = true
+            print("Tavoli lepakolasi keres fogadva.")
         end
     end
 end
