@@ -23,6 +23,7 @@ function telemetry.new(saved, options)
         counts = type(saved.counts) == "table" and saved.counts or {},
         averages = type(saved.averages) == "table" and saved.averages or {},
         warnings = tonumber(saved.warnings) or 0,
+        unexpected = type(saved.unexpected) == "table" and saved.unexpected or {},
     }
     self.defaultSeconds = positive(options.defaultSeconds, 0.8)
     self.alpha = positive(options.alpha, 0.22)
@@ -54,7 +55,25 @@ function telemetry:estimateMs(plan)
     for kind, count in pairs(plan or {}) do
         total = total + self:averageMs(kind) * math.max(0, tonumber(count) or 0)
     end
-    return math.floor(total)
+    return math.floor(total * self:overheadFactor())
+end
+
+function telemetry:noteUnexpected(kind, count)
+    kind = tostring(kind or "other")
+    self.state.unexpected[kind] = (self.state.unexpected[kind] or 0)
+        + math.max(1, tonumber(count) or 1)
+    if self.onChange then self.onChange(self.state) end
+end
+
+function telemetry:overheadFactor()
+    local measured, unexpected = 0, 0
+    for _, count in pairs(self.state.counts) do measured = measured + (tonumber(count) or 0) end
+    for _, count in pairs(self.state.unexpected) do unexpected = unexpected + (tonumber(count) or 0) end
+    if unexpected == 0 then return 1 end
+    -- A mar tapasztalt akadalyok gyakorisagat legfeljebb +100% tartalekkent
+    -- vetitjuk ra a hatralevo tervre. A tenyleges atlagidok ettol fuggetlenul
+    -- tovabbra is muvelettipusonkent tanulnak.
+    return 1 + math.min(1, unexpected / math.max(10, measured))
 end
 
 function telemetry:elapsedMs()
@@ -76,6 +95,7 @@ end
 
 function telemetry:addWarning()
     self.state.warnings = self.state.warnings + 1
+    self:noteUnexpected("warning", 1)
 end
 
 function telemetry:snapshot()
@@ -84,9 +104,11 @@ function telemetry:snapshot()
         counts = {},
         averages = {},
         warnings = self.state.warnings,
+        unexpected = {},
     }
     for key, value in pairs(self.state.counts) do result.counts[key] = value end
     for key, value in pairs(self.state.averages) do result.averages[key] = value end
+    for key, value in pairs(self.state.unexpected) do result.unexpected[key] = value end
     return result
 end
 

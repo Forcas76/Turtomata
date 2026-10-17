@@ -1,0 +1,97 @@
+-- Az elore talalt ercteler azonnali kovetese es a mar ismert agcella kihagyasa.
+
+fs = {
+    exists = function(path) return path == "ore_targets.txt" end,
+    open = function()
+        return { readAll = function() return "{}" end, close = function() end }
+    end,
+}
+textutils = {
+    unserializeJSON = function()
+        return {
+            version = 1,
+            selected = { ["minecraft:coal_ore"] = true },
+            custom = {},
+        }
+    end,
+}
+
+local vectors = {
+    [0] = { x = 0, z = 1 }, [1] = { x = 1, z = 0 },
+    [2] = { x = 0, z = -1 }, [3] = { x = -1, z = 0 },
+}
+local pose = { x = 0, y = 0, z = 0, heading = 0 }
+local world = {
+    ["0,0,1"] = "minecraft:coal_ore",
+    ["0,0,2"] = "minecraft:coal_ore",
+}
+local inspectedAt = {}
+
+local function key(x, y, z) return x .. "," .. y .. "," .. z end
+local function target(move)
+    if move.kind == "u" then return pose.x, pose.y + 1, pose.z end
+    if move.kind == "d" then return pose.x, pose.y - 1, pose.z end
+    local vector = vectors[move.heading]
+    return pose.x + vector.x, pose.y, pose.z + vector.z
+end
+local function inspectMove(move)
+    inspectedAt[key(pose.x, pose.y, pose.z)] = (inspectedAt[key(pose.x, pose.y, pose.z)] or 0) + 1
+    local x, y, z = target(move)
+    local name = world[key(x, y, z)]
+    if not name then return false end
+    return true, { name = name }
+end
+
+turtle = {
+    inspect = function() return inspectMove({ kind = "h", heading = pose.heading }) end,
+    inspectUp = function() return inspectMove({ kind = "u" }) end,
+    inspectDown = function() return inspectMove({ kind = "d" }) end,
+}
+
+local api = {
+    maxDepth = 4, maxBlocks = 16, fuelReserve = 2,
+    getPose = function()
+        return { x = pose.x, y = pose.y, z = pose.z, heading = pose.heading }
+    end,
+    face = function(heading) pose.heading = heading end,
+    moveOpen = function(move)
+        if move.kind == "h" then pose.heading = move.heading end
+        pose.x, pose.y, pose.z = target(move)
+        return true
+    end,
+    digOre = function(move)
+        local x, y, z = target(move)
+        local cell = key(x, y, z)
+        if world[cell] ~= "minecraft:coal_ore" then return false, "changed" end
+        world[cell] = nil
+        return true
+    end,
+    ensureFuel = function() return true end,
+    shouldStop = function() return false end,
+    checkpoint = function() end,
+    service = function() return true end,
+}
+
+package.loaded["ore_scanner"] = nil
+local Scanner = require("ore_scanner")
+local mined, reason, count, positions = Scanner.mineAhead(
+    "right", 1, api, { name = "minecraft:coal_ore" }
+)
+assert(mined, reason)
+assert(count == 2)
+assert(positions["0,0,1"] and positions["0,0,2"])
+assert(pose.x == 0 and pose.y == 0 and pose.z == 0 and pose.heading == 0)
+
+-- Az x=1 agcella ismert: ott egyetlen felulet-inspect sem tortenhet.
+pose = { x = 0, y = 0, z = 0, heading = 0 }
+world = {}
+inspectedAt = {}
+local scanned, scanReason = Scanner.scanBranch(
+    "right", 2, 1, api, { ["1,0,0"] = true }
+)
+assert(scanned, scanReason)
+assert((inspectedAt["1,0,0"] or 0) == 0)
+assert((inspectedAt["2,0,0"] or 0) > 0)
+assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
+
+return true

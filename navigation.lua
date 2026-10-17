@@ -234,6 +234,9 @@ function navigation:_tryMove(move, options)
     for _ = 1, math.max(1, limit) do
         local moved = self:_physicalMove(move)
         if moved.ok or not moved.retryable then return moved end
+        if self.telemetry and self.telemetry.noteUnexpected then
+            self.telemetry:noteUnexpected("blocked_move", 1)
+        end
         local handler = options.onBlocked or self.onBlocked
         if not handler then return moved end
         local handled = handler(move, moved, options)

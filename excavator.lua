@@ -8,6 +8,7 @@ local Navigation = require("navigation")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
+local WorkEstimator = require("work_estimator")
 local centralRequest, centralRequestError = jobRequest.consume("excavator", programArgs)
 
 local config = {}
@@ -313,9 +314,12 @@ local function status(prefix)
             events[#events + 1] = warning
         end
     end
-    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs({
-        move = remaining + distanceHome(), dig = remaining,
-    }) or 0
+    local estimate = WorkEstimator.excavator(config, {
+        baseCompleted = runtime.baseCompleted,
+        visited = visited,
+    })
+    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
+        or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
     UI.renderDashboard({
         task = "Terulet asas KISERLETI",
         status = prefix .. " / " .. tostring(runtime.activity),
@@ -325,7 +329,8 @@ local function status(prefix)
         inventory = inventoryUsage() .. "/16 slot",
         supplies = config.torchEnabled and ("faklya=" .. turtle.getItemCount(2)) or "faklya=ki",
         elapsed = sharedTelemetry and Telemetry.formatDuration(sharedTelemetry:elapsedMs()) or "00:00:00",
-        remaining = "kb. " .. Telemetry.formatDuration(remainingMs),
+        remaining = string.format("%d muv. / kb. %s", estimate.totalActions,
+            Telemetry.formatDuration(remainingMs)),
         events = events,
     })
 end
@@ -791,7 +796,7 @@ end
 local function runExcavation()
     persistenceEnabled = true
     sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
-    sharedSituations = Situations.new(config.safety or {})
+    sharedSituations = Situations.new(config.safety or {}, { telemetry = sharedTelemetry })
     sharedNav = Navigation.new({
         state = navigationState or {
             pose = { x = position.x, y = position.y, z = position.z, heading = heading },

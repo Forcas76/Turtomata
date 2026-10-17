@@ -436,6 +436,7 @@ local function mineSelectedVein(session, api, firstMove, firstData)
     session.phase = "erctelep"
     session.veinMined = 0
     session.visited = {}
+    session.minedPositions = {}
     api.checkpoint(session)
 
     local function enterOre(move, knownData)
@@ -461,7 +462,9 @@ local function mineSelectedVein(session, api, firstMove, firstData)
                     session.pendingOre = nil
                     session.veinMined = session.veinMined + 1
                     local pose = api.getPose()
-                    session.visited[keyForPose(pose)] = true
+                    local poseKey = keyForPose(pose)
+                    session.visited[poseKey] = true
+                    session.minedPositions[poseKey] = true
                     api.checkpoint(session)
                     return true
                 elseif code == "service" then
@@ -540,6 +543,25 @@ local function mineSelectedVein(session, api, firstMove, firstData)
     return true
 end
 
+-- Az oldalagat normal asasa kozben kozvetlenul elol talalt ercteler azonnali
+-- kitermelese. A session horgonya az aktualis agcella; a kovetes utan ide es
+-- az eredeti facingre ter vissza.
+function scanner.mineAhead(side, branchStep, api, firstData)
+    loadTargets()
+    if not scanner.matches(firstData) then return true, nil, 0 end
+    local session = createSession(side, api)
+    session.phase = "elore_talalt_ercteler"
+    session.branchStep = branchStep or 0
+    api.checkpoint(session)
+    local firstMove = { kind = "h", heading = session.anchor.heading }
+    local mined, reason = mineSelectedVein(session, api, firstMove, firstData)
+    local minedCount = session.veinMined or 0
+    local minedPositions = session.minedPositions or {}
+    if mined then api.face(session.anchor.heading) end
+    api.checkpoint(nil)
+    return mined, reason, minedCount, minedPositions
+end
+
 local function scanSurface(session, api, move, surfaceName)
     session.surface = surfaceName
     api.checkpoint(session)
@@ -608,7 +630,7 @@ local function scanBranchCell(session, api, branchHeading, mode, atEnd)
     return true
 end
 
-function scanner.scanBranch(side, branchLength, mode, api)
+function scanner.scanBranch(side, branchLength, mode, api, skipSteps)
     loadTargets()
     local session = createSession(side, api)
     local mainHeading = session.anchor.heading
@@ -633,9 +655,19 @@ function scanner.scanBranch(side, branchLength, mode, api)
             if returned then api.checkpoint(nil) end
             return false, moveReason
         end
-        local scanned, scanReason = scanBranchCell(
-            session, api, branchHeading, mode, step == branchLength
-        )
+        local currentKey = keyForPose(api.getPose())
+        local alreadyKnown = type(skipSteps) == "table"
+            and (skipSteps[currentKey] ~= nil
+                or skipSteps[step] ~= nil or skipSteps[tostring(step)] ~= nil)
+        local scanned, scanReason = true, nil
+        if alreadyKnown then
+            session.surface = "elore_mar_kibanyaszva"
+            api.checkpoint(session)
+        else
+            scanned, scanReason = scanBranchCell(
+                session, api, branchHeading, mode, step == branchLength
+            )
+        end
         if not scanned then
             local returned = retreatToAnchor(session, api)
             if returned then api.checkpoint(nil) end

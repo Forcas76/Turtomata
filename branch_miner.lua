@@ -8,6 +8,7 @@ local Navigation = require("navigation")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
+local WorkEstimator = require("work_estimator")
 local centralRequest, centralRequestError = jobRequest.consume("branch_miner", programArgs)
 
 local position = { x = 0, y = 0, z = 0 }
@@ -41,12 +42,14 @@ local runtime = {
     mainCompleted = 0,
     branchesCompletedAt = 0,
     oreScan = nil,
+    oreAheadVisited = nil,
 }
 local sharedNav = nil
 local navigationState = nil
 local sharedTelemetry = nil
 local telemetryState = nil
 local sharedSituations = nil
+local activeBranchContext = nil
 
 local function saveState()
     if not persistenceEnabled then return end
@@ -63,6 +66,7 @@ local function saveState()
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
         oreScan = runtime.oreScan,
+        oreAheadVisited = runtime.oreAheadVisited,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
         navigation = sharedNav and sharedNav:snapshot() or navigationState,
@@ -142,6 +146,7 @@ local function configure()
             runtime.mainCompleted = saved.mainCompleted or 0
             runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
             runtime.oreScan = saved.oreScan
+            runtime.oreAheadVisited = saved.oreAheadVisited
             navigationState = saved.navigation
             telemetryState = saved.telemetry
         else
@@ -203,6 +208,7 @@ local function configure()
         runtime.mainCompleted = saved.mainCompleted or 0
         runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
         runtime.oreScan = saved.oreScan
+        runtime.oreAheadVisited = saved.oreAheadVisited
         navigationState = saved.navigation
         telemetryState = saved.telemetry
     else
@@ -389,12 +395,12 @@ end
 
 local function status(prefix)
     local usedSlots, usedPercent = inventoryUsage()
-    local remainingMain = math.max(0, (config.mainLength or 0) - runtime.mainCompleted)
-    local multiplier = config.tunnelMode == 3 and 6 or 2
-    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs({
-        move = remainingMain * multiplier + distanceHome(),
-        dig = remainingMain * multiplier,
-    }) or 0
+    local estimate = WorkEstimator.branch(config, {
+        mainCompleted = runtime.mainCompleted,
+        homeDistance = distanceHome(),
+    })
+    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
+        or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
     local events = {}
     if config.experimentalInventory and inventoryManager then
         local inventoryStatus = inventoryManager.status(config)
@@ -421,7 +427,8 @@ local function status(prefix)
         inventory = string.format("%d/16 (%d%%)", usedSlots, usedPercent),
         supplies = config.torchEnabled and ("faklya=" .. turtle.getItemCount(2)) or "faklya=ki",
         elapsed = sharedTelemetry and Telemetry.formatDuration(sharedTelemetry:elapsedMs()) or "00:00:00",
-        remaining = "kb. " .. Telemetry.formatDuration(remainingMs),
+        remaining = string.format("%d muv. / kb. %s", estimate.totalActions,
+            Telemetry.formatDuration(remainingMs)),
         events = events,
     })
 end
@@ -468,6 +475,7 @@ local function face(targetHeading)
 end
 
 local serviceAndResume
+local buildOreApi
 
 local function selectSealBlock()
     local target = config.safety and config.safety.sealBlock or "minecraft:cobblestone"
@@ -494,6 +502,32 @@ local function managedDig(direction)
 
     local hasBlock, blockData = inspect()
     if not hasBlock then return true end
+    if direction == "forward" and config.oreScanEnabled and activeBranchContext
+        and oreScanner and oreScanner.matches(blockData) then
+        setActivity("ag_elore_erc")
+        local mined, reason, minedCount, minedPositions = oreScanner.mineAhead(
+            activeBranchContext.side,
+            activeBranchContext.step,
+            buildOreApi(),
+            blockData
+        )
+        if not mined then return false, reason or "Az elottem talalt ercteler elakadt." end
+        runtime.oreAheadVisited = runtime.oreAheadVisited or {
+            at = activeBranchContext.absoluteStep,
+            left = {}, right = {},
+        }
+        local sideVisited = runtime.oreAheadVisited[activeBranchContext.side]
+        for positionKey in pairs(minedPositions or {}) do
+            sideVisited[positionKey] = true
+        end
+        -- Regi/ures eredmenynel is maradjon egy lepesszintu tartalekjeloles.
+        if not next(minedPositions or {}) then
+            sideVisited[tostring(activeBranchContext.step)] = minedCount or true
+        end
+        setActivity(activeBranchContext.side == "left" and "bal_oldalagat" or "jobb_oldalagat")
+        saveState()
+        return true
+    end
     if sharedSituations and sharedSituations:fluidKind(direction) then
         local cleared = sharedSituations:clearFluidSource(direction, selectSealBlock, function()
             return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
@@ -972,7 +1006,7 @@ local function oreInspectAndDig(move)
     return true
 end
 
-local function buildOreApi()
+buildOreApi = function()
     return {
         maxDepth = config.oreScanMaxDepth,
         maxBlocks = config.oreScanMaxBlocks,
@@ -999,12 +1033,20 @@ local function mineBranch(turnFunction, sideName, placeTorches, carveCrossSectio
     if placeTorches == nil then placeTorches = true end
     if carveCrossSection == nil then carveCrossSection = true end
     turnFunction()
-    local completed, reason = mineForward(
-        config.branchLength,
-        sideName .. " agat",
-        carveCrossSection
-    )
-    if not completed then return false, reason end
+    local sideKey = sideName == "Bal" and "left" or "right"
+    local completed, reason = true, nil
+    for branchStep = 1, config.branchLength do
+        if carveCrossSection and config.oreScanEnabled then
+            activeBranchContext = {
+                side = sideKey,
+                step = branchStep,
+                absoluteStep = config.startOffset + runtime.mainCompleted,
+            }
+        end
+        completed, reason = mineForward(1, sideName .. " agat", carveCrossSection)
+        activeBranchContext = nil
+        if not completed then return false, reason end
+    end
     turnAround()
     local previousReturningState = returningHome
     returningHome = true
@@ -1078,6 +1120,10 @@ local function minePendingBranches(absoluteStep)
     if runtime.branchesCompletedAt >= absoluteStep then return true end
 
     local delayTorches = config.oreScanEnabled and config.torchEnabled
+    if not runtime.oreAheadVisited or runtime.oreAheadVisited.at ~= absoluteStep then
+        runtime.oreAheadVisited = { at = absoluteStep, left = {}, right = {} }
+        saveState()
+    end
 
     setActivity("bal_oldalagat")
     local leftOk, leftReason = mineBranch(
@@ -1095,13 +1141,15 @@ local function minePendingBranches(absoluteStep)
         local oreApi = buildOreApi()
         setActivity("bal_ag_erckereses")
         local scanned, scanReason = oreScanner.scanBranch(
-            "left", config.branchLength, config.tunnelMode, oreApi
+            "left", config.branchLength, config.tunnelMode, oreApi,
+            runtime.oreAheadVisited.left
         )
         if not scanned then return false, scanReason end
 
         setActivity("jobb_ag_erckereses")
         scanned, scanReason = oreScanner.scanBranch(
-            "right", config.branchLength, config.tunnelMode, oreApi
+            "right", config.branchLength, config.tunnelMode, oreApi,
+            runtime.oreAheadVisited.right
         )
         if not scanned then return false, scanReason end
     end
@@ -1116,6 +1164,7 @@ local function minePendingBranches(absoluteStep)
     end
 
     runtime.branchesCompletedAt = absoluteStep
+    runtime.oreAheadVisited = nil
     setActivity("agak_keszen")
     return true
 end
@@ -1192,7 +1241,7 @@ end
 local function runMining()
     persistenceEnabled = true
     sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
-    sharedSituations = Situations.new(config.safety or {})
+    sharedSituations = Situations.new(config.safety or {}, { telemetry = sharedTelemetry })
     sharedNav = Navigation.new({
         state = navigationState or {
             pose = { x = position.x, y = position.y, z = position.z, heading = heading },
@@ -1279,6 +1328,7 @@ local function runMining()
         runtime.mainCompleted = 0
         runtime.branchesCompletedAt = 0
         runtime.oreScan = nil
+        runtime.oreAheadVisited = nil
         saveState()
 
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, config.startOffset))

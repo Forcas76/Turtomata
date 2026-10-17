@@ -58,6 +58,15 @@ oldalfalakon, illetve az ág végén keresi a beállított érceket. A kapcsoló
 érctelepet a mélység- és blokklimitig követi, majd pontosan visszatér az ág
 azon pontjára, ahonnan kitért.
 
+Ha az oldalág normál kiásása közben közvetlenül előtte kijelölt ércet talál,
+az érctelért azonnal megpróbálja végigkövetni. A művelet idejére megőrzi az
+összes így kitermelt világpozíciót, külön a bal és jobb ághoz. Az utólagos
+ágvizsgálat ezeken a már ismert járatcellákon nem fordul oldalra, nem járja
+végig a magassági szinteket és nem ismétli meg az ellenőrzést. A telér olyan
+oldalirányú koordinátái, amelyek nem részei az ág járóvonalának, nem okoznak
+téves kihagyást. Az ideiglenes térkép a teljes bal–jobb ágművelet végén törlődik,
+de megszakítás esetére addig az állapotmentés része.
+
 ### Területásás
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
@@ -196,9 +205,32 @@ eltelt idő, hátralévő becslés és figyelmeztetések. Így a terminál nem t
 A branch miner, a területásó és a Nether-építő leállításkor hazatér, lepakol és
 ment. A koordinátás feladat biztonságosan megáll és menti az aktuális világpozíciót.
 
-Az időbecslés kezdetben a beállított másodperc/művelet értékből indul, majd a
-valóban mért mozgási és ásási idők súlyozott átlagával folyamatosan újraszámol.
-Ez becslés, a folyadékok, leeső blokkok, mobok és kiszolgálóutak módosíthatják.
+Az indulási összefoglaló először képlettel kiszámolja a várható műveletszámot,
+majd ezt megszorozza az alapértelmezett `0,8 mp/művelet` értékkel:
+
+```text
+induló idő = várható műveletek × 0,8 mp
+```
+
+A `work_estimator.lua` külön számolja a mozgást, függőleges mozgást, ásást,
+fordulást, lerakást és – ahol szükséges – az ellenőrzéseket. Példák:
+
+```text
+Branch főút = hossz × (oda-vissza mozgás + magasság szerinti ásás)
+Oldalágak = elágazások × 2 oldal × ághossz × oda-vissza út
+3×3 szelet = 5 mozgás + 9 ásás + 6 fordulás
+Terület = szélesség × mélység × magasság + bejárás + hazatérés
+Lépcsőfok = 4 mozgás + 4 ásás + 1 építés
+Védett alagútcella = 4 mozgás + 2 ásás + legfeljebb 6 építés
+Koordinátaút = |ΔX| + |ΔY| + |ΔZ| + irányváltások
+```
+
+Az érctelep mérete, a folyadék, kavics, mob, inventory-ürítés vagy más váratlan
+esemény előre nem ismert. Futás közben a program ezért méri az egyes
+művelettípusok tényleges idejét. Akadály vagy figyelmeztetés esetén növeli a
+tanult járulékos szorzót, majd a még hátralévő képletet azonnal újraszámolja.
+A dashboard egyszerre mutatja a hátralévő várható műveletszámot és az adaptív
+időt, például: `1842 muv. / kb. 00:24:34`.
 
 ## Helyzetkezelés
 
@@ -226,6 +258,7 @@ nem naplóz.
 | `coordinate_navigation.lua` | KÍSÉRLETI világkoordinátás útvonaltervezés. |
 | `situation_manager.lua` | Akadály-, folyadék- és fáklyahibák kezelése. |
 | `telemetry.lua` | Eltelt idő, mért műveletidő és ETA. |
+| `work_estimator.lua` | Módonkénti műveletszám-képletek és induló időbecslés. |
 | `state_store.lua` | Atomi JSON-állapotmentés és visszaállítás. |
 | `job_request.lua` | A központi menü egyszer használható feladatátadása. |
 | `branch_miner.lua` | Branch mining és egyenes 3×3. |

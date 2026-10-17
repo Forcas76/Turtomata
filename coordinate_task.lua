@@ -6,6 +6,7 @@ local jobRequest = require("job_request")
 local Coordinate = require("coordinate_navigation")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
+local WorkEstimator = require("work_estimator")
 
 local args = { ... }
 local request, requestReason = jobRequest.consume("coordinate", args)
@@ -34,7 +35,7 @@ end
 
 local config = state.config
 local telemetry = Telemetry.new(state.telemetry, { defaultSeconds = config.defaultActionSeconds })
-local situations = Situations.new(config.safety or {})
+local situations = Situations.new(config.safety or {}, { telemetry = telemetry })
 
 local function save(navState, reason)
     if navState then state.navigation = navState end
@@ -75,6 +76,7 @@ nav = Coordinate.createNavigator({
         local remaining = math.abs(pose.x - config.target.x)
             + math.abs(pose.y - config.target.y)
             + math.abs(pose.z - config.target.z)
+        local estimate = WorkEstimator.coordinate(pose, config.target)
         ui.renderDashboard({
             task = "Koordinatas navigacio KISERLETI",
             status = reason,
@@ -82,7 +84,8 @@ nav = Coordinate.createNavigator({
             position = string.format("%d, %d, %d", pose.x, pose.y, pose.z),
             fuel = tostring(turtle.getFuelLevel()),
             elapsed = Telemetry.formatDuration(telemetry:elapsedMs()),
-            remaining = "kb. " .. Telemetry.formatDuration(telemetry:estimateMs({ move = remaining })),
+            remaining = string.format("%d muv. / kb. %s", estimate.totalActions,
+                Telemetry.formatDuration(telemetry:estimateMs(estimate.plan))),
             events = situations:lastWarnings(2),
         })
     end,

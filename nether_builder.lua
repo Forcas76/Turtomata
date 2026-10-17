@@ -9,6 +9,7 @@ local Navigation = require("navigation")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
+local WorkEstimator = require("work_estimator")
 local centralRequest, centralRequestError = jobRequest.consume("nether_builder", programArgs)
 
 local config = {}
@@ -648,10 +649,12 @@ end
 
 local function status(prefix)
     local remaining = math.max(0, (config.length or 0) - runtime.completed)
-    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs({
-        move = remaining * (config.mode == 1 and 2 or 3) + #runtime.path,
-        dig = remaining * (config.mode == 1 and 3 or 2),
-    }) or 0
+    local estimate = WorkEstimator.nether(config, {
+        completed = runtime.completed,
+        pathLength = #runtime.path,
+    })
+    local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
+        or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
     UI.renderDashboard({
         task = config.mode == 1 and "Nether lepcso" or "Nether vedett 1x2",
         status = prefix .. " / " .. tostring(runtime.activity),
@@ -662,7 +665,8 @@ local function status(prefix)
         supplies = "epito=" .. builderCount()
             .. (config.torchEnabled and (" faklya=" .. turtle.getItemCount(2)) or ""),
         elapsed = sharedTelemetry and Telemetry.formatDuration(sharedTelemetry:elapsedMs()) or "00:00:00",
-        remaining = "kb. " .. Telemetry.formatDuration(remainingMs),
+        remaining = string.format("%d muv. / kb. %s", estimate.totalActions,
+            Telemetry.formatDuration(remainingMs)),
         events = sharedSituations and sharedSituations:lastWarnings(2) or {},
     })
 end
@@ -910,7 +914,7 @@ end
 local function runBuilder()
     persistenceEnabled = true
     sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
-    sharedSituations = Situations.new(config.safety or {})
+    sharedSituations = Situations.new(config.safety or {}, { telemetry = sharedTelemetry })
     sharedNav = Navigation.new({
         state = {
             pose = { x = position.x, y = position.y, z = position.z, heading = heading },

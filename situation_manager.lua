@@ -16,9 +16,10 @@ local function directionApi(direction)
     return turtle.inspect, turtle.place, turtle.dig, turtle.attack
 end
 
-function situations.new(options)
+function situations.new(options, runtimeOptions)
     local self = setmetatable({}, situations)
     self.options = options or {}
+    self.telemetry = runtimeOptions and runtimeOptions.telemetry or self.options.telemetry
     self.warnings = {}
     return self
 end
@@ -26,7 +27,7 @@ end
 function situations:warn(message)
     self.warnings[#self.warnings + 1] = tostring(message)
     if #self.warnings > 20 then table.remove(self.warnings, 1) end
-    if self.options.telemetry then self.options.telemetry:addWarning() end
+    if self.telemetry then self.telemetry:addWarning() end
     if self.options.onWarning then self.options.onWarning(message) end
 end
 

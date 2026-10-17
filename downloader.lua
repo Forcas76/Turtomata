@@ -75,25 +75,26 @@ local links = {
     coordinatetask = { pastebinID = "", githubPath = "coordinate_task.lua", fileName = "coordinate_task.lua" },
     situations = { pastebinID = "", githubPath = "situation_manager.lua", fileName = "situation_manager.lua" },
     telemetry = { pastebinID = "", githubPath = "telemetry.lua", fileName = "telemetry.lua" },
+    estimator = { pastebinID = "", githubPath = "work_estimator.lua", fileName = "work_estimator.lua" },
     request = { pastebinID = "", githubPath = "job_request.lua", fileName = "job_request.lua" },
 }
 
 local downloadOrder = {
-    "state", "navigation", "coordinate", "situations", "telemetry", "ui", "settings", "request",
+    "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings", "request",
     "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
     "coordinatetask", "main", "downloader",
 }
 
 local componentGroups = {
     main = {
-        "state", "navigation", "coordinate", "situations", "telemetry", "ui", "settings",
+        "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "settings",
         "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
         "nether", "coordinatetask", "main",
     },
-    branch = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
-    excavator = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
-    nether = { "state", "navigation", "situations", "telemetry", "ui", "request", "torch", "actionlog", "nether" },
-    coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "ui", "request", "coordinatetask" },
+    branch = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
+    excavator = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
+    nether = { "state", "navigation", "situations", "telemetry", "estimator", "ui", "request", "torch", "actionlog", "nether" },
+    coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "ui", "request", "coordinatetask" },
 }
 
 local function delTerm()
@@ -295,6 +296,7 @@ local fileMap = {
     settings = "settings",
     state = "state",
     telemetry = "telemetry",
+    estimator = "estimator",
     situations = "situations",
 }
 

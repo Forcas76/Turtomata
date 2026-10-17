@@ -4,10 +4,22 @@ local ui = require("ui")
 local Settings = require("settings")
 local stateStore = require("state_store")
 local jobRequest = require("job_request")
+local WorkEstimator = require("work_estimator")
 
 local currentSettings = Settings.load()
 
 local function boolText(value) return value and "BE" or "KI" end
+
+local function appendEstimate(lines, estimate)
+    for _, formula in ipairs(estimate.formula or {}) do
+        lines[#lines + 1] = "Keplet: " .. formula
+    end
+    local seconds = currentSettings.navigation.defaultActionSeconds or 0.8
+    lines[#lines + 1] = "Vart muvelet: " .. estimate.totalActions
+    lines[#lines + 1] = string.format("Becsles (%.2f mp/muv): %s", seconds,
+        require("telemetry").formatDuration(WorkEstimator.durationMs(estimate, seconds)))
+    return lines
+end
 
 local function programExists(name)
     return fs.exists(name) or fs.exists(name .. ".lua")
@@ -234,14 +246,16 @@ local function configureBranch()
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
     local name = ({ "Branch 1x2", "Branch 1x3", "Egyenes 3x3" })[mode]
-    launch("branch_miner", "branch_miner", "new", config, {
+    local summary = {
         "Mod: " .. name,
         "Hossz: " .. config.mainLength,
         mode == 3 and "Oldalag: nincs" or ("Oldalag: " .. config.branchLength .. ", koz: " .. config.branchSpacing),
         "Fuel tartalek: " .. config.fuelReserve,
         "Faklya: " .. boolText(config.torchEnabled),
         "Erckereses: " .. boolText(config.oreScanEnabled),
-    })
+    }
+    local estimate = WorkEstimator.branch(config, { mainCompleted = 0, initial = true })
+    launch("branch_miner", "branch_miner", "new", config, appendEstimate(summary, estimate))
 end
 
 local function configureExcavator()
@@ -257,11 +271,13 @@ local function configureExcavator()
     config.torchInterval = config.mainTorchInterval
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
-    launch("excavator", "excavator", "new", config, {
+    local summary = {
         string.format("Meret: %dx%dx%d", config.width, config.depth, config.height),
         "Fuel tartalek: " .. config.fuelReserve,
         "Faklya: " .. boolText(config.torchEnabled),
-    })
+    }
+    local estimate = WorkEstimator.excavator(config, { baseCompleted = 0, visited = 0 })
+    launch("excavator", "excavator", "new", config, appendEstimate(summary, estimate))
 end
 
 local function configureNether()
@@ -283,12 +299,14 @@ local function configureNether()
     config.torchInterval = config.torchEnabled and ui.integer("FAKLYAZAS", "Faklya tavolsag", currentSettings.torches.interval, 1) or 0
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
-    launch("nether_builder", "nether_builder", "new", config, {
+    local summary = {
         "Mod: " .. (mode == 1 and ("lepcso " .. config.stairDirection) or "vedett 1x2"),
         "Hossz: " .. config.length,
         "Epitoanyag: " .. config.builderBlock,
         "Faklya: " .. boolText(config.torchEnabled),
-    })
+    }
+    local estimate = WorkEstimator.nether(config, { completed = 0, pathLength = 0 })
+    launch("nether_builder", "nether_builder", "new", config, appendEstimate(summary, estimate))
 end
 
 local function coordinateTask()
@@ -307,7 +325,7 @@ local function coordinateTask()
     }
     local finalFacing = ui.choice("VEGSO FACING", { "Mindegy", "Eszak", "Kelet", "Del", "Nyugat" }, 1)
     if finalFacing and finalFacing > 1 then target.heading = finalFacing - 2 end
-    local distance = math.abs(start.x - target.x) + math.abs(start.y - target.y) + math.abs(start.z - target.z)
+    local estimate = WorkEstimator.coordinate(start, target)
     local config = {
         start = start,
         target = target,
@@ -317,13 +335,12 @@ local function coordinateTask()
         defaultActionSeconds = currentSettings.navigation.defaultActionSeconds,
         safety = currentSettings.safety,
     }
-    launch("coordinate", "coordinate_task", "new", config, {
+    local summary = {
         string.format("Start: %d, %d, %d", start.x, start.y, start.z),
         string.format("Cel:   %d, %d, %d", target.x, target.y, target.z),
-        "Tavolsag: " .. distance .. " lepes",
         "Mod: " .. config.mode .. " (KISERLETI)",
-        "Becsles: kb. " .. math.floor(distance * config.defaultActionSeconds) .. " mp",
-    })
+    }
+    launch("coordinate", "coordinate_task", "new", config, appendEstimate(summary, estimate))
 end
 
 local function resumeMenu()
@@ -344,7 +361,7 @@ local function resumeMenu()
 end
 
 local function diagnostics()
-    local modules = { "ui", "settings", "state_store", "navigation", "coordinate_navigation", "situation_manager", "telemetry", "inventory_manager", "torch_manager", "ore_scanner" }
+    local modules = { "ui", "settings", "state_store", "navigation", "coordinate_navigation", "situation_manager", "telemetry", "work_estimator", "inventory_manager", "torch_manager", "ore_scanner" }
     local lines = {}
     for _, name in ipairs(modules) do
         local ok = pcall(require, name)
