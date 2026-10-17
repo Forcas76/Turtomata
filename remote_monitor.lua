@@ -181,11 +181,15 @@ local function renderBody()
 end
 
 local function render()
-    local target = selectDisplay(false)
-    local previous = term.redirect(target)
-    local ok, reason = pcall(renderBody)
-    term.redirect(previous)
-    if not ok then error(reason, 0) end
+    selectDisplay(false)
+    local targets = { nativeTerm }
+    if displayName and display ~= nativeTerm then targets[#targets + 1] = display end
+    for _, target in ipairs(targets) do
+        local previous = term.redirect(target)
+        local ok, reason = pcall(renderBody)
+        term.redirect(previous)
+        if not ok then error(reason, 0) end
+    end
 end
 
 local function displaySize()
@@ -225,8 +229,8 @@ while true do
         elseif p1 == keys.left or p1 == keys.up then selected = math.max(1, selected - 1)
         elseif p1 == keys.right or p1 == keys.down then selected = math.min(#ordered(), selected + 1) end
         render()
-    elseif event == "mouse_click" and not displayName then
-        local _, height = displaySize()
+    elseif event == "mouse_click" then
+        local _, height = nativeTerm.getSize()
         if p3 >= 4 and p3 < height - 7 then selected = math.max(1, p3 - 3) end
         render()
     elseif event == "monitor_touch" and p1 == displayName then
@@ -242,8 +246,12 @@ while true do
     end
 end
 
-local finalTarget = selectDisplay(false)
-local previous = term.redirect(finalTarget)
-clear()
-print("Megfigyelo leallitva.")
-term.redirect(previous)
+selectDisplay(false)
+local finalTargets = { nativeTerm }
+if displayName and display ~= nativeTerm then finalTargets[#finalTargets + 1] = display end
+for _, target in ipairs(finalTargets) do
+    local previous = term.redirect(target)
+    clear()
+    print("Megfigyelo leallitva.")
+    term.redirect(previous)
+end

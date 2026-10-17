@@ -118,9 +118,10 @@ Computeren és normál/Advanced Computeren. A nézet a terminál méretéhez iga
 lehet nézni.
 
 Ha a megfigyelő Computerhez `monitor` periféria csatlakozik, a program
-automatikusan az első megtalált külső monitorra irányítja a teljes felületet.
-Monitor csatlakoztatásakor vagy eltávolításakor futás közben is automatikusan
-átvált. Monitor nélkül a Computer/Pocket saját terminálját használja. Advanced
+automatikusan az első megtalált külső monitorra is kirajzolja a teljes
+felületet. A Computer saját terminálja közben aktív marad, tehát a két kijelző
+egyszerre frissül, mindegyik a saját méretéhez igazodó elrendezéssel. Monitor
+csatlakoztatását vagy eltávolítását futás közben is felismeri. Advanced
 Monitoron érintéssel, a gépen pedig nyilakkal vagy egérrel választható turtle.
 
 Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
