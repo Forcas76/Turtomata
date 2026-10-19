@@ -46,6 +46,8 @@ local runtime = {
     pending = nil,
     serviceLevel = 0,
     blockDrops = {},
+    floodEncounters = {},
+    floodShell = false,
 }
 local sharedNav = nil
 local sharedTelemetry = nil
@@ -69,6 +71,8 @@ local function saveState()
         pending = runtime.pending,
         serviceLevel = runtime.serviceLevel,
         blockDrops = runtime.blockDrops,
+        floodEncounters = runtime.floodEncounters,
+        floodShell = runtime.floodShell,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         position = { x = position.x, y = position.y, z = position.z },
         heading = heading,
@@ -165,6 +169,8 @@ local function configure()
             runtime.pending = saved.pending
             runtime.serviceLevel = saved.serviceLevel or 0
             runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+            runtime.floodEncounters = type(saved.floodEncounters) == "table" and saved.floodEncounters or {}
+            runtime.floodShell = saved.floodShell == true
             telemetryState = saved.telemetry
         else
             config = centralRequest.config or {}
@@ -206,6 +212,8 @@ local function configure()
         runtime.pending = saved.pending
         runtime.serviceLevel = saved.serviceLevel or 0
         runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+        runtime.floodEncounters = type(saved.floodEncounters) == "table" and saved.floodEncounters or {}
+        runtime.floodShell = saved.floodShell == true
         telemetryState = saved.telemetry
     else
         config.autoResume = false
@@ -400,7 +408,7 @@ local function builderCount()
 end
 
 local function routineBuilderStock()
-    if config.mode == 2 then return 6 end
+    if config.mode == 2 or runtime.floodShell then return 6 end
     if config.mode == 3 then return 0 end
     return 1
 end
@@ -681,12 +689,14 @@ local function status(prefix)
     local estimate = WorkEstimator.nether(config, {
         completed = runtime.completed,
         pathLength = #runtime.path,
+        floodShell = runtime.floodShell,
     })
     local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
         or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
     UI.renderDashboard({
         task = config.mode == 1 and "Utvonal: lepcso"
-            or config.mode == 2 and "Utvonal: vedett 1x2" or "Utvonal: sima 1x2",
+            or (config.mode == 2 or runtime.floodShell) and "Utvonal: vedett 1x2"
+            or "Utvonal: sima 1x2",
         status = prefix .. " / " .. tostring(runtime.activity),
         progress = string.format("%d/%d", runtime.completed, config.length or 0),
         position = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading),
@@ -929,6 +939,25 @@ local function buildSimpleTunnelStep()
     return placeIfAir("down")
 end
 
+-- Harom folyadekos lepes ot lepesen belul: a sima alagut tartosan
+-- fedett profillal folytat. A dontes a lepes elott mentodik.
+local function checkFloodShell(step)
+    if config.mode ~= 3 or runtime.floodShell then return end
+    local encounters = runtime.floodEncounters
+    for index = #encounters, 1, -1 do
+        if step - encounters[index] >= 5 then table.remove(encounters, index) end
+    end
+    local fluid = sharedSituations:fluidKind("forward")
+        or sharedSituations:fluidKind("up")
+        or sharedSituations:fluidKind("down")
+    if fluid and encounters[#encounters] ~= step then encounters[#encounters + 1] = step end
+    if fluid == "lava" or #encounters >= 3 then
+        runtime.floodShell = true
+        sharedSituations:warn("Sok folyadek: atvaltas fedett alagutra.")
+    end
+    saveState()
+end
+
 local function replayCompletedPath()
     runtime.path = {}
     runtime.pending = nil
@@ -1026,6 +1055,8 @@ local function runBuilder()
         runtime.pending = nil
         runtime.serviceLevel = 0
         runtime.blockDrops = {}
+        runtime.floodEncounters = {}
+        runtime.floodShell = false
         saveState()
         local serviced, reason = serviceHome(
             config.fuelReserve + 12,
@@ -1037,15 +1068,18 @@ local function runBuilder()
     local stopReason = nil
     for step = runtime.completed + 1, config.length do
         if stopRequested then stopReason = "Felhasznaloi leallitas." break end
+        checkFloodShell(step)
         if serviceRequested then
             serviceRequested = false
             local serviced, serviceReason = serviceAndResume(
-                "Tavoli lepakolas es feltoltes.", config.mode == 2 and 64 or routineBuilderStock()
+                "Tavoli lepakolas es feltoltes.",
+                (config.mode == 2 or runtime.floodShell) and 64 or routineBuilderStock()
             )
             if not serviced then stopReason = serviceReason break end
         end
         setActivity(config.mode == 1 and "lepcso_epites"
-            or config.mode == 2 and "vedett_alagut_epites" or "sima_alagut_asas")
+            or (config.mode == 2 or runtime.floodShell)
+                and "vedett_alagut_epites" or "sima_alagut_asas")
         local fueled, fuelReason = ensureWorkFuel(config.mode == 1 and 4 or 5)
         if not fueled then stopReason = fuelReason break end
         if miningFull() then
@@ -1056,7 +1090,7 @@ local function runBuilder()
         end
         local ok, reason
         if config.mode == 1 then ok, reason = buildStairStep()
-        elseif config.mode == 2 then ok, reason = buildTunnelStep()
+        elseif config.mode == 2 or runtime.floodShell then ok, reason = buildTunnelStep()
         else ok, reason = buildSimpleTunnelStep() end
         if not ok then stopReason = reason break end
         if config.torchEnabled and step % config.torchInterval == 0 then

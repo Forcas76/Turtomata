@@ -44,6 +44,13 @@ assert(plainRoute.plan.move == 2 and plainRoute.plan.dig == 2
     and plainRoute.plan.place == 1 and plainRoute.totalActions == 5,
     "Hibas sima 1x2 utvonalbecsles: " .. plainRoute.totalActions)
 
+local floodedRoute = Estimator.nether({
+    mode = 3, length = 4, torchEnabled = false,
+}, { completed = 2, pathLength = 2, floodShell = true })
+assert(floodedRoute.plan.move == 10 and floodedRoute.plan.place == 12
+    and floodedRoute.totalActions == 42,
+    "A folyadek miatti fedett alagut ETA-ja hibas.")
+
 local coordinate = Estimator.coordinate(
     { x = 0, y = 64, z = 0, heading = 0 },
     { x = 2, y = 65, z = -2 }

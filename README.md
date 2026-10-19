@@ -101,7 +101,7 @@ el. A funkció kísérleti, ezért először kis területen érdemes kipróbáln
 | --- | --- | --- |
 | `Lepcso fel/le` | Lépcső fel/le | Blokkonként egy szintet emelkedő vagy süllyedő, két blokk fejterű lépcső. |
 | `Vedett 1x2 alagut` | Védett 1×2-es alagút | Szabad térben padlót, oldalfalakat és mennyezetet épít a járat köré. |
-| `Sima 1x2 alagut` | Sima 1×2-es alagút | Két blokk magas járatot ás. Ha nincs alatta blokk, cobblestone-nal pótolja a padlót. |
+| `Sima 1x2 alagut` | Sima 1×2-es alagút | Két blokk magas járatot ás. Ha nincs alatta blokk, cobblestone-nal pótolja a padlót. Sok víznél vagy lávánál tartósan fedett alagútra vált. |
 | `Felfele` | Felfelé | Emelkedő lépcső. |
 | `Lefele` | Lefelé | Süllyedő lépcső. |
 | `Epitoanyag / Blokk` | Építőanyag / blokk | A használt blokk azonosítója, például `minecraft:cobblestone`. |
@@ -115,6 +115,14 @@ hiányzó padló esetén kér belőle a leadóládából. A fáklyázás opcion�
 Ha a fáklya nem helyezhető le, figyelmeztet és továbbhalad; az üres
 fáklyaslot sem állítja le ezt a módot. A mentésfájl neve kompatibilitásból
 továbbra is `nether_builder_state.txt`.
+
+A sima 1×2-es mód az előtte, felette és alatta érzékelt folyadékot figyeli.
+Öt lépésen belül három vizes lépésnél, illetve láva észlelésekor a hátralévő
+szakaszt fedett 1×2-es profilban készíti: padló, kétoldalt falak és mennyezet.
+A váltás a mentésbe kerül, újraindítás után is megmarad. A szükséges
+cobblestone-t a leadóládából tölti fel. Ha a folyadékot nem tudja biztonságosan
+lezárni, vagy elfogy az építőanyag, nem lép tovább vakon. A sima mód első,
+váltás előtti vizes lépései még nem utólagosan burkoltak.
 
 ### KÍSÉRLETI koordinátás navigáció
 

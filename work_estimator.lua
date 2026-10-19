@@ -168,7 +168,7 @@ function estimator.nether(config, state)
         add(plan, "place", remaining)
         add(plan, "turn", remaining * 2)
         formula[#formula + 1] = string.format("Lepcso: %d x (4m + 4a + 1e)", remaining)
-    elseif config.mode == 2 then
+    elseif config.mode == 2 or state.floodShell == true then
         add(plan, "move", remaining * 4 + pathLength)
         add(plan, "dig", remaining * 2)
         add(plan, "place", remaining * 6)
