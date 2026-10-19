@@ -1,4 +1,4 @@
--- CC:Tweaked Nether ut- es alagutepito turtle.
+-- CC:Tweaked utvonalkeszito turtle: lepcso, vedett es sima 1x2 alagut.
 -- 1-es slot: fuel. Faklya nelkul 2-5., faklyaval 3-5. slot: epitoanyag.
 -- KISERLETI faklyazasnal a 2-es slot a faklyake. A 6-16. slot banyaszslot.
 
@@ -75,7 +75,7 @@ local function saveState()
         config = config,
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
-    if not ok then error(reason or "Nem irhato a Nether allapotfajl.", 0) end
+    if not ok then error(reason or "Nem irhato az utvonal allapotfajl.", 0) end
 end
 
 local function setActivity(value)
@@ -151,7 +151,7 @@ local function configure()
     if centralRequestError then error(centralRequestError, 0) end
     if centralRequest then
         if centralRequest.action == "resume" then
-            if not saved then error("Nincs hasznalhato Nether mentes.", 0) end
+            if not saved then error("Nincs hasznalhato utvonalmentes.", 0) end
             config = saved.config
             config.autoResume = true
             position.x = saved.position.x or 0
@@ -175,22 +175,24 @@ local function configure()
         config.torchInterval = config.torchEnabled and (config.torchInterval or 8) or 0
         if config.torchEnabled and not torchManager then error("Hianyzik a torch_manager.lua.", 0) end
         buildFirstSlot = config.torchEnabled and 3 or 2
-        config.builderBlock = normalizeBlockName(config.builderBlock)
-        if not config.mode or not config.length or not config.builderBlock then error("Hianyos Nether konfiguracio.", 0) end
+        config.builderBlock = config.mode == 3 and "minecraft:cobblestone"
+            or normalizeBlockName(config.builderBlock)
+        if not config.mode or not config.length or not config.builderBlock then error("Hianyos utvonal-konfiguracio.", 0) end
         clearScreen()
         return
     end
     clearScreen()
-    print("=== NETHER UTEPITO ===\n")
+    print("=== UTVONAL KESZITES ===\n")
     local mode = promptChoice("Feladat:", {
         "Lepcso fel/le",
         "Vedett 1x2 alagut",
+        "Sima 1x2 alagut",
         saved and "Auto folytatas" or "Auto (nincs mentes)",
-    }, saved and 3 or 1)
+    }, saved and 4 or 1)
 
     clearScreen()
-    if mode == 3 then
-        if not saved then error("Nincs hasznalhato Nether mentes.", 0) end
+    if mode == 4 then
+        if not saved then error("Nincs hasznalhato utvonalmentes.", 0) end
         config = saved.config
         config.autoResume = true
         position.x = saved.position.x or 0
@@ -215,7 +217,8 @@ local function configure()
             }, 1) == 1 and "up" or "down"
         end
         config.length = promptInteger("Hossz", 64, 1)
-        config.builderBlock = promptBlockName("minecraft:cobblestone")
+        config.builderBlock = mode == 3 and "minecraft:cobblestone"
+            or promptBlockName("minecraft:cobblestone")
         config.fuelReserve = promptInteger("Fuel tartalek", 8, 4)
         print("")
         config.torchEnabled = promptChoice("KISERLETI faklyazas:", {
@@ -233,15 +236,18 @@ local function configure()
         error("Hianyzik a torch_manager.lua.", 0)
     end
     buildFirstSlot = config.torchEnabled and 3 or 2
-    config.builderBlock = normalizeBlockName(config.builderBlock)
+    config.builderBlock = config.mode == 3 and "minecraft:cobblestone"
+        or normalizeBlockName(config.builderBlock)
     if not config.builderBlock then error("Hibas mentett epitoanyag.", 0) end
 
     clearScreen()
     print("=== OSSZEFOGLALO ===")
     if config.mode == 1 then
         print("Mod: lepcso " .. (config.stairDirection == "up" and "felfele" or "lefele"))
-    else
+    elseif config.mode == 2 then
         print("Mod: vedett 1x2 alagut")
+    else
+        print("Mod: sima 1x2 alagut")
     end
     print("Hossz: " .. config.length)
     print("Epito: " .. config.builderBlock)
@@ -393,6 +399,12 @@ local function builderCount()
     return total
 end
 
+local function routineBuilderStock()
+    if config.mode == 2 then return 6 end
+    if config.mode == 3 then return 0 end
+    return 1
+end
+
 local function selectBuilder()
     for slot = buildFirstSlot, BUILD_LAST do
         local detail = turtle.getItemDetail(slot)
@@ -431,6 +443,14 @@ local function selectDropSlot(blockData)
     if expectedDrop == config.builderBlock
         and selectMatchingSlot(expectedDrop, buildFirstSlot, BUILD_LAST) then
         return true
+    end
+    if config.mode == 3 and expectedDrop == config.builderBlock then
+        for slot = buildFirstSlot, BUILD_LAST do
+            if turtle.getItemCount(slot) == 0 then
+                turtle.select(slot)
+                return true
+            end
+        end
     end
     if selectMatchingSlot(expectedDrop, MINE_FIRST, 16) then return true end
 
@@ -579,20 +599,28 @@ local function refuelFromUpperChest(requiredFuel, refillTorch)
     end
 
     if not reason and config.torchEnabled and refillTorch ~= false then
+        local torchWarning = nil
         moved = sharedNav:step({ kind = "u" })
         if not moved.ok then
-            reason = "Nem tudok felmenni a faklyas ladahoz."
+            torchWarning = "Nem tudok felmenni a faklyas ladahoz."
         else
             runtime.serviceLevel = 2
             saveState()
             local torchOk, torchReason = torchManager.refillFromChest()
-            if not torchOk then reason = torchReason end
+            if not torchOk then torchWarning = torchReason end
             moved = sharedNav:step({ kind = "d" })
             if not moved.ok then
                 return false, "Nem tudok lejonni a faklyas ladatol."
             end
             runtime.serviceLevel = 1
             saveState()
+        end
+        if torchWarning then
+            if config.mode == 3 then
+                sharedSituations:warn("Faklya kihagyva: " .. tostring(torchWarning))
+            else
+                reason = torchWarning
+            end
         end
     end
 
@@ -645,7 +673,7 @@ end
 local function ensureWorkFuel(extraMoves)
     local required = #runtime.path + extraMoves + config.fuelReserve + 2
     if refuelFromSlotOne(required) then return true end
-    return serviceAndResume("Keves az uzemanyag.", config.mode == 2 and 6 or 1)
+    return serviceAndResume("Keves az uzemanyag.", routineBuilderStock())
 end
 
 local function status(prefix)
@@ -657,7 +685,8 @@ local function status(prefix)
     local remainingMs = sharedTelemetry and sharedTelemetry:estimateMs(estimate.plan)
         or WorkEstimator.durationMs(estimate, config.defaultActionSeconds or 0.8)
     UI.renderDashboard({
-        task = config.mode == 1 and "Nether lepcso" or "Nether vedett 1x2",
+        task = config.mode == 1 and "Utvonal: lepcso"
+            or config.mode == 2 and "Utvonal: vedett 1x2" or "Utvonal: sima 1x2",
         status = prefix .. " / " .. tostring(runtime.activity),
         progress = string.format("%d/%d", runtime.completed, config.length or 0),
         position = string.format("%d,%d,%d  irany=%d", position.x, position.y, position.z, heading),
@@ -700,7 +729,7 @@ local function managedDig(direction)
             if attempts > 20 then return false, "Tul sok folyadek aramlik vissza az utba." end
         elseif not selectDropSlot(blockData) then
             local serviced, reason = serviceAndResume(
-                "A kovetkezo drop mar nem fer el.", config.mode == 2 and 6 or 1
+                "A kovetkezo drop mar nem fer el.", routineBuilderStock()
             )
             if not serviced then return false, reason end
         else
@@ -749,8 +778,12 @@ end
 
 local function placeTorchAboveWithSupport()
     if not torchManager.hasTorch() then
+        if config.mode == 3 then
+            sharedSituations:warn("Faklya kihagyva: elfogyott a faklya.")
+            return true
+        end
         local serviced, reason = serviceAndResume(
-            "Elfogyott a faklya.", config.mode == 2 and 6 or 1
+            "Elfogyott a faklya.", routineBuilderStock()
         )
         if not serviced then return false, reason end
     end
@@ -764,12 +797,22 @@ local function placeTorchAboveWithSupport()
         sharedSituations:warn("Faklya kihagyva: " .. tostring(reason))
         return true
     end
+    if config.mode == 3 and builderCount() < 1 then
+        sharedSituations:warn("Faklya kihagyva: nincs megtamaszto blokk.")
+        return true
+    end
     local moved, moveReason = pushMove({ kind = "u" })
     if not moved then return false, moveReason end
     local supported, supportReason = placeIfAir("forward", (heading + 1) % 4)
     local returned, returnReason = popMove()
     if not returned then return false, returnReason end
-    if not supported then return false, supportReason end
+    if not supported then
+        if config.mode == 3 then
+            sharedSituations:warn("Faklya kihagyva: " .. tostring(supportReason))
+            return true
+        end
+        return false, supportReason
+    end
 
     placed, reason = torchManager.placeAbove(function() return heading end, face)
     if not placed then
@@ -875,6 +918,17 @@ local function buildTunnelStep()
     return buildTunnelShell(0)
 end
 
+local function buildSimpleTunnelStep()
+    local ok, reason = managedDig("forward")
+    if not ok then return false, reason end
+    ok, reason = pushMove({ kind = "h", heading = 0 })
+    if not ok then return false, reason end
+    ok, reason = managedDig("up")
+    if not ok then return false, reason end
+    -- A sima alagutnak nincs fala/mennyezete; csak a hianyzo padlot potolja.
+    return placeIfAir("down")
+end
+
 local function replayCompletedPath()
     runtime.path = {}
     runtime.pending = nil
@@ -943,8 +997,8 @@ local function runBuilder()
     })
     if actionLogger then
         local modeName = config.mode == 1
-            and (config.stairDirection == "up" and "Nether lepcso fel" or "Nether lepcso le")
-            or "Nether vedett 1x2"
+            and (config.stairDirection == "up" and "Utvonal lepcso fel" or "Utvonal lepcso le")
+            or config.mode == 2 and "Utvonal vedett 1x2" or "Utvonal sima 1x2"
         actionLogger.log(modeName
             .. (config.autoResume and " - auto folytatas" or " - uj munka")
             .. (config.torchEnabled and " - faklyazas=be" or " - faklyazas=ki"))
@@ -959,7 +1013,7 @@ local function runBuilder()
         if not home then error(homeReason, 0) end
         local serviced, serviceReason2 = serviceHome(
             (4 * runtime.completed) + config.fuelReserve + 12,
-            config.mode == 2 and 6 or 1
+            routineBuilderStock()
         )
         if not serviced then error(serviceReason2, 0) end
         local replayed, replayReason = replayCompletedPath()
@@ -975,7 +1029,7 @@ local function runBuilder()
         saveState()
         local serviced, reason = serviceHome(
             config.fuelReserve + 12,
-            config.mode == 2 and 6 or 1
+            routineBuilderStock()
         )
         if not serviced then error(reason, 0) end
     end
@@ -986,22 +1040,24 @@ local function runBuilder()
         if serviceRequested then
             serviceRequested = false
             local serviced, serviceReason = serviceAndResume(
-                "Tavoli lepakolas es feltoltes.", config.mode == 2 and 64 or 1
+                "Tavoli lepakolas es feltoltes.", config.mode == 2 and 64 or routineBuilderStock()
             )
             if not serviced then stopReason = serviceReason break end
         end
-        setActivity(config.mode == 1 and "lepcso_epites" or "alagut_epites")
+        setActivity(config.mode == 1 and "lepcso_epites"
+            or config.mode == 2 and "vedett_alagut_epites" or "sima_alagut_asas")
         local fueled, fuelReason = ensureWorkFuel(config.mode == 1 and 4 or 5)
         if not fueled then stopReason = fuelReason break end
         if miningFull() then
             local serviced, serviceReason = serviceAndResume(
-                "Az inventory megtelt.", config.mode == 2 and 6 or 1
+                "Az inventory megtelt.", routineBuilderStock()
             )
             if not serviced then stopReason = serviceReason break end
         end
         local ok, reason
         if config.mode == 1 then ok, reason = buildStairStep()
-        else ok, reason = buildTunnelStep() end
+        elseif config.mode == 2 then ok, reason = buildTunnelStep()
+        else ok, reason = buildSimpleTunnelStep() end
         if not ok then stopReason = reason break end
         if config.torchEnabled and step % config.torchInterval == 0 then
             ok, reason = placeScheduledTorch()
@@ -1014,8 +1070,8 @@ local function runBuilder()
         end
     end
 
-    if stopReason then printError("A Nether epites leallt: " .. tostring(stopReason))
-    else print("A beallitott Nether utvonal elkeszult.") end
+    if stopReason then printError("Az utvonalkeszites leallt: " .. tostring(stopReason))
+    else print("A beallitott utvonal elkeszult.") end
 
     local home, homeReason = retreatHome()
     if not home then

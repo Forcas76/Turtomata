@@ -37,6 +37,13 @@ local nether = Estimator.nether({
 }, { completed = 0, pathLength = 0 })
 assert(nether.totalActions == 20, "Hibas Nether-keplet: " .. nether.totalActions)
 
+local plainRoute = Estimator.nether({
+    mode = 3, length = 1, torchEnabled = false,
+}, { completed = 0, pathLength = 0 })
+assert(plainRoute.plan.move == 2 and plainRoute.plan.dig == 2
+    and plainRoute.plan.place == 1 and plainRoute.totalActions == 5,
+    "Hibas sima 1x2 utvonalbecsles: " .. plainRoute.totalActions)
+
 local coordinate = Estimator.coordinate(
     { x = 0, y = 64, z = 0, heading = 0 },
     { x = 2, y = 65, z = -2 }

@@ -336,26 +336,31 @@ local function configureExcavator()
 end
 
 local function configureNether()
-    local mode = ui.choice("NETHER UTEPITO", { "Lepcso fel/le", "Vedett 1x2 alagut" }, 1)
+    local mode = ui.choice("UTVONAL KESZITES", { "Lepcso fel/le", "Vedett 1x2 alagut", "Sima 1x2 alagut" }, 1)
     if not mode then return end
     local config = { autoResume = false, mode = mode }
     if mode == 1 then
         config.stairDirection = ui.choice("LEPCSO IRANYA", { "Felfele", "Lefele" }, 1) == 1 and "up" or "down"
     end
-    config.length = ui.integer("NETHER UTEPITO", "Hossz", 64, 1)
-    config.builderBlock = ui.input("EPITOANYAG", "Blokk", "minecraft:cobblestone", function(raw)
-        raw = string.lower(tostring(raw or "")):gsub("^%s+", ""):gsub("%s+$", "")
-        if not string.find(raw, ":", 1, true) then raw = "minecraft:" .. raw end
-        if not string.match(raw, "^[a-z0-9_.-]+:[a-z0-9_./-]+$") then return false, nil, "Hibas blokkformatum." end
-        return true, raw
-    end, "Formatum: <mod_neve>:<blokk_neve>")
+    config.length = ui.integer("UTVONAL KESZITES", "Hossz", 64, 1)
+    if mode == 3 then
+        config.builderBlock = "minecraft:cobblestone"
+    else
+        config.builderBlock = ui.input("EPITOANYAG", "Blokk", "minecraft:cobblestone", function(raw)
+            raw = string.lower(tostring(raw or "")):gsub("^%s+", ""):gsub("%s+$", "")
+            if not string.find(raw, ":", 1, true) then raw = "minecraft:" .. raw end
+            if not string.match(raw, "^[a-z0-9_.-]+:[a-z0-9_./-]+$") then return false, nil, "Hibas blokkformatum." end
+            return true, raw
+        end, "Formatum: <mod_neve>:<blokk_neve>")
+    end
     config.fuelReserve = ui.integer("UZEMANYAG", "Fuel tartalek", math.max(4, currentSettings.general.fuelReserve), 4)
     config.torchEnabled = yesNo("KISERLETI faklyazas", currentSettings.torches.enabledByDefault)
     config.torchInterval = config.torchEnabled and ui.integer("FAKLYAZAS", "Faklya tavolsag", currentSettings.torches.interval, 1) or 0
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
     local summary = {
-        "Mod: " .. (mode == 1 and ("lepcso " .. config.stairDirection) or "vedett 1x2"),
+        "Mod: " .. (mode == 1 and ("lepcso " .. config.stairDirection)
+            or mode == 2 and "vedett 1x2" or "sima 1x2"),
         "Hossz: " .. config.length,
         "Epitoanyag: " .. config.builderBlock,
         "Faklya: " .. boolText(config.torchEnabled),
@@ -402,7 +407,7 @@ local function resumeMenu()
     local jobs = {
         { label = "Branch mining", task = "branch_miner", program = "branch_miner", state = "branch_miner_state.txt" },
         { label = "Terulet asas", task = "excavator", program = "excavator", state = "excavator_state.txt" },
-        { label = "Nether utepito", task = "nether_builder", program = "nether_builder", state = "nether_builder_state.txt" },
+        { label = "Utvonal keszites", task = "nether_builder", program = "nether_builder", state = "nether_builder_state.txt" },
         { label = "Koordinatas navigacio", task = "coordinate", program = "coordinate_task", state = "coordinate_state.txt" },
     }
     local items = {}
@@ -458,7 +463,7 @@ local function menuLoop()
         local choice = ui.menu("CCTURTLE " .. Version.label, {
             { label = "Branch mining", value = "branch" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
-            { label = "Nether utepito", value = "nether" },
+            { label = "Utvonal keszites", value = "nether" },
             { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
             { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
             { label = "Beallitasok", value = "settings" },

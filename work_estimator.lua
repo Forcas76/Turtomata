@@ -168,12 +168,18 @@ function estimator.nether(config, state)
         add(plan, "place", remaining)
         add(plan, "turn", remaining * 2)
         formula[#formula + 1] = string.format("Lepcso: %d x (4m + 4a + 1e)", remaining)
-    else
+    elseif config.mode == 2 then
         add(plan, "move", remaining * 4 + pathLength)
         add(plan, "dig", remaining * 2)
         add(plan, "place", remaining * 6)
         add(plan, "turn", remaining * 8)
         formula[#formula + 1] = string.format("Alagut: %d x (4m + 2a + 6e)", remaining)
+    else
+        add(plan, "move", remaining * 2 + pathLength)
+        add(plan, "dig", remaining * 2)
+        -- A padlo lerakasa csak hianyzo blokk eseten tortenik.
+        add(plan, "place", remaining)
+        formula[#formula + 1] = string.format("Sima 1x2: %d x (2m + 2a + max. 1e)", remaining)
     end
     if config.torchEnabled then
         local interval = math.max(1, whole(config.torchInterval))

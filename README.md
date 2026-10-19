@@ -46,7 +46,7 @@ A második oszlop az ékezetes cím, a harmadik pedig a működés rövid leír�
 | --- | --- | --- |
 | `Branch mining` | Branch mining | 1×2, 1×3 vagy egyenes 3×3-as bányajárat. |
 | `Terulet kiasasa` | Terület kiásása | KÍSÉRLETI: megadott szélességű, mélységű és magasságú téglatest kitermelése. |
-| `Nether utepito` | Nether-útépítő | Lépcső vagy körbeépített 1×2-es védett alagút. |
+| `Utvonal keszites` | Útvonalkészítés | Lépcső, körbeépített védett vagy sima 1×2-es alagút, szükség esetén cobblestone padlóval. |
 | `Koordinatara navigalas` | Koordinátára navigálás | KÍSÉRLETI: kézzel megadott világkoordinátáról célkoordinátára halad. |
 | `Felbehagyott munka` | Félbehagyott munka | Aktív mentés kiválasztása és automatikus folytatása. |
 | `Beallitasok` | Beállítások | Közös navigációs, biztonsági, inventory-, fáklya- és ércbeállítások. |
@@ -95,12 +95,13 @@ A turtle kígyózó útvonalon járja be a téglatestet. Ha van még felette
 feldolgozandó réteg, felfelé is ás, így egy bejárással két réteget készíthet
 el. A funkció kísérleti, ezért először kis területen érdemes kipróbálni.
 
-### Nether-útépítő
+### Útvonalkészítés
 
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
 | `Lepcso fel/le` | Lépcső fel/le | Blokkonként egy szintet emelkedő vagy süllyedő, két blokk fejterű lépcső. |
 | `Vedett 1x2 alagut` | Védett 1×2-es alagút | Szabad térben padlót, oldalfalakat és mennyezetet épít a járat köré. |
+| `Sima 1x2 alagut` | Sima 1×2-es alagút | Két blokk magas járatot ás. Ha nincs alatta blokk, cobblestone-nal pótolja a padlót. |
 | `Felfele` | Felfelé | Emelkedő lépcső. |
 | `Lefele` | Lefelé | Süllyedő lépcső. |
 | `Epitoanyag / Blokk` | Építőanyag / blokk | A használt blokk azonosítója, például `minecraft:cobblestone`. |
@@ -109,6 +110,11 @@ Fáklyázás nélkül a 2–5. slot építőanyag, a 6–16. slot bányászati t
 Fáklyázással a 2. slot a fáklyáé, az építőanyag a 3–5. slotba kerül. Ha az
 anyag elfogy, a turtle a mentett útvonalon hazamegy, a leadóládából feltölti,
 majd visszatér.
+Az új sima alagút módnál az építőanyag rögzítetten `minecraft:cobblestone`;
+hiányzó padló esetén kér belőle a leadóládából. A fáklyázás opcionális.
+Ha a fáklya nem helyezhető le, figyelmeztet és továbbhalad; az üres
+fáklyaslot sem állítja le ezt a módot. A mentésfájl neve kompatibilitásból
+továbbra is `nether_builder_state.txt`.
 
 ### KÍSÉRLETI koordinátás navigáció
 
@@ -346,7 +352,7 @@ nem naplóz.
 | `job_request.lua` | A központi menü egyszer használható feladatátadása. |
 | `branch_miner.lua` | Branch mining és egyenes 3×3. |
 | `excavator.lua` | KÍSÉRLETI területásás. |
-| `nether_builder.lua` | Lépcső és védett Nether-alagút. |
+| `nether_builder.lua` | Útvonalkészítés: lépcső, védett és sima 1×2-es alagút. |
 | `coordinate_task.lua` | KÍSÉRLETI koordinátás feladat futtatója. |
 | `inventory_manager.lua` | KÍSÉRLETI kapacitásalapú inventory-kezelés. |
 | `torch_manager.lua` | KÍSÉRLETI automatikus fáklyázás. |
@@ -370,7 +376,7 @@ downloader                 # minden GitHub-komponens
 downloader main            # a teljes központi rendszer
 downloader branch          # branch miner és függőségei
 downloader excavator       # területásó és függőségei
-downloader nether          # Nether-építő és függőségei
+downloader nether          # útvonalkészítő és függőségei (régi parancsnév)
 downloader coordinate      # koordinátás navigáció és függőségei
 downloader downloader      # csak a downloader
 ```
