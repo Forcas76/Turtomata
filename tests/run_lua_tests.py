@@ -9,6 +9,9 @@ for name in (
     "navigation_test.lua", "situation_test.lua", "estimator_test.lua",
     "ore_scanner_test.lua",
     "localization_test.lua",
+    "base_dock_test.lua",
+    "registry_test.lua",
+    "job_setup_test.lua",
     "remote_test.lua",
 ):
     test = (root / "tests" / name).read_text(encoding="utf-8")

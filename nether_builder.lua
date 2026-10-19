@@ -6,6 +6,7 @@ local programArgs = { ... }
 local jobRequest = require("job_request")
 local stateStore = require("state_store")
 local Navigation = require("navigation")
+local BaseDock = require("base_dock")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
@@ -48,11 +49,13 @@ local runtime = {
     blockDrops = {},
     floodEncounters = {},
     floodShell = false,
+    dockCorrected = false,
 }
 local sharedNav = nil
 local sharedTelemetry = nil
 local telemetryState = nil
 local sharedSituations = nil
+local replayCompletedPath
 
 local function saveState()
     if not persistenceEnabled then return end
@@ -377,11 +380,18 @@ end
 
 local function retreatHome()
     returningHome = true
+    runtime.dockCorrected = false
     setActivity("hazateres")
     while #runtime.path > 0 do
+        local last = runtime.path[#runtime.path]
+        if last and last.kind == "h" and last.heading == 0
+            and BaseDock.chestOnReturn(sharedNav) then break end
         local ok, reason = popMove()
         if not ok then returningHome = false return false, reason end
     end
+    local docked, dockReason, corrected = BaseDock.seek(sharedNav, 2)
+    if not docked then returningHome = false return false, dockReason end
+    runtime.dockCorrected = corrected == true
     face(0)
     returningHome = false
     return true
@@ -664,7 +674,12 @@ local function serviceAndResume(reasonText, requiredBlocks)
     local serviced, serviceReason = serviceHome(requiredFuel, requiredBlocks or 1)
     if not serviced then return false, serviceReason end
     if stopRequested then return false, "Felhasznaloi leallitas." end
-    local replayed, replayReason = replayPath(resumePath)
+    local replayed, replayReason
+    if runtime.dockCorrected then
+        replayed, replayReason = replayCompletedPath()
+    else
+        replayed, replayReason = replayPath(resumePath)
+    end
     if not replayed then return false, replayReason end
     setActivity(previousActivity)
     return true
@@ -958,7 +973,7 @@ local function checkFloodShell(step)
     saveState()
 end
 
-local function replayCompletedPath()
+replayCompletedPath = function()
     runtime.path = {}
     runtime.pending = nil
     saveState()

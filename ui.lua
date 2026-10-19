@@ -47,7 +47,7 @@ function ui.waitForEnter(label)
     term.setCursorPos(1, height)
     write(tr(label or "ENTER = tovabb"))
     while true do
-        local event, key = os.pullEvent()
+        local event, key, _, mouseY = os.pullEvent()
         if event == "key" and key == keys.enter then return true end
         if event == "mouse_click" then return true end
     end
@@ -127,20 +127,38 @@ function ui.choice(title, labels, defaultIndex)
 end
 
 function ui.input(title, label, defaultValue, validator, hint)
+    local value = ""
     while true do
         clear()
+        local width, height = size()
         print(tr(title or "Adatbevitel"))
-        print(string.rep("-", math.min(select(1, size()), 39)))
+        print(string.rep("-", math.min(width, 39)))
         if hint then print(tr(hint)) print("") end
-        write(tr(label) .. " [" .. tostring(defaultValue or "") .. "]: ")
-        local value = read()
-        if value == "" then value = defaultValue end
-        local ok, normalized, reason
-        if validator then ok, normalized, reason = validator(value)
-        else ok, normalized = true, value end
-        if ok then return normalized end
-        printError(tr(reason or "Hibas ertek."))
-        sleep(1)
+        local row = select(2, term.getCursorPos())
+        term.setCursorPos(1, math.min(row, height - 1))
+        write(tr(label) .. " [" .. tostring(defaultValue or "") .. "]: "
+            .. value)
+        term.setCursorPos(1, height)
+        write(clip(tr("Enter: OK | Esc/Backspace: vissza"), width))
+        local event, key, _, mouseY = os.pullEvent()
+        if event == "char" then value = value .. key
+        elseif event == "paste" then value = value .. key
+        elseif event == "key" and key == keys.backspace then
+            if #value > 0 then value = value:sub(1, -2)
+            else return nil, "back" end
+        elseif event == "key" and (key == keys.escape or key == keys.left) then
+            return nil, "back"
+        elseif event == "key" and key == keys.enter then
+            local proposed = value == "" and defaultValue or value
+            local ok, normalized, reason
+            if validator then ok, normalized, reason = validator(proposed)
+            else ok, normalized = true, proposed end
+            if ok then return normalized, "accepted" end
+            printError(tr(reason or "Hibas ertek."))
+            sleep(1)
+        elseif event == "mouse_click" and mouseY == height then
+            return nil, "back"
+        end
     end
 end
 
@@ -155,9 +173,34 @@ function ui.integer(title, label, defaultValue, minimum, maximum)
 end
 
 function ui.confirm(title, lines, label)
-    ui.message(title, lines)
-    ui.waitForEnter(label or "ENTER = inditas")
-    return true
+    if type(lines) == "string" then lines = { lines } end
+    local offset = 0
+    while true do
+        local width, height = size()
+        clear()
+        print(clip(tr(title), width))
+        print(string.rep("-", math.min(width, 39)))
+        local visible = math.max(1, height - 4)
+        for index = offset + 1, math.min(#(lines or {}), offset + visible) do
+            print(clip(tr(lines[index]), width))
+        end
+        term.setCursorPos(1, height)
+        write(clip(tr((label or "ENTER = inditas") .. " | Esc = vissza"), width))
+        local event, key, _, y = os.pullEvent()
+        if event == "key" and key == keys.enter then return true end
+        if event == "key" and (key == keys.escape or key == keys.backspace
+            or key == keys.left) then return false end
+        if event == "key" and key == keys.down then
+            offset = math.min(math.max(0, #(lines or {}) - visible), offset + 1)
+        elseif event == "key" and key == keys.up then
+            offset = math.max(0, offset - 1)
+        elseif event == "mouse_scroll" then
+            offset = math.max(0, math.min(math.max(0, #(lines or {}) - visible),
+                offset + key))
+        elseif event == "mouse_click" and y == height then
+            return false
+        end
+    end
 end
 
 function ui.renderDashboard(model)

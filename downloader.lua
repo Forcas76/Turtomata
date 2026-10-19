@@ -1,7 +1,7 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.0.0"
+local INSTALLER_VERSION = "v1.1.0"
 local localizationOk, Localization = pcall(require, "localization")
 local function tr(value)
     return localizationOk and Localization.text(value) or value
@@ -82,6 +82,13 @@ local links = {
     telemetry = { pastebinID = "", githubPath = "telemetry.lua", fileName = "telemetry.lua" },
     estimator = { pastebinID = "", githubPath = "work_estimator.lua", fileName = "work_estimator.lua" },
     request = { pastebinID = "", githubPath = "job_request.lua", fileName = "job_request.lua" },
+    registry = { pastebinID = "", githubPath = "work_registry.lua", fileName = "work_registry.lua" },
+    preview = { pastebinID = "", githubPath = "job_preview.lua", fileName = "job_preview.lua" },
+    basedock = { pastebinID = "", githubPath = "base_dock.lua", fileName = "base_dock.lua" },
+    setup = { pastebinID = "", githubPath = "job_setup.lua", fileName = "job_setup.lua" },
+    farm = { pastebinID = "", githubPath = "farm_task.lua", fileName = "farm_task.lua" },
+    chain = { pastebinID = "", githubPath = "task_chain.lua", fileName = "task_chain.lua" },
+    chaineditor = { pastebinID = "", githubPath = "chain_editor.lua", fileName = "chain_editor.lua" },
     version = { pastebinID = "", githubPath = "version.lua", fileName = "version.lua" },
     localization = { pastebinID = "", githubPath = "localization.lua", fileName = "localization.lua" },
     remoteprotocol = { pastebinID = "", githubPath = "remote_protocol.lua", fileName = "remote_protocol.lua" },
@@ -92,25 +99,25 @@ local links = {
 }
 
 local downloadOrder = {
-    "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings", "request",
-    "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
+    "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings", "request", "registry", "preview", "basedock", "setup",
+    "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether", "farm", "chain", "chaineditor",
     "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
 }
 
 local componentGroups = {
     main = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
-        "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
-        "nether", "coordinatetask", "version", "remoteprotocol", "remote", "main",
+        "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
+        "nether", "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "remote", "main",
     },
-    branch = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
-    excavator = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
-    nether = { "state", "navigation", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "nether" },
+    branch = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
+    excavator = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
+    nether = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "nether" },
     coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "request", "coordinatetask" },
     turtleinstall = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
-        "request", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-        "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+        "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
+        "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
     },
     monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "monitor", "startupmonitor", "downloader" },
 }

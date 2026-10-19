@@ -7,6 +7,10 @@ local jobRequest = require("job_request")
 local WorkEstimator = require("work_estimator")
 local Version = require("version")
 local Localization = require("localization")
+local WorkRegistry = require("work_registry")
+local JobPreview = require("job_preview")
+local JobSetup = require("job_setup")
+local ChainEditor = require("chain_editor")
 
 local currentSettings = Settings.load()
 Localization.setLanguage(currentSettings.general.language)
@@ -53,6 +57,7 @@ end
 local function editInteger(title, path, minimum, maximum)
     local old = Settings.get(currentSettings, path, minimum)
     local value = ui.integer(title, title, old, minimum, maximum)
+    if value == nil then return end
     Settings.set(currentSettings, path, value)
     saveSettings()
 end
@@ -131,8 +136,7 @@ local function safetySettings()
                 end
                 return true, raw
             end, "Formatum: <mod_neve>:<blokk_neve>")
-            currentSettings.safety.sealBlock = value
-            saveSettings()
+            if value then currentSettings.safety.sealBlock = value saveSettings() end
         end
     end
 end
@@ -143,18 +147,45 @@ local function navigationSettings()
             { label = "Kezdo mp / muvelet", suffix = currentSettings.navigation.defaultActionSeconds, value = "time" },
             { label = "Koordinata mod", suffix = currentSettings.navigation.coordinateMode, value = "mode" },
             { label = "Fuel tartalek", suffix = currentSettings.general.fuelReserve, value = "fuel" },
+            { label = "Auto folytatas alap", suffix = boolText(currentSettings.general.autoResumeDefault), value = "auto" },
+            { label = "Kozos bazis", suffix = string.format("%d,%d,%d",
+                currentSettings.navigation.base.x,
+                currentSettings.navigation.base.y,
+                currentSettings.navigation.base.z), value = "base" },
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return end
         if choice == "fuel" then editInteger("Fuel tartalek", "general.fuelReserve", 2, 1000)
+        elseif choice == "auto" then toggle("general.autoResumeDefault")
+        elseif choice == "base" then
+            local base = currentSettings.navigation.base
+            while true do
+                local field = ui.menu("KOZOS BAZIS", {
+                    { label = "X", suffix = base.x, value = "x" },
+                    { label = "Y", suffix = base.y, value = "y" },
+                    { label = "Z", suffix = base.z, value = "z" },
+                    { label = "Irany", suffix = base.heading, value = "heading" },
+                    { label = "Vissza", value = "back" },
+                })
+                if not field or field == "back" then break end
+                if field == "heading" then
+                    local selected = ui.choice("BAZIS IRANY",
+                        { "Eszak", "Kelet", "Del", "Nyugat" },
+                        base.heading + 1)
+                    if selected then base.heading = selected - 1 saveSettings() end
+                else
+                    local value = ui.integer("BAZIS " .. field:upper(),
+                        field:upper(), base[field])
+                    if value ~= nil then base[field] = value saveSettings() end
+                end
+            end
         elseif choice == "time" then
             local value = ui.input("Kezdo muveleti ido", "Masodperc", currentSettings.navigation.defaultActionSeconds, function(raw)
                 local number = tonumber(raw)
                 if not number or number <= 0 or number > 60 then return false, nil, "0 es 60 kozotti szam kell." end
                 return true, number
             end)
-            currentSettings.navigation.defaultActionSeconds = value
-            saveSettings()
+            if value then currentSettings.navigation.defaultActionSeconds = value saveSettings() end
         elseif choice == "mode" then
             local selected = ui.choice("Koordinatas navigacio modja", {
                 "Csak szabad ut", "Alagut a celig (KISERLETI)"
@@ -194,12 +225,13 @@ local function settingsMenu()
         elseif choice == "torches" then torchSettings()
         elseif choice == "ores" then oreSettings()
         elseif choice == "reset" then
-            ui.confirm("ALAPERTEKEK", { "Az osszes kozponti beallitas visszaall.", "A folytatasi mentesek nem torlodnek." }, "ENTER = visszaallitas")
-            local ok, reason, value = Settings.reset()
-            if ok then
-                currentSettings = value
-                Localization.setLanguage(currentSettings.general.language)
-            else ui.message("Hiba", reason, "error") ui.waitForEnter() end
+            if ui.confirm("ALAPERTEKEK", { "Az osszes kozponti beallitas visszaall.", "A folytatasi mentesek nem torlodnek." }, "ENTER = visszaallitas") then
+                local ok, reason, value = Settings.reset()
+                if ok then
+                    currentSettings = value
+                    Localization.setLanguage(currentSettings.general.language)
+                else ui.message("Hiba", reason, "error") ui.waitForEnter() end
+            end
         end
     end
 end
@@ -224,15 +256,35 @@ local function torchConfig(config, mainAndBranch)
     end
 end
 
-local function launch(task, program, action, config, summary)
+local function launch(task, program, action, config, summary, options)
+    options = options or {}
     if not programExists(program) then
         ui.message("Hianyzo program", program .. ".lua nem talalhato.", "error")
         ui.waitForEnter()
         return
     end
-    ui.confirm("INDITASI OSSZEFOGLALO", summary, "ENTER = turtle inditasa")
+    if not options.auto and not options.confirmed
+        and not ui.confirm("INDITASI OSSZEFOGLALO", summary,
+        "ENTER = turtle inditasa") then return end
+    if action == "new" then
+        local registered, registerReason = WorkRegistry.start(task,
+            config and config.resumeOnStartup)
+        if not registered then
+            ui.message("Munka utkozes", registerReason, "error")
+            ui.waitForEnter()
+            return
+        end
+    elseif not options.auto then
+        local allowed, resumeReason = WorkRegistry.resume(task)
+        if not allowed then
+            ui.message("Munka utkozes", resumeReason, "error")
+            ui.waitForEnter()
+            return
+        end
+    end
     local token, reason = jobRequest.create(task, action, config)
     if not token then
+        WorkRegistry.update("needs_attention", reason)
         ui.message("Inditasi hiba", reason, "error")
         ui.waitForEnter()
         return
@@ -241,9 +293,23 @@ local function launch(task, program, action, config, summary)
     stateStore.write(REMOTE_ACTIVE_FILE, {
         task = task, program = program, action = action, config = config,
     })
-    shell.run(program, "--request", token)
+    local success = shell.run(program, "--request", token)
     if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
-    ui.waitForEnter("ENTER = vissza a fomenube")
+    local saved = stateStore.read(WorkRegistry.stateFile(task) or "")
+    if type(saved) == "table" and saved.active == false then
+        WorkRegistry.update("completed")
+    elseif type(saved) == "table" and
+        (saved.activity == "megallitva_otthon"
+            or saved.phase == "megallitva_otthon"
+            or saved.phase == "megallitva") then
+        WorkRegistry.update("paused")
+    elseif type(saved) == "table" and saved.phase == "needs_supplies" then
+        WorkRegistry.update("needs_supplies", saved.lastError)
+    else
+        WorkRegistry.update("needs_attention",
+            success and "A feladat aktiv mentesben maradt." or "A program hibaval tert vissza.")
+    end
+    if not options.auto then ui.waitForEnter("ENTER = vissza a fomenube") end
 end
 
 local function configureBranch()
@@ -266,6 +332,7 @@ local function configureBranch()
     config.oreScanMaxBlocks = currentSettings.ores.maxBlocks
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
+    config.resumeOnStartup = yesNo("Automatikus folytatas indulasnal", currentSettings.general.autoResumeDefault)
     local name = ({ "Branch 1x2", "Branch 1x3", "Egyenes 3x3" })[mode]
     local summary = {
         "Mod: " .. name,
@@ -274,6 +341,7 @@ local function configureBranch()
         "Fuel tartalek: " .. config.fuelReserve,
         "Faklya: " .. boolText(config.torchEnabled),
         "Erckereses: " .. boolText(config.oreScanEnabled),
+        "Auto folytatas: " .. boolText(config.resumeOnStartup),
     }
     local estimate = WorkEstimator.branch(config, { mainCompleted = 0, initial = true })
     launch("branch_miner", "branch_miner", "new", config, appendEstimate(summary, estimate))
@@ -318,10 +386,12 @@ local function configureExcavator()
     config.torchInterval = config.mainTorchInterval
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
+    config.resumeOnStartup = yesNo("Automatikus folytatas indulasnal", currentSettings.general.autoResumeDefault)
     local summary = {
         string.format("Meret: %dx%dx%d", config.width, config.depth, config.height),
         "Fuel tartalek: " .. config.fuelReserve,
         "Faklya: " .. boolText(config.torchEnabled),
+        "Auto folytatas: " .. boolText(config.resumeOnStartup),
     }
     if config.remoteStart.enabled then
         local base, work = config.remoteStart.base, config.remoteStart.work
@@ -358,12 +428,14 @@ local function configureNether()
     config.torchInterval = config.torchEnabled and ui.integer("FAKLYAZAS", "Faklya tavolsag", currentSettings.torches.interval, 1) or 0
     config.safety = currentSettings.safety
     config.defaultActionSeconds = currentSettings.navigation.defaultActionSeconds
+    config.resumeOnStartup = yesNo("Automatikus folytatas indulasnal", currentSettings.general.autoResumeDefault)
     local summary = {
         "Mod: " .. (mode == 1 and ("lepcso " .. config.stairDirection)
             or mode == 2 and "vedett 1x2" or "sima 1x2"),
         "Hossz: " .. config.length,
         "Epitoanyag: " .. config.builderBlock,
         "Faklya: " .. boolText(config.torchEnabled),
+        "Auto folytatas: " .. boolText(config.resumeOnStartup),
     }
     local estimate = WorkEstimator.nether(config, { completed = 0, pathLength = 0 })
     launch("nether_builder", "nether_builder", "new", config, appendEstimate(summary, estimate))
@@ -395,33 +467,73 @@ local function coordinateTask()
         defaultActionSeconds = currentSettings.navigation.defaultActionSeconds,
         safety = currentSettings.safety,
     }
+    config.resumeOnStartup = yesNo("Automatikus folytatas indulasnal", currentSettings.general.autoResumeDefault)
     local summary = {
         string.format("Start: %d, %d, %d", start.x, start.y, start.z),
         string.format("Cel:   %d, %d, %d", target.x, target.y, target.z),
         "Mod: " .. config.mode .. " (KISERLETI)",
+        "Auto folytatas: " .. boolText(config.resumeOnStartup),
     }
     launch("coordinate", "coordinate_task", "new", config, appendEstimate(summary, estimate))
 end
 
 local function resumeMenu()
-    local jobs = {
-        { label = "Branch mining", task = "branch_miner", program = "branch_miner", state = "branch_miner_state.txt" },
-        { label = "Terulet asas", task = "excavator", program = "excavator", state = "excavator_state.txt" },
-        { label = "Utvonal keszites", task = "nether_builder", program = "nether_builder", state = "nether_builder_state.txt" },
-        { label = "Koordinatas navigacio", task = "coordinate", program = "coordinate_task", state = "coordinate_state.txt" },
-    }
+    local jobs = JobPreview.list()
     local items = {}
     for _, job in ipairs(jobs) do
-        if activeState(job.state) then items[#items + 1] = { label = job.label, value = job } end
+        items[#items + 1] = {
+            label = job.label, suffix = job.progress, value = job,
+        }
     end
     items[#items + 1] = { label = "Vissza", value = "back" }
     local selected = ui.menu("FOLYTATHATO MUNKAK", items)
     if not selected or selected == "back" then return end
-    launch(selected.task, selected.program, "resume", {}, { selected.label, "A mentett allapot folytatasa." })
+    local lines = JobPreview.describe(selected, selected.saved)
+    if not ui.confirm("MENTETT MUNKA", lines, "ENTER = folytatas") then return end
+    launch(selected.task, selected.program, "resume", {}, lines, { confirmed = true })
+end
+
+local function workControl()
+    while true do
+        local owner = WorkRegistry.load()
+        if not owner then
+            ui.message("MUNKA KEZELES", "Nincs nyilvantartott munka.")
+            ui.waitForEnter()
+            return
+        end
+        local selected = ui.menu("MUNKA KEZELES", {
+            { label = "Tulajdonos", suffix = owner.task, enabled = false,
+                value = "owner" },
+            { label = "Allapot", suffix = owner.status, enabled = false,
+                value = "status" },
+            { label = "Auto folytatas",
+                suffix = boolText(owner.autoResume), value = "auto" },
+            { label = "Munka felszabaditasa", value = "release" },
+            { label = "Vissza", value = "back" },
+        })
+        if not selected or selected == "back" then return end
+        if selected == "auto" then
+            WorkRegistry.setAutoResume(not owner.autoResume)
+        elseif selected == "release" then
+            if ui.confirm("FELSZABADITAS", {
+                "A mentes megmarad, de nem indul automatikusan.",
+                "Csak akkor tedd, ha a turtle a bazison all.",
+                "Uj munka inditasa utan a regit nem folytathatod",
+                "a masik aktiv munka lezarasa nelkul.",
+            }, "ENTER = felszabaditas") then
+                WorkRegistry.release()
+                return
+            end
+        end
+    end
 end
 
 local function diagnostics()
-    local modules = { "ui", "settings", "state_store", "navigation", "coordinate_navigation", "situation_manager", "telemetry", "work_estimator", "inventory_manager", "torch_manager", "ore_scanner" }
+    local modules = { "ui", "settings", "state_store", "navigation",
+        "coordinate_navigation", "situation_manager", "telemetry",
+        "work_estimator", "inventory_manager", "torch_manager",
+        "ore_scanner", "work_registry", "job_preview", "job_setup",
+        "base_dock", "chain_editor" }
     local lines = {}
     for _, name in ipairs(modules) do
         local ok = pcall(require, name)
@@ -438,10 +550,10 @@ local function updateTurtleProgram()
         ui.waitForEnter()
         return
     end
-    ui.confirm("Program frissitese", {
+    if not ui.confirm("Program frissitese", {
         "A teljes turtle program frissul.",
         "Siker utan az eszkoz ujraindul.",
-    }, "ENTER = frissites")
+    }, "ENTER = frissites") then return end
     ui.message("Program frissitese...", "Kerlek varj.")
     local ok = shell.run("downloader", "turtle")
     if ok then
@@ -455,27 +567,62 @@ local function updateTurtleProgram()
 end
 
 local function menuLoop()
+    local auto = WorkRegistry.autoCandidate()
+    if auto then
+        local programs = {
+            branch_miner = "branch_miner", excavator = "excavator",
+            nether_builder = "nether_builder", coordinate = "coordinate_task",
+            farm = "farm_task",
+            chain = "task_chain",
+        }
+        local program = programs[auto.task]
+        if program then
+            ui.message("AUTO FOLYTATAS", { auto.task, "Mentett feladat helyreallitasa..." })
+            launch(auto.task, program, "resume", {}, {}, { auto = true })
+        end
+    end
     while true do
-        local hasResume = activeState("branch_miner_state.txt")
-            or activeState("excavator_state.txt")
-            or activeState("nether_builder_state.txt")
-            or activeState("coordinate_state.txt")
+        local hasResume = #JobPreview.list() > 0
         local choice = ui.menu("CCTURTLE " .. Version.label, {
             { label = "Branch mining", value = "branch" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
             { label = "Utvonal keszites", value = "nether" },
             { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
+            { label = "Farm karbantartas", suffix = "KISERLETI", value = "farm" },
+            { label = "Feladatlanc", suffix = "KISERLETI", value = "chain" },
             { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
+            { label = "Munka kezelese", value = "work" },
             { label = "Beallitasok", value = "settings" },
             { label = "Diagnosztika", value = "diagnostics" },
             { label = "Program frissitese", value = "update" },
             { label = "Kilepes", value = "exit" },
         }, { allowBack = false })
-        if choice == "branch" then configureBranch()
-        elseif choice == "excavator" then configureExcavator()
-        elseif choice == "nether" then configureNether()
-        elseif choice == "coordinate" then coordinateTask()
+        if choice == "branch" then
+            local config, summary = JobSetup.branch(currentSettings)
+            if config then launch("branch_miner", "branch_miner", "new",
+                config, summary, { confirmed = true }) end
+        elseif choice == "excavator" then
+            local config, summary = JobSetup.excavator(currentSettings)
+            if config then launch("excavator", "excavator", "new",
+                config, summary, { confirmed = true }) end
+        elseif choice == "nether" then
+            local config, summary = JobSetup.nether(currentSettings)
+            if config then launch("nether_builder", "nether_builder", "new",
+                config, summary, { confirmed = true }) end
+        elseif choice == "coordinate" then
+            local config, summary = JobSetup.coordinate(currentSettings)
+            if config then launch("coordinate", "coordinate_task", "new",
+                config, summary, { confirmed = true }) end
+        elseif choice == "farm" then
+            local config, summary = JobSetup.farm(currentSettings)
+            if config then launch("farm", "farm_task", "new",
+                config, summary, { confirmed = true }) end
+        elseif choice == "chain" then
+            local config, summary = ChainEditor.open(currentSettings)
+            if config then launch("chain", "task_chain", "new",
+                config, summary, { confirmed = true }) end
         elseif choice == "resume" then resumeMenu()
+        elseif choice == "work" then workControl()
         elseif choice == "settings" then settingsMenu()
         elseif choice == "diagnostics" then diagnostics()
         elseif choice == "update" then updateTurtleProgram()

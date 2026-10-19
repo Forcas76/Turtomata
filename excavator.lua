@@ -5,6 +5,7 @@ local programArgs = { ... }
 local jobRequest = require("job_request")
 local stateStore = require("state_store")
 local Navigation = require("navigation")
+local BaseDock = require("base_dock")
 local Coordinate = require("coordinate_navigation")
 local UI = require("ui")
 local Telemetry = require("telemetry")
@@ -477,6 +478,9 @@ local function digForward()
 end
 
 local function forward()
+    if returningHome and heading == 2 and BaseDock.chestOnReturn(sharedNav) then
+        return false, "A leado lada elott allok."
+    end
     local direction = headings[heading]
     local nextX = position.x + direction.x
     local nextZ = position.z + direction.z
@@ -555,6 +559,9 @@ local function returnHome()
     local ok, reason = moveY(0)
     if ok then ok, reason = moveX(0) end
     if ok then ok, reason = moveZ(0) end
+    if ok or reason == "A leado lada elott allok." then
+        ok, reason = BaseDock.seek(sharedNav, 2)
+    end
     if ok then face(0) end
     returningHome = false
     return ok, reason
@@ -1037,6 +1044,8 @@ local function runExcavation()
             if not stopReason then
                 runtime.active = false
                 setActivity("kesz")
+            else
+                setActivity("megallitva_otthon")
             end
             print("Kesz: otthon, inventory uritve.")
         else printError("Otthoni hiba: " .. finalReason) end

@@ -5,6 +5,7 @@ local programArgs = { ... }
 local jobRequest = require("job_request")
 local stateStore = require("state_store")
 local Navigation = require("navigation")
+local BaseDock = require("base_dock")
 local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
@@ -633,6 +634,9 @@ local function nextPositionForward()
 end
 
 forward = function()
+    if returningHome and heading == 2 and BaseDock.chestOnReturn(sharedNav) then
+        return false, "dock_reached", "A leado lada elott allok."
+    end
     local nextX, nextY, nextZ = nextPositionForward()
     local requiredAfterMove = distanceHomeAt(nextX, nextY, nextZ)
     if not returningHome then requiredAfterMove = requiredAfterMove + config.fuelReserve end
@@ -732,6 +736,10 @@ local function returnHome()
     local ok, reason = moveVerticalTo(travelY)
     if ok then ok, reason = navigateTo(0, 0, 0) end
     if ok then ok, reason = moveVerticalTo(0) end
+    if ok or reason == "A leado lada elott allok." then
+        ok, reason = BaseDock.seek(sharedNav, 2)
+        if ok then face(0) end
+    end
     returningHome = false
     if ok then status("Hazaertem")
     else printError("A hazateres elakadt: " .. (reason or "ismeretlen hiba")) end
@@ -1237,6 +1245,12 @@ local function returnHomeWithMainTorches()
         end
 
         local moved, _, moveReason = forward()
+        if not moved and moveReason == "A leado lada elott allok." then
+            local docked, dockReason = BaseDock.seek(sharedNav, 2)
+            returningHome = false
+            if docked then face(0) end
+            return docked, dockReason
+        end
         if not moved then
             returningHome = false
             return false, moveReason
@@ -1245,6 +1259,7 @@ local function returnHomeWithMainTorches()
 
     local ok, reason = moveAxis(0, "z", 0, 2)
     if ok then ok, reason = moveVerticalTo(0) end
+    if ok then ok, reason = BaseDock.seek(sharedNav, 2) end
     if ok then face(0) end
     returningHome = false
     if ok then status("Hazaertem") end
@@ -1398,6 +1413,8 @@ local function runMining()
             if not stopReason then
                 runtime.active = false
                 setActivity("kesz")
+            else
+                setActivity("megallitva_otthon")
             end
             print("Kesz: a turtle otthon van, az inventory ures.")
         else printError("Hazaertem, de a lada-kiszolgalas sikertelen: " .. finalReason) end

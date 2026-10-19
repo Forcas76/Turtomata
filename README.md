@@ -1,6 +1,34 @@
 # CCTurtle
 
-Aktuális rendszerverzió: **v1.0.0**. A verzió központilag a `version.lua`
+## V2 kiserleti funkciok
+
+A `main` menuben a feladatlapok szerkeszthetok: a nyilakkal/kattintassal
+valassz mezot, majd az `Attekintes / inditas` utan az utolso Enter indit.
+Esc/Backspace visszalep. A `Felbehagyott munka` a mentett beallitasokat,
+haladast, fazist es fizikai poziciot kulon mutatja. A
+`Munka kezelese` menuben az automatikus folytatas ki-be kapcsolhato;
+a felszabaditas a mentest nem torli, de csak bazison allo turtle-n hasznald.
+A `Beallitasok > Navigacio es altalanos > Kozos bazis` adja az uj
+koordinatas feladatok es lancok alapertelmezett vilag-X/Y/Z es facing
+adatait. Meglevo feladatmentest ez a beallitas nem helyez at.
+
+A farmnal a turtle a bazison indul, a leadolada mogotte, a fuel lada
+a leadolada folott, a vetomag/takarmany lada a bazistól jobbra van.
+Az 1-es slot fuel, a 2-es vetomag/takarmany. A novenyprofil csak ismert,
+erett vanilla novenyt arat, majd ujraveti. Az allatetetes KISERLETI:
+a ket sikeres `place` nem bizonyitja, hogy uj allat szuletett.
+Ujrainditas utan a farm azonnal korbejar; a regi idozitore nem var.
+
+A `Feladatlanc` egy mentett szerkesztheto sorrend: lepes hozzaadasa,
+modositasa, masolasa, ki/bekapcsolasa, mozgatas fel/le es torles.
+Az egyes lepesek
+utan a turtle visszater a kozos bazisra; teruletasas es farm tavoli
+koordinatan is indithato. Branch mining es utvonalkeszites lancban
+jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
+A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
+a jatekbeli probat a valodi farmon el kell vegezni.
+
+Aktuális rendszerverzió: **v1.1.0**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 

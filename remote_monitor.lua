@@ -258,8 +258,11 @@ local function renderStatusBody()
         print(clip((item.label or ("Teknos #" .. item.turtleId))
             .. " " .. tr(online(item) and "ELERHETO" or "NEM ELERHETO"), width))
         term.setTextColor(colors.white)
-        line("Feladat", readableTask(item.task), width)
+        line("Feladat", readableTask(item.task)
+            .. (item.chainCurrent and (" [" .. item.chainCurrent .. "/"
+                .. tostring(item.chainTotal) .. "]") or ""), width)
         line("Muvelet", readableActivity(item.activity), width)
+        if item.lastError then line("Hiba", item.lastError, width) end
         line("Haladas", percent(item), width)
         line("Uzemanyag", item.fuel == -1 and "vegtelen" or item.fuel, width)
         line("Tarhely", item.inventoryUsed and (item.inventoryUsed .. "/16 hely") or "-", width)
@@ -286,7 +289,13 @@ local function renderStatusBody()
         print(string.rep("-", math.min(width, 39)))
         term.setTextColor(colors.white)
         line("Feladat", readableTask(item.task), width)
+        if item.chainCurrent then
+            line("Lanc", tostring(item.chainCurrent) .. "/"
+                .. tostring(item.chainTotal) .. " "
+                .. tostring(item.chainTask or "-"), width)
+        end
         line("Muvelet", readableActivity(item.activity), width)
+        if item.lastError then line("Hiba", item.lastError, width) end
         line("Uzemanyag / tarhely", tostring(item.fuel == -1 and "vegtelen" or item.fuel)
             .. " / " .. tostring(item.inventoryUsed or "-") .. "/16", width)
         line("Ido", "eltelt " .. duration(item.elapsedMs) .. " / hatra " .. duration(item.remainingMs), width)

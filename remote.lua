@@ -3,6 +3,7 @@
 local Protocol = require("remote_protocol")
 local StateStore = require("state_store")
 local WorkEstimator = require("work_estimator")
+local WorkRegistry = require("work_registry")
 
 local remote = {}
 local opened = {}
@@ -14,6 +15,8 @@ local stateFiles = {
     { task = "Terulet asas", path = "excavator_state.txt", kind = "excavator" },
     { task = "Nether utepito", path = "nether_builder_state.txt", kind = "nether" },
     { task = "Koordinatas navigacio", path = "coordinate_state.txt", kind = "coordinate" },
+    { task = "Farm karbantartas", path = "farm_state.txt", kind = "farm" },
+    { task = "Feladatlanc", path = "task_chain_state.txt", kind = "chain" },
 }
 
 local function nowMs()
@@ -61,6 +64,8 @@ local function activeState()
             or (marker.task == "excavator" and entry.kind == "excavator")
             or (marker.task == "nether_builder" and entry.kind == "nether")
             or (marker.task == "coordinate" and entry.kind == "coordinate")
+            or (marker.task == "farm" and entry.kind == "farm")
+            or (marker.task == "chain" and entry.kind == "chain")
         if matches then
             local value = StateStore.read(entry.path)
             if type(value) ~= "table" then
@@ -73,6 +78,12 @@ local function activeState()
 end
 
 local function poseOf(kind, state)
+    if kind == "chain" then
+        return state.config and state.config.base
+    end
+    if kind == "farm" then
+        return state.navigation and state.navigation.pose
+    end
     if kind == "coordinate" then
         return state.navigation and state.navigation.pose
     end
@@ -106,6 +117,15 @@ local function progressOf(kind, state)
             + math.abs((start.y or 0) - (target.y or 0))
             + math.abs((start.z or 0) - (target.z or 0))
         return math.max(0, total - remaining), total
+    elseif kind == "farm" then
+        local config = state.config or {}
+        local total = config.mode == "crop"
+            and (config.width or 0) * (config.depth or 0)
+            or #(config.pens or {})
+        return math.max(0, (state.nextIndex or 1) - 1), total
+    elseif kind == "chain" then
+        return math.max(0, (state.index or 1) - 1),
+            #(config.steps or {})
     end
     return 0, 0
 end
@@ -139,6 +159,8 @@ end
 
 function remote.snapshot()
     local entry, state = activeState()
+    local registry = WorkRegistry.load()
+    local owner = not entry and registry or nil
     local used, items = inventoryValue()
     sequence = sequence + 1
     local message = Protocol.message("status", {
@@ -146,8 +168,9 @@ function remote.snapshot()
         label = os.getComputerLabel() or ("Teknos #" .. os.getComputerID()),
         sequence = sequence,
         online = true,
-        task = entry and entry.task or "Fomenu",
-        activity = state and (state.activity or state.phase or "dolgozik") or "Varakozik",
+        task = entry and entry.task or owner and owner.task or "Fomenu",
+        activity = state and (state.activity or state.phase or "dolgozik")
+            or owner and owner.status or "Varakozik",
         fuel = fuelValue(),
         inventoryUsed = used,
         inventoryItems = items,
@@ -157,6 +180,18 @@ function remote.snapshot()
         message.progressCurrent, message.progressTotal = progressOf(entry.kind, state)
         message.elapsedMs = state.telemetry and state.telemetry.activeMs or 0
         message.remainingActions, message.remainingMs = remainingEstimate(entry.kind, state)
+    end
+    if owner and owner.lastError then message.lastError = owner.lastError end
+    local chain = StateStore.read("task_chain_state.txt")
+    if registry and registry.task == "chain"
+        and registry.status ~= "released"
+        and type(chain) == "table" and chain.active == true
+        and type(chain.config) == "table" and type(chain.config.steps) == "table" then
+        local step = chain.config.steps[chain.index or 1]
+        message.chainCurrent = chain.index
+        message.chainTotal = #chain.config.steps
+        message.chainTask = step and step.task
+        message.chainPhase = chain.phase
     end
     return message
 end

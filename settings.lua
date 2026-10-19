@@ -12,11 +12,13 @@ local DEFAULTS = {
         fuelReserve = 8,
         finalEnter = true,
         language = "hu",
+        autoResumeDefault = false,
     },
     navigation = {
         defaultActionSeconds = 0.8,
         coordinateAxisOrder = { "y", "x", "z" },
         coordinateMode = "open",
+        base = { x = 0, y = 64, z = 0, heading = 0 },
     },
     safety = {
         retryLimit = 20,
