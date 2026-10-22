@@ -598,7 +598,7 @@ local function updateTurtleProgram()
             secretStep = secretStep == 3 and 1 or secretStep + 1
             return true
         end
-        if key == keys.left and secretStep == 3 then
+        if key == keys.up and secretStep == 3 then
             return true, "developer"
         end
         secretStep = 0

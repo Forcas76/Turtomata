@@ -438,7 +438,7 @@ local fileMap = {
 
 local secretStep = 0
 local function secretKey(value)
-    local sequence = { keys.right, keys.right, keys.right, keys.left }
+    local sequence = { keys.right, keys.right, keys.right, keys.up }
     if value == sequence[secretStep + 1] then
         secretStep = secretStep + 1
         if secretStep == #sequence then

@@ -239,7 +239,7 @@ assert(files[".downloader_auth_mode"] == "token",
 
 reset()
 http.get = authenticatedGet
-queueKeys(keys.right, keys.right, keys.right, keys.left,
+queueKeys(keys.right, keys.right, keys.right, keys.up,
     keys.up, keys.enter)
 local tokenUpdateOk, tokenUpdateReason = pcall(oldChunk, "turtle")
 assert(tokenUpdateOk,
@@ -256,14 +256,14 @@ assert(pcall(oldChunk, "downloader"),
 assert(#requests == 1 and files[".downloader_auth_mode"] == "token")
 
 requests = {}
-queueKeys(keys.right, keys.right, keys.right, keys.left, keys.escape)
+queueKeys(keys.right, keys.right, keys.right, keys.up, keys.escape)
 assert(pcall(oldChunk, "downloader"),
     "A titkos menubol kilepes ne irja felul a mentett modot.")
 assert(#requests == 1 and files[".downloader_auth_mode"] == "token")
 
 reset()
 http.get = authenticatedGet
-queueKeys(keys.right, keys.right, keys.right, keys.left,
+queueKeys(keys.right, keys.right, keys.right, keys.up,
     keys.up, keys.enter, keys.enter)
 assert(pcall(oldChunk), "Kozvetlen inditasnal is mukodjon a titkos menu.")
 assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
@@ -271,7 +271,7 @@ assert(files[".downloader_auth_mode"] == "token")
 
 http.get = baseGet
 requests = {}
-queueKeys(keys.right, keys.right, keys.right, keys.left,
+queueKeys(keys.right, keys.right, keys.right, keys.up,
     keys.down, keys.enter, keys.enter)
 assert(pcall(oldChunk), "A publikus mod visszakapcsolhato.")
 assert(files[".downloader_auth_mode"] == "public"
@@ -285,7 +285,7 @@ assert(pcall(oldChunk, "downloader"),
 reset()
 files[".github_token"] = nil
 http.get = baseGet
-queueKeys(keys.right, keys.right, keys.right, keys.left, keys.enter)
+queueKeys(keys.right, keys.right, keys.right, keys.up, keys.enter)
 assert(pcall(oldChunk, "downloader"),
     "Token nelkul a fejlesztoi menu publikus frissitese maradjon elerheto.")
 assert(not pcall(oldChunk, "downloader", "--after-self-update",
@@ -303,7 +303,7 @@ assert(#requests == 0)
 
 reset()
 http.get = authenticatedGet
-queueKeys(keys.right, keys.right, keys.right, keys.left,
+queueKeys(keys.right, keys.right, keys.right, keys.up,
     keys.down, keys.enter)
 assert(not pcall(oldChunk, "turtle"),
     "A fejlesztoi menubol a frissites megszakithato.")

@@ -34,7 +34,7 @@ local function secretConfirm()
                 step = step == 3 and 1 or step + 1
                 return true
             end
-            if key == keys.left and step == 3 then
+            if key == keys.up and step == 3 then
                 return true, "developer"
             end
             step = 0
@@ -43,12 +43,15 @@ local function secretConfirm()
     })
 end
 
-queue(keys.right, keys.right, keys.right, keys.left)
+queue(keys.right, keys.right, keys.right, keys.up)
 assert(secretConfirm() == "developer",
-    "A titkos kod utolso bal nyila ne lepjen vissza.")
+    "A titkos kod utolso fel nyila nyissa meg a fejlesztoi menut.")
 queue(keys.left)
 assert(secretConfirm() == false,
     "A bal nyil tovabbra is visszalep, ha nincs titkos kod.")
+queue(keys.right, keys.right, keys.right, keys.left)
+assert(secretConfirm() == false,
+    "A regi bal nyilas kod helyett mar vissza kell lepni.")
 queue(keys.right, keys.enter)
 assert(secretConfirm() == true,
     "Az Enter a reszleges titkos kod utan is frissitsen.")
