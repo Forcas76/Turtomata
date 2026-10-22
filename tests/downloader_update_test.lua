@@ -231,17 +231,47 @@ end
 reset()
 http.get = authenticatedGet
 queueKeys(keys.right, keys.right, keys.right, keys.left,
-    keys.enter)
-assert(pcall(oldChunk, "turtle"),
-    "Programbol inditott frissitesnel elerheto a fejlesztoi menu.")
+    keys.up, keys.enter)
+local tokenUpdateOk, tokenUpdateReason = pcall(oldChunk, "turtle")
+assert(tokenUpdateOk,
+    "Programbol inditott frissitesnel elerheto a fejlesztoi menu: "
+        .. tostring(tokenUpdateReason))
 assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
+assert(files[".downloader_auth_mode"] == "token",
+    "A tokenes valasztas a gepen maradjon elmentve.")
+
+requests = {}
+queueKeys()
+assert(pcall(oldChunk, "downloader"),
+    "A kovetkezo programfrissites automatikusan a mentett tokent hasznalja.")
+assert(#requests == 1 and files[".downloader_auth_mode"] == "token")
+
+requests = {}
+queueKeys(keys.right, keys.right, keys.right, keys.left, keys.escape)
+assert(pcall(oldChunk, "downloader"),
+    "A titkos menubol kilepes ne irja felul a mentett modot.")
+assert(#requests == 1 and files[".downloader_auth_mode"] == "token")
 
 reset()
 http.get = authenticatedGet
 queueKeys(keys.right, keys.right, keys.right, keys.left,
-    keys.enter, keys.enter)
+    keys.up, keys.enter, keys.enter)
 assert(pcall(oldChunk), "Kozvetlen inditasnal is mukodjon a titkos menu.")
 assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
+assert(files[".downloader_auth_mode"] == "token")
+
+http.get = baseGet
+requests = {}
+queueKeys(keys.right, keys.right, keys.right, keys.left,
+    keys.down, keys.enter, keys.enter)
+assert(pcall(oldChunk), "A publikus mod visszakapcsolhato.")
+assert(files[".downloader_auth_mode"] == "public"
+    and #requests > 0, "A publikus valasztas is maradjon meg.")
+
+requests = {}
+queueKeys()
+assert(pcall(oldChunk, "downloader"),
+    "Az elmentett publikus mod token nelkul induljon legkozelebb is.")
 
 reset()
 files[".github_token"] = nil
@@ -254,9 +284,18 @@ assert(not pcall(oldChunk, "downloader", "--after-self-update",
     "Az orokolt tokenes mod nem futhat hianyzo tokenfajllal.")
 
 reset()
+files[".downloader_auth_mode"] = "token"
+files[".github_token"] = nil
+requests = {}
+queueKeys()
+assert(not pcall(oldChunk, "downloader"),
+    "A mentett tokenes mod token nelkul ne valtson csendben publikusra.")
+assert(#requests == 0)
+
+reset()
 http.get = authenticatedGet
 queueKeys(keys.right, keys.right, keys.right, keys.left,
-    keys.down, keys.down, keys.enter)
+    keys.down, keys.enter)
 assert(not pcall(oldChunk, "turtle"),
     "A fejlesztoi menubol a frissites megszakithato.")
 assert(#requests == 0, "Megszakitaskor semmi nem toltheto le.")

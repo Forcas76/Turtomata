@@ -1,5 +1,6 @@
 .env
 .github_token
+.downloader_auth_mode
 tervek
 igen.md
 terv.md

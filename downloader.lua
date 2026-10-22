@@ -40,6 +40,18 @@ local GITHUB = {
     tokenFile = nil,
 }
 local DEVELOPER_TOKEN_FILE = ".github_token"
+local AUTH_MODE_FILE = ".downloader_auth_mode"
+
+local function savedAuthMode()
+    if not fs.exists(AUTH_MODE_FILE) then return "public" end
+    local file = fs.open(AUTH_MODE_FILE, "r")
+    if not file then return "public" end
+    local mode = file.readAll() or ""
+    file.close()
+    return mode == "token" and "token" or "public"
+end
+
+if savedAuthMode() == "token" then GITHUB.tokenFile = DEVELOPER_TOKEN_FILE end
 
 local function developerToken()
     if not fs.exists(DEVELOPER_TOKEN_FILE) then return nil end
@@ -446,7 +458,7 @@ local function developerMenu()
         { label = "Publikus GitHub frissites", mode = "public", enabled = true },
         { label = "Frissites megszakitasa", mode = "cancel", enabled = true },
     }
-    local selected = tokenReady and 1 or 2
+    local selected = tokenReady and GITHUB.tokenFile and 1 or 2
     while true do
         delTerm()
         print(tr("FEJLESZTOI MENU"))
@@ -470,7 +482,7 @@ local function developerMenu()
             elseif value == keys.enter and choices[selected].enabled then
                 return choices[selected].mode
             elseif value == keys.escape or value == keys.backspace then
-                return "public"
+                return "keep"
             end
         elseif event == "mouse_click" then
             local clicked = y - 3
@@ -481,14 +493,19 @@ local function developerMenu()
     end
 end
 
-local function applyDeveloperMode(mode)
+local function applyDeveloperMode(mode, saveChoice)
+    if mode == "keep" then return end
     if mode == "cancel" then error("A frissites megszakitva.", 0) end
     if mode == "token" then
         if not developerToken() then error("Tokenfajl hianyzik vagy ures.", 0) end
-        GITHUB.tokenFile = DEVELOPER_TOKEN_FILE
-    else
-        GITHUB.tokenFile = nil
     end
+    if saveChoice ~= false then
+        local file = fs.open(AUTH_MODE_FILE, "w")
+        if not file then error("Nem mentheto a downloader modja.", 0) end
+        file.write(mode)
+        file.close()
+    end
+    GITHUB.tokenFile = mode == "token" and DEVELOPER_TOKEN_FILE or nil
 end
 
 local function developerWindow()
@@ -516,7 +533,8 @@ local function installMenu()
     while true do
         delTerm()
         print("TURTOMATA " .. INSTALLER_VERSION .. " " .. tr("TELEPITO"))
-        print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
+        print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE
+            .. " / " .. (GITHUB.tokenFile and "TOKEN" or "PUBLIC"))
         print("")
         for index, item in ipairs(items) do
             print((index == selected and "> " or "  ") .. item.label)
@@ -549,7 +567,7 @@ if (#args > 1 and not afterSelfUpdate)
     or (args[3] and not inheritedToken) or (args[1] and not requested) then
     error("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]", 0)
 end
-if inheritedToken then applyDeveloperMode("token")
+if inheritedToken then applyDeveloperMode("token", false)
 elseif not afterSelfUpdate and args[1] then developerWindow()
 elseif not args[1] then requested = installMenu() end
 
