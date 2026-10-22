@@ -3,7 +3,7 @@
 return {
     major = 1,
     minor = 1,
-    patch = 0,
-    number = "1.1.0",
-    label = "v1.1.0",
+    patch = 1,
+    number = "1.1.1",
+    label = "v1.1.1",
 }

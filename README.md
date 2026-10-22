@@ -28,7 +28,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.1.0**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.1.1**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 
@@ -260,11 +260,14 @@ Branch miningnál külön állítható:
 - a főúti gyakoriság: hány teljes beásás után legyen fáklya;
 - az oldalági távolság: hány blokkonként legyen fáklya.
 
-A turtle előbb kiássa az érintett járatot, és csak visszafelé helyezi el a
-fáklyákat, ezért nem üti ki őket a következő lépésben. Az `Oldalt` mód falba
+A főágon a turtle a kijelölt beásásnál, az esetleges oldalágak elkészülte
+után azonnal próbál fáklyát rakni. Érckeresés nélküli mellékágon már az
+adott blokk kiásása után próbálkozik; érckereséssel továbbra is az ág
+átvizsgálását követő visszaúton fáklyáz. Az `Oldalt` mód falba
 helyez, a `Fej folott` mód felfelé próbál fali fáklyát rögzíteni. Sikertelen
 lerakásnál másik oldalt, fej fölötti helyet, majd szükség esetén támaszblokkot
-próbál; alapbeállítással a fáklyahiba figyelmeztetés, nem feladatmegszakítás.
+próbál; branch miningnál a sikertelen lerakás figyelmeztetés, nem
+feladatmegszakítás.
 
 ## Ládák és fenntartott slotok
 

@@ -1,7 +1,7 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.1.0"
+local INSTALLER_VERSION = "v1.1.1"
 local localizationOk, Localization = pcall(require, "localization")
 local function tr(value)
     return localizationOk and Localization.text(value) or value
