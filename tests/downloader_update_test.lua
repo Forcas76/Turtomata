@@ -230,6 +230,15 @@ end
 
 reset()
 http.get = authenticatedGet
+queueKeys(keys.up, keys.enter)
+assert(pcall(oldChunk, "turtle", "--developer-menu"),
+    "A foprogram kozvetlenul meg tudja nyitni a fejlesztoi menut.")
+assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
+assert(files[".downloader_auth_mode"] == "token",
+    "A kozvetlenul valasztott tokenes mod legyen tartos.")
+
+reset()
+http.get = authenticatedGet
 queueKeys(keys.right, keys.right, keys.right, keys.left,
     keys.up, keys.enter)
 local tokenUpdateOk, tokenUpdateReason = pcall(oldChunk, "turtle")

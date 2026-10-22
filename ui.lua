@@ -172,7 +172,8 @@ function ui.integer(title, label, defaultValue, minimum, maximum)
     end)
 end
 
-function ui.confirm(title, lines, label)
+function ui.confirm(title, lines, label, options)
+    options = options or {}
     if type(lines) == "string" then lines = { lines } end
     local offset = 0
     while true do
@@ -187,10 +188,16 @@ function ui.confirm(title, lines, label)
         term.setCursorPos(1, height)
         write(clip(tr((label or "ENTER = inditas") .. " | Esc = vissza"), width))
         local event, key, _, y = os.pullEvent()
-        if event == "key" and key == keys.enter then return true end
-        if event == "key" and (key == keys.escape or key == keys.backspace
-            or key == keys.left) then return false end
-        if event == "key" and key == keys.down then
+        local handled, result = false, nil
+        if event == "key" and options.onKey then
+            handled, result = options.onKey(key)
+        end
+        if handled then
+            if result ~= nil then return result end
+        elseif event == "key" and key == keys.enter then return true
+        elseif event == "key" and (key == keys.escape or key == keys.backspace
+            or key == keys.left) then return false
+        elseif event == "key" and key == keys.down then
             offset = math.min(math.max(0, #(lines or {}) - visible), offset + 1)
         elseif event == "key" and key == keys.up then
             offset = math.max(0, offset - 1)

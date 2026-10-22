@@ -561,13 +561,16 @@ print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or nil
 afterSelfUpdate = args[2] == "--after-self-update"
+local directDeveloperMenu = args[2] == "--developer-menu"
 local inheritedToken = afterSelfUpdate and args[3] == "--developer-token"
-if (#args > 1 and not afterSelfUpdate)
-    or #args > (inheritedToken and 3 or afterSelfUpdate and 2 or 1)
+if (#args > 1 and not afterSelfUpdate and not directDeveloperMenu)
+    or #args > (inheritedToken and 3 or afterSelfUpdate and 2
+        or directDeveloperMenu and 2 or 1)
     or (args[3] and not inheritedToken) or (args[1] and not requested) then
     error("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]", 0)
 end
 if inheritedToken then applyDeveloperMode("token", false)
+elseif directDeveloperMenu then applyDeveloperMode(developerMenu())
 elseif not afterSelfUpdate and args[1] then developerWindow()
 elseif not args[1] then requested = installMenu() end
 

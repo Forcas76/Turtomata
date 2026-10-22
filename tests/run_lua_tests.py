@@ -13,6 +13,7 @@ for name in (
     "registry_test.lua",
     "job_setup_test.lua",
     "remote_test.lua",
+    "ui_secret_test.lua",
     "downloader_update_test.lua",
 ):
     if name == "downloader_update_test.lua":

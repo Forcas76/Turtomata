@@ -589,12 +589,29 @@ local function updateTurtleProgram()
         ui.waitForEnter()
         return
     end
-    if not ui.confirm("Program frissitese", {
+    local secretStep = 0
+    local confirmed = ui.confirm("Program frissitese", {
         "A teljes turtle program frissul.",
         "Siker utan az eszkoz ujraindul.",
-    }, "ENTER = frissites") then return end
+    }, "ENTER = frissites", { onKey = function(key)
+        if key == keys.right then
+            secretStep = secretStep == 3 and 1 or secretStep + 1
+            return true
+        end
+        if key == keys.left and secretStep == 3 then
+            return true, "developer"
+        end
+        secretStep = 0
+        return false
+    end })
+    if not confirmed then return end
     ui.message("Program frissitese...", "Kerlek varj.")
-    local ok = shell.run("downloader", "turtle")
+    local ok
+    if confirmed == "developer" then
+        ok = shell.run("downloader", "turtle", "--developer-menu")
+    else
+        ok = shell.run("downloader", "turtle")
+    end
     if ok then
         ui.message("Frissites kesz. Ujrainditas...", "")
         sleep(1)
