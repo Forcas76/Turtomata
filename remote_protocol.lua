@@ -1,10 +1,10 @@
--- A CCTurtle tavoli felugyelet kozos Rednet protokollja.
+-- A Turtomata tavoli felugyelet kozos Rednet protokollja.
 
 local protocol = {
     VERSION = 1,
-    STATUS = "ccturtle.status.v1",
-    CONTROL = "ccturtle.control.v1",
-    ACK = "ccturtle.ack.v1",
+    STATUS = "turtomata.status.v1",
+    CONTROL = "turtomata.control.v1",
+    ACK = "turtomata.ack.v1",
     DISCOVER_INTERVAL = 10,
     HEARTBEAT_INTERVAL = 2,
     OFFLINE_AFTER = 8,

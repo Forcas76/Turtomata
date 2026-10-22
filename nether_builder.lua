@@ -1160,12 +1160,12 @@ local function stopListener()
         local event, key = os.pullEventRaw()
         if event == "nether_builder_finished" then return end
         if event == "terminate" or (event == "key" and key == keys.q)
-            or (event == "ccturtle_remote_command" and key == "return_home") then
+            or (event == "turtomata_remote_command" and key == "return_home") then
             stopRequested = true
             print("Leallitas kerese fogadva.")
         elseif event == "key" and key == keys.s then
             status("Allapot")
-        elseif event == "ccturtle_remote_command" and key == "service" then
+        elseif event == "turtomata_remote_command" and key == "service" then
             serviceRequested = true
             print("Tavoli lepakolasi keres fogadva.")
         end

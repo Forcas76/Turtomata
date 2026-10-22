@@ -1,4 +1,4 @@
--- CCTurtle megfigyelo Pocket Computerhez es normal/Advanced Computerhez.
+-- Turtomata megfigyelo Pocket Computerhez es normal/Advanced Computerhez.
 
 local Protocol = require("remote_protocol")
 local Version = require("version")
@@ -241,7 +241,7 @@ local function renderStatusBody()
     if selected > #list then selected = math.max(1, #list) end
     clear()
     term.setTextColor(colors.cyan)
-    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("MEGFIGYELO"), width))
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("MEGFIGYELO"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
     if openModems() == 0 then
@@ -313,7 +313,7 @@ local function renderCommandBody()
     local target = selectedTurtle()
     clear()
     term.setTextColor(colors.orange)
-    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("PARANCSOK"), width))
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("PARANCSOK"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
     if not target then
@@ -343,7 +343,7 @@ local function renderSettingsBody()
     local width, height = term.getSize()
     clear()
     term.setTextColor(colors.cyan)
-    print(clip("CCTURTLE " .. Version.label .. " | " .. tr("BEALLITASOK"), width))
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("BEALLITASOK"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
     print(tr("Nyelv / Language"))

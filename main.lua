@@ -1,4 +1,4 @@
--- CCTurtle kozponti belepesi pont.
+-- Turtomata kozponti belepesi pont.
 
 local ui = require("ui")
 local Settings = require("settings")
@@ -496,21 +496,26 @@ end
 local function workControl()
     while true do
         local owner = WorkRegistry.load()
-        if not owner then
-            ui.message("MUNKA KEZELES", "Nincs nyilvantartott munka.")
-            ui.waitForEnter()
-            return
+        local savedJobs = JobPreview.list()
+        local items = {}
+        if owner then
+            items[#items + 1] = { label = "Tulajdonos", suffix = owner.task,
+                enabled = false, value = "owner" }
+            items[#items + 1] = { label = "Allapot", suffix = owner.status,
+                enabled = false, value = "status" }
+            items[#items + 1] = { label = "Auto folytatas",
+                suffix = boolText(owner.autoResume), value = "auto" }
+            items[#items + 1] = { label = "Munka felszabaditasa",
+                value = "release" }
         end
-        local selected = ui.menu("MUNKA KEZELES", {
-            { label = "Tulajdonos", suffix = owner.task, enabled = false,
-                value = "owner" },
-            { label = "Allapot", suffix = owner.status, enabled = false,
-                value = "status" },
-            { label = "Auto folytatas",
-                suffix = boolText(owner.autoResume), value = "auto" },
-            { label = "Munka felszabaditasa", value = "release" },
-            { label = "Vissza", value = "back" },
-        })
+        if owner or #savedJobs > 0 then
+            items[#items + 1] = { label = "Mentett munka torlese", value = "delete" }
+        else
+            items[#items + 1] = { label = "Nincs mentett munka",
+                enabled = false, value = "empty" }
+        end
+        items[#items + 1] = { label = "Vissza", value = "back" }
+        local selected = ui.menu("MUNKA KEZELES", items)
         if not selected or selected == "back" then return end
         if selected == "auto" then
             WorkRegistry.setAutoResume(not owner.autoResume)
@@ -523,6 +528,40 @@ local function workControl()
             }, "ENTER = felszabaditas") then
                 WorkRegistry.release()
                 return
+            end
+        elseif selected == "delete" then
+            local choices, listed = {}, {}
+            for _, job in ipairs(savedJobs) do
+                choices[#choices + 1] = { label = job.label,
+                    suffix = job.progress, value = job }
+                listed[job.task] = true
+            end
+            if owner and not listed[owner.task] then
+                choices[#choices + 1] = { label = owner.task,
+                    suffix = owner.status,
+                    value = { task = owner.task, label = owner.task } }
+            end
+            choices[#choices + 1] = { label = "Vissza", value = "back" }
+            local job = ui.menu("MENTES TORLESE", choices)
+            if job and job ~= "back" then
+                local lines = {
+                    Localization.text("Feladat: ") .. job.label,
+                    Localization.text("Haladas: ")
+                        .. tostring(job.progress or "ismeretlen"),
+                    "A folytatasi mentes vegleg torlodik.",
+                    "Csak bazison allo turtle-n hasznald!",
+                }
+                if job.task == "chain" then
+                    lines[#lines + 1] = "Az aktiv reszfeladat mentese is torlodik."
+                end
+                if ui.confirm("MENTES VEGLEGES TORLESE", lines,
+                    "ENTER = torles") then
+                    local ok, reason = WorkRegistry.deleteSaved(job.task)
+                    ui.message(ok and "MENTES TOROLVE" or "TORLESI HIBA",
+                        ok and "A mentes torolve." or tostring(reason),
+                        ok and nil or "error")
+                    ui.waitForEnter()
+                end
             end
         end
     end
@@ -583,7 +622,7 @@ local function menuLoop()
     end
     while true do
         local hasResume = #JobPreview.list() > 0
-        local choice = ui.menu("CCTURTLE " .. Version.label, {
+        local choice = ui.menu("TURTOMATA " .. Version.label, {
             { label = "Branch mining", value = "branch" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
             { label = "Utvonal keszites", value = "nether" },

@@ -13,7 +13,10 @@ for name in (
     "registry_test.lua",
     "job_setup_test.lua",
     "remote_test.lua",
+    "downloader_update_test.lua",
 ):
+    if name == "downloader_update_test.lua":
+        lua.globals().DOWNLOADER_SOURCE = (root / "downloader.lua").read_text(encoding="utf-8")
     test = (root / "tests" / name).read_text(encoding="utf-8")
     result = lua.execute(test)
     if result is not True:

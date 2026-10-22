@@ -47,6 +47,9 @@ os.queueEvent = function(...)
 end
 
 local Protocol = require("remote_protocol")
+assert(Protocol.STATUS == "turtomata.status.v1")
+assert(Protocol.CONTROL == "turtomata.control.v1")
+assert(Protocol.ACK == "turtomata.ack.v1")
 local Remote = require("remote")
 local snapshot = Remote.snapshot()
 assert(Protocol.valid(snapshot, "status"))
@@ -64,14 +67,14 @@ Remote.handleCommand(7, {
 })
 assert(#sentMessages == 1 and sentMessages[1].protocol == Protocol.ACK)
 assert(sentMessages[1].message.accepted == true)
-assert(queued[1][1] == "ccturtle_remote_command" and queued[1][2] == "return_home")
+assert(queued[1][1] == "turtomata_remote_command" and queued[1][2] == "return_home")
 
 Remote.handleCommand(7, {
     type = "command", version = Protocol.VERSION, targetId = 42,
     command = "service", requestId = "test-2",
 })
 assert(#sentMessages == 2 and sentMessages[2].message.accepted == true)
-assert(queued[2][1] == "ccturtle_remote_command" and queued[2][2] == "service")
+assert(queued[2][1] == "turtomata_remote_command" and queued[2][2] == "service")
 
 os.getComputerID, os.getComputerLabel, os.epoch = oldId, oldLabel, oldEpoch
 os.queueEvent = oldQueueEvent

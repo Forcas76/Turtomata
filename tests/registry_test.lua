@@ -76,6 +76,32 @@ assert(Registry.autoCandidate() == nil)
 assert(Registry.release())
 assert(Registry.load().status == "released")
 
+assert(Registry.deleteSaved("farm") == false)
+assert(Registry.deleteSaved("chain"))
+assert(Store.read("task_chain_state.txt") == nil)
+assert(Store.read("farm_state.txt") == nil)
+assert(Registry.load() == nil)
+assert(files[".task_chain_state.txt.bak"] == nil)
+assert(files[".farm_state.txt.bak"] == nil)
+assert(Store.read("branch_miner_state.txt") ~= nil)
+
+assert(Registry.start("branch_miner", true))
+assert(Store.write("branch_miner_state.txt", {
+    version = 1, active = true, config = { mainLength = 8 },
+}))
+assert(Store.write("branch_miner_state.txt", {
+    version = 1, active = true, config = { mainLength = 12 },
+}))
+assert(files[".branch_miner_state.txt.bak"] ~= nil)
+assert(Registry.start("excavator", false) == false)
+assert(Registry.deleteSaved("branch_miner"))
+assert(Store.read("branch_miner_state.txt") == nil)
+assert(files[".branch_miner_state.txt.bak"] == nil)
+assert(files[".branch_miner_state.txt.tmp"] == nil)
+assert(Registry.load() == nil)
+assert(files[".work_registry.txt.bak"] == nil)
+assert(Registry.start("excavator", false))
+
 fs, textutils = previousFs, previousTextutils
 package.loaded["state_store"] = nil
 package.loaded["work_registry"] = nil

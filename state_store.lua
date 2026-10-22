@@ -88,6 +88,20 @@ function store.remove(path)
     return true
 end
 
+-- Egy munka elvetesekor a tartalekot is torolni kell, kulonben a read
+-- visszaallitana belole a mar torolt aktiv allapotot.
+function store.removeAll(path)
+    local directory = fs.getDir(path)
+    local basename = fs.getName(path)
+    for _, suffix in ipairs({ ".bak", ".tmp" }) do
+        local companion = "." .. basename .. suffix
+        if directory ~= "" then companion = fs.combine(directory, companion) end
+        local ok, reason = store.remove(companion)
+        if not ok then return false, reason end
+    end
+    return store.remove(path)
+end
+
 function store.clone(value)
     return clone(value)
 end

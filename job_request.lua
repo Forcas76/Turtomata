@@ -2,7 +2,7 @@
 
 local stateStore = require("state_store")
 local requests = {}
-local FILE = ".ccturtle_job_request.txt"
+local FILE = ".turtomata_job_request.txt"
 
 local function token()
     local epoch = os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000)

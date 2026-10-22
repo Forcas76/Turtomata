@@ -228,7 +228,7 @@ function remote.handleCommand(sender, message)
         end
         acknowledge(sender, message.command, message.requestId, true,
             "Biztonsagos leallitas es hazateres kerese fogadva.")
-        os.queueEvent("ccturtle_remote_command", "return_home", sender, message.requestId)
+        os.queueEvent("turtomata_remote_command", "return_home", sender, message.requestId)
     elseif message.command == "service" then
         local entry = activeState()
         if not entry then
@@ -240,7 +240,7 @@ function remote.handleCommand(sender, message)
         else
             acknowledge(sender, message.command, message.requestId, true,
                 "Lepakolas, feltoltes es folytatas kerese fogadva.")
-            os.queueEvent("ccturtle_remote_command", "service", sender, message.requestId)
+            os.queueEvent("turtomata_remote_command", "service", sender, message.requestId)
         end
     else
         acknowledge(sender, message.command, message.requestId, false, "Ismeretlen parancs.")

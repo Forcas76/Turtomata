@@ -540,7 +540,7 @@ def validate_lua_baseline(results):
 
 
 def report(results, seeds, lua_validation):
-    lines = ["# CCTurtle – mozgásminták szimulációja", "", "Dátum: 2026. október 18.", "",
+    lines = ["# Turtomata – mozgásminták szimulációja", "", "Dátum: 2026. október 18.", "",
              "## Módszer és értelmezés", "",
              "Ez végrehajtott, determinisztikus Python voxel- és műveletszimuláció, nem Minecraftban mért futási idő. "
              "A modell minden mozgást, negyedfordulást, inspectet, bontást és lerakást külön megszámol. "

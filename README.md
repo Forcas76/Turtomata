@@ -1,431 +1,216 @@
-# CCTurtle
+# Turtomata
 
-## V2 kiserleti funkciok
+Modular [CC:Tweaked](https://tweaked.cc/) software for mining, route building, farming, and live monitoring with Minecraft turtles. The central turtle program is `main.lua`; a Pocket Computer or regular Computer can run `remote_monitor.lua` to watch turtles and issue commands over Rednet.
 
-A `main` menuben a feladatlapok szerkeszthetok: a nyilakkal/kattintassal
-valassz mezot, majd az `Attekintes / inditas` utan az utolso Enter indit.
-Esc/Backspace visszalep. A `Felbehagyott munka` a mentett beallitasokat,
-haladast, fazist es fizikai poziciot kulon mutatja. A
-`Munka kezelese` menuben az automatikus folytatas ki-be kapcsolhato;
-a felszabaditas a mentest nem torli, de csak bazison allo turtle-n hasznald.
-A `Beallitasok > Navigacio es altalanos > Kozos bazis` adja az uj
-koordinatas feladatok es lancok alapertelmezett vilag-X/Y/Z es facing
-adatait. Meglevo feladatmentest ez a beallitas nem helyez at.
+**Current version:** v1.1.2 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
 
-A farmnal a turtle a bazison indul, a leadolada mogotte, a fuel lada
-a leadolada folott, a vetomag/takarmany lada a bazistól jobbra van.
-Az 1-es slot fuel, a 2-es vetomag/takarmany. A novenyprofil csak ismert,
-erett vanilla novenyt arat, majd ujraveti. Az allatetetes KISERLETI:
-a ket sikeres `place` nem bizonyitja, hogy uj allat szuletett.
-Ujrainditas utan a farm azonnal korbejar; a regi idozitore nem var.
+[Magyar dokumentáció / Hungarian documentation](README_HU.md)
 
-A `Feladatlanc` egy mentett szerkesztheto sorrend: lepes hozzaadasa,
-modositasa, masolasa, ki/bekapcsolasa, mozgatas fel/le es torles.
-Az egyes lepesek
-utan a turtle visszater a kozos bazisra; teruletasas es farm tavoli
-koordinatan is indithato. Branch mining es utvonalkeszites lancban
-jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
-A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
-a jatekbeli probat a valodi farmon el kell vegezni.
+> **Experimental features:** Area excavation, coordinate navigation, farming, task chains, ore scanning, automatic torch placement, and inventory-capacity prediction are still experimental. Test them in a safe area before leaving a turtle unattended.
 
-Aktuális rendszerverzió: **v1.1.1**. A verzió központilag a `version.lua`
-fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
-parancsoldalán, valamint a downloader telepítési menüjében.
+## Getting started
 
-A közös `localization.lua` magyar (`hu`) és angol (`en`) feliratokat tartalmaz.
-A turtle főmenüjében a `Beallitasok > Nyelv / Language` pontban váltható. A
-megfigyelőn a bal/jobb nyíllal elérhető harmadik, `Beallitasok` oldalon állítható
-ugyanez. A választás az adott eszköz `settings.txt` fájljába kerül, ezért
-újraindítás után is megmarad. Az ismeretlen vagy dinamikus technikai üzenetek
-biztonságos tartalékként az eredeti magyar szöveggel jelennek meg.
+On the in-game turtle or monitor Computer, fetch the installer with:
 
-A turtle főmenü `Program frissitese` pontja a `downloader turtle`, a megfigyelő
-parancsoldal `Megfigyelo frissitese` pontja pedig a `downloader monitor`
-csomagot futtatja. Sikeres letöltés után az eszköz automatikusan újraindul, és
-a hozzá tartozó `startup.lua` már a frissített programot tölti be.
+```text
+pastebin get hnT1J5cK downloader
+```
 
-Moduláris CC:Tweaked turtle-rendszer branch mininghoz, területásáshoz,
-Nether-útépítéshez és kísérleti koordinátás navigációhoz.
-
-Az indítandó központi program a `main` (`main.lua`). A feladatok beállítása,
-folytatása és az általános beállítások kezelése innen történik. A
-feladatmodulok közvetlen indítása átmenetileg továbbra is használható
-vésztartalékként.
-
-## Indítás
+Then run `downloader` and select the appropriate package. Alternatively, copy the required Lua files manually and run:
 
 ```text
 main
 ```
 
-A menük nyílbillentyűkkel és Enterrel használhatók. Advanced Turtle esetén a
-sorokra kattintani és görgetni is lehet. Backspace vagy Escape visszalép.
-Számbevitelnél az üres Enter elfogadja a kijelzett alapértéket. A feladat csak
-az összefoglaló után, a végső Enterre indul el.
+`downloader` without arguments opens a menu:
 
-## Menümagyarázó
-
-Az első oszlopban a turtle képernyőjén látható, ékezet nélküli felirat áll.
-A második oszlop az ékezetes cím, a harmadik pedig a működés rövid leírása.
-
-### Főmenü
-
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Branch mining` | Branch mining | 1×2, 1×3 vagy egyenes 3×3-as bányajárat. |
-| `Terulet kiasasa` | Terület kiásása | KÍSÉRLETI: megadott szélességű, mélységű és magasságú téglatest kitermelése. |
-| `Utvonal keszites` | Útvonalkészítés | Lépcső, körbeépített védett vagy sima 1×2-es alagút, szükség esetén cobblestone padlóval. |
-| `Koordinatara navigalas` | Koordinátára navigálás | KÍSÉRLETI: kézzel megadott világkoordinátáról célkoordinátára halad. |
-| `Felbehagyott munka` | Félbehagyott munka | Aktív mentés kiválasztása és automatikus folytatása. |
-| `Beallitasok` | Beállítások | Közös navigációs, biztonsági, inventory-, fáklya- és ércbeállítások. |
-| `Diagnosztika` | Diagnosztika | Ellenőrzi a szükséges modulokat és kijelzi a fuel-szintet. |
-| `Kilepes` | Kilépés | Bezárja a központi programot. |
-
-### Branch mining
-
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Branch 1x2` | Branch mining – 1×2 | Egy blokk széles, két blokk magas főutat és oldalágakat ás. |
-| `Branch 1x3` | Branch mining – 1×3 | Egy blokk széles, három blokk magas főutat és oldalágakat ás. |
-| `Egyenes 3x3` | Egyenes 3×3-as alagút | Oldalág nélküli 3×3-as járat. Induláskor egyet felmegy, így a kezdőszint lesz az alagút alja. |
-| `Uj munka` | Új munka | A kezdőponttól indít új munkát. |
-| `Kezi folytatas` | Kézi folytatás | A már kész főúton a megadott távolságig előremegy, majd ott kezdi az új szakaszt. |
-| `Kezdo tavolsag` | Kezdő távolság | A kézi folytatáskor bejárandó, már meglévő főút hossza. |
-| `Fotengely` | Főtengely | Az új főút hossza. |
-| `Oldalagat` | Oldalág | Egy bal vagy jobb oldali ág hossza. |
-| `Agak tavolsaga` | Ágak távolsága | Két oldalág közötti távolság; alapértéke 3. |
-| `Alagut hossza` | Alagút hossza | Az egyenes 3×3-as alagút hossza. |
-
-Az 1×2 és 1×3 módnál opcionális a kísérleti érckeresés. A turtle előbb
-elkészíti a bal és jobb ágat, majd végigjárja azokat, és a padlón, mennyezeten,
-oldalfalakon, illetve az ág végén keresi a beállított érceket. A kapcsolódó
-érctelepet a mélység- és blokklimitig követi, majd pontosan visszatér az ág
-azon pontjára, ahonnan kitért.
-
-Ha az oldalág normál kiásása közben közvetlenül előtte kijelölt ércet talál,
-az érctelért azonnal megpróbálja végigkövetni. A művelet idejére megőrzi az
-összes így kitermelt világpozíciót, külön a bal és jobb ághoz. Az utólagos
-ágvizsgálat ezeken a már ismert járatcellákon nem fordul oldalra, nem járja
-végig a magassági szinteket és nem ismétli meg az ellenőrzést. A telér olyan
-oldalirányú koordinátái, amelyek nem részei az ág járóvonalának, nem okoznak
-téves kihagyást. Az ideiglenes térkép a teljes bal–jobb ágművelet végén törlődik,
-de megszakítás esetére addig az állapotmentés része.
-
-### Területásás
-
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Szelesseg` | Szélesség | A turtle nézőpontjából jobbra mért méret. |
-| `Melyseg` | Mélység | Az előre nézési irányban mért méret. |
-| `Magassag` | Magasság | A kezdőszinttől felfelé mért méret. |
-
-A turtle kígyózó útvonalon járja be a téglatestet. Ha van még felette
-feldolgozandó réteg, felfelé is ás, így egy bejárással két réteget készíthet
-el. A funkció kísérleti, ezért először kis területen érdemes kipróbálni.
-
-### Útvonalkészítés
-
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Lepcso fel/le` | Lépcső fel/le | Blokkonként egy szintet emelkedő vagy süllyedő, két blokk fejterű lépcső. |
-| `Vedett 1x2 alagut` | Védett 1×2-es alagút | Szabad térben padlót, oldalfalakat és mennyezetet épít a járat köré. |
-| `Sima 1x2 alagut` | Sima 1×2-es alagút | Két blokk magas járatot ás. Ha nincs alatta blokk, cobblestone-nal pótolja a padlót. Sok víznél vagy lávánál tartósan fedett alagútra vált. |
-| `Felfele` | Felfelé | Emelkedő lépcső. |
-| `Lefele` | Lefelé | Süllyedő lépcső. |
-| `Epitoanyag / Blokk` | Építőanyag / blokk | A használt blokk azonosítója, például `minecraft:cobblestone`. |
-
-Fáklyázás nélkül a 2–5. slot építőanyag, a 6–16. slot bányászati tárhely.
-Fáklyázással a 2. slot a fáklyáé, az építőanyag a 3–5. slotba kerül. Ha az
-anyag elfogy, a turtle a mentett útvonalon hazamegy, a leadóládából feltölti,
-majd visszatér.
-Az új sima alagút módnál az építőanyag rögzítetten `minecraft:cobblestone`;
-hiányzó padló esetén kér belőle a leadóládából. A fáklyázás opcionális.
-Ha a fáklya nem helyezhető le, figyelmeztet és továbbhalad; az üres
-fáklyaslot sem állítja le ezt a módot. A mentésfájl neve kompatibilitásból
-továbbra is `nether_builder_state.txt`.
-
-A sima 1×2-es mód az előtte, felette és alatta érzékelt folyadékot figyeli.
-Öt lépésen belül három vizes lépésnél, illetve láva észlelésekor a hátralévő
-szakaszt fedett 1×2-es profilban készíti: padló, kétoldalt falak és mennyezet.
-A váltás a mentésbe kerül, újraindítás után is megmarad. A szükséges
-cobblestone-t a leadóládából tölti fel. Ha a folyadékot nem tudja biztonságosan
-lezárni, vagy elfogy az építőanyag, nem lép tovább vakon. A sima mód első,
-váltás előtti vizes lépései még nem utólagosan burkoltak.
-
-### KÍSÉRLETI koordinátás navigáció
-
-A menü bekéri a turtle jelenlegi világkoordinátáját, a nézési irányát, a
-célkoordinátát és opcionálisan a végső irányt. Az irányok:
-
-- észak: `-Z`;
-- kelet: `+X`;
-- dél: `+Z`;
-- nyugat: `-X`.
-
-A koordinátát a program nem GPS-szel méri: a beírt kezdőadatokból számol.
-
-### Élő Rednet-megfigyelés
-
-A turtle program opcionálisan automatikusan megnyit minden csatlakoztatott
-vezeték nélküli modemet. A hagyományos Wireless Modem és az Ender Modem is
-támogatott. Ha nincs modem, a bányászati rendszer változatlanul működik.
-
-A `remote_monitor.lua` ugyanazon a programon keresztül használható Pocket
-Computeren és normál/Advanced Computeren. A nézet a terminál méretéhez igazodik,
-és egyszerre több turtle-t, illetve ugyanazt a turtle-t több megfigyelőről is
-lehet nézni.
-
-Ha a megfigyelő Computerhez `monitor` periféria csatlakozik, a program
-automatikusan az első megtalált külső monitorra is kirajzolja a teljes
-felületet. A Computer saját terminálja közben aktív marad, tehát a két kijelző
-egyszerre frissül, mindegyik a saját méretéhez igazodó elrendezéssel. Monitor
-csatlakoztatását vagy eltávolítását futás közben is felismeri. Advanced
-Monitoron érintéssel, a gépen pedig nyilakkal vagy egérrel választható turtle.
-
-A megfigyelő saját terminálján a bal/jobb nyíl vált az `Állapot` és a
-`Parancsok` oldal között. Külső monitor esetén a monitor mindig az élő
-állapotoldalon marad, miközben a Computer terminálján használható a
-parancsmenü. Pocket Computeren ugyanazon a kijelzőn történik az oldalváltás.
-A parancsmenüben a fel/le nyíl vagy a kattintás választ, az Enter végrehajt.
-A biztonságos leállítás és hazatérés kétszeri megerősítést kér. A turtle minden
-parancsot elfogadási vagy hibaüzenettel igazol vissza.
-
-A jelenlegi távoli parancsok:
-
-- `Adatok frissitese`: azonnali teljes állapotcsomagot kér;
-- `Lepakolas es folytatas`: a branch mining, területásás vagy Nether-építés
-  biztonságos pontján visszatér a ládákhoz, lepakol, tankol és feltölti a
-  szükséges készleteket, majd visszamegy a munkapontra és folytatja;
-- `Munka leallitasa, haza`: befejezi az aktuális biztonságos műveletet,
-  hazatér, és nem folytatja automatikusan a munkát.
-
-A koordinátás navigációnak nincs ládakezelése, ezért annál a lepakolási
-parancsot a turtle érthető hibaüzenettel elutasítja.
-
-Nincs indításkori párosítás. A később bekapcsolt megfigyelő azonnal felderítési
-üzenetet küld, a már dolgozó turtle pedig teljes állapotcsomaggal válaszol. Ezt
-követően két másodpercenként érkezik heartbeat. Nyolc másodperc jelkimaradás
-után a megfigyelő `OFFLINE` állapotot mutat, de tovább keresi az eszközt.
-
-### Downloader telepítési menü
-
-A `downloader` paraméter nélküli indításakor két csomag választható:
-
-| Menüszöveg | Telepített rendszer |
-|---|---|
-| `Turtle program telepitese` | A teljes bányászati rendszer, Rednet-telemetria és egy `startup.lua`, amely bekapcsoláskor a `main` programot indítja. |
-| `Megfigyelo telepitese` | A Rednet protokoll, a pocket/computer megfigyelő és egy `startup.lua`, amely bekapcsoláskor a `remote_monitor` programot indítja. |
-
-Parancssorból ugyanez a `downloader turtle`, illetve `downloader monitor`
-paranccsal indítható. A telepítés a már létező `startup.lua` fájlt lecseréli;
-a downloader a sikeres csere idejére biztonsági másolatot használ.
-
-A területásásnál külön bekapcsolható a `KISERLETI koordinatas indulas`.
-Ilyenkor a ládabázis világkoordinátája és facingje változatlan marad, a program
-pedig egy megadott munkapontra küldi a turtle-t. Az ásás kezdőiránya a
-ládabázis kezdőirányához képest választható: egyenesen, jobbra, hátra vagy
-balra. Ürítéshez, tankoláshoz és fáklyáért mindig az eredeti ládákhoz tér
-vissza, majd ugyanarra a munkapontra és facingre áll vissza.
-
-Érckeresés mellett az oldalági fáklyák az érckereső visszaútján kerülnek le.
-Így nincs külön fáklyázó bejárás. Az élő állapotpanel az érckeresés lépései
-alatt is frissíti a pozíciót, az eltelt időt és a hátralévő becslést.
-Indítás után a turtle-t nem szabad kézzel elmozgatni vagy elforgatni. Nyílt
-út módban akadálynál biztonságosan megáll és ment; ásó módban megpróbál utat
-nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
-
-### Beállítások
-
-| A kijelzőn | Ékezetes cím | Magyarázat |
-| --- | --- | --- |
-| `Navigacio es altalanos` | Navigáció és általános | Kezdő műveletidő, koordinátás mód és fuel-tartalék. |
-| `Biztonsag es helyzetkezeles` | Biztonság és helyzetkezelés | Víz/láva lezárása, ismétlési limit, tömítőblokk és fáklyahiba viselkedése. |
-| `Inventory KISERLETI` | KÍSÉRLETI inventory-kezelés | A következő blokk dropjának tényleges elférését vizsgáló rendszer. |
-| `Faklyazas` | Fáklyázás | Alapértelmezett engedélyezés, távolság és elhelyezési mód. |
-| `Erckereses` | Érckeresés | Alapértelmezett engedélyezés, érclista és követési limitek. |
-| `Alapertekek visszaallitasa` | Alapértékek visszaállítása | Újra létrehozza a közös alapbeállításokat. |
-
-Az érclistában az új blokk teljes alakja `<mod_neve>:<blokk_neve>`, például
-`minecraft:coal_ore`. A vanilla rövid forma (`coal_ore`) automatikusan
-`minecraft:` előtagot kap. A listában az `A` hozzáad, a `D` töröl vagy
-kikapcsol, a `K` ment és kilép; egérrel is kezelhető.
-
-## Automatikus fáklyázás – KÍSÉRLETI
-
-Bekapcsolva a 2. slot mindig a fáklyáé. A fáklyás láda a fuel-láda fölött
-legyen. Ha a fáklya elfogy, a turtle hazatér és feltölti a slotot.
-
-Branch miningnál külön állítható:
-
-- a főúti gyakoriság: hány teljes beásás után legyen fáklya;
-- az oldalági távolság: hány blokkonként legyen fáklya.
-
-A főágon a turtle a kijelölt beásásnál, az esetleges oldalágak elkészülte
-után azonnal próbál fáklyát rakni. Érckeresés nélküli mellékágon már az
-adott blokk kiásása után próbálkozik; érckereséssel továbbra is az ág
-átvizsgálását követő visszaúton fáklyáz. Az `Oldalt` mód falba
-helyez, a `Fej folott` mód felfelé próbál fali fáklyát rögzíteni. Sikertelen
-lerakásnál másik oldalt, fej fölötti helyet, majd szükség esetén támaszblokkot
-próbál; branch miningnál a sikertelen lerakás figyelmeztetés, nem
-feladatmegszakítás.
-
-## Ládák és fenntartott slotok
-
-A turtle a kezdőhelyen a munka irányába nézzen:
-
-```text
-Oldalnézet:
-
-                    munka iránya ->
-  [fáklyás láda]  (csak bekapcsolt fáklyázásnál)
-  [fuel-láda]
-  [leadóláda] [TURTLE]
-```
-
-- A leadóláda közvetlenül a turtle mögött van.
-- A fuel-láda a leadóláda fölött van.
-- A fáklyás láda bekapcsolt fáklyázásnál a fuel-láda fölött van.
-- Az 1. slot kizárólag tankolási slot. Nem éghető tartalmát a turtle lerakja.
-- A fuel-ládából felvett teljes stacket betankolja; 64 szén esetén mind a 64-et.
-- A 2. slot bekapcsolt fáklyázásnál kizárólag fáklyaslot.
-- A ládák eléréséhez a turtle fölötti helyet szabadon kell hagyni.
-
-## Inventory-kezelés – KÍSÉRLETI
-
-Bekapcsolva a program minden ládától való elinduláskor frissíti az
-`inventory_state.txt` fájlt. Új blokk detektálásakor ellenőrzi, hogy annak
-várható dropja elfér-e meglévő stackben vagy üres bányászslotban. Csak akkor
-tér haza, ha a detektált item már ténylegesen nem fér be. A fájl egyetlen
-felülírt JSON-sort tartalmaz; nem eseménynapló.
-
-## Navigáció, mentés és helyreállítás
-
-Minden feladat a közös `navigation.lua` modult használja. A modul tartja
-nyilván a relatív pozíciót és irányt, számolja a hazautat, kezeli az egzakt
-útvonalvermet, és minden mozgás előtt ment egy függő tranzakciót. Váratlan
-újraindítás után ezt egyezteti a mentett pozícióval, így nem alkalmazza kétszer
-ugyanazt a lépést.
-
-Állapotfájlok:
-
-- `branch_miner_state.txt`;
-- `excavator_state.txt`;
-- `nether_builder_state.txt`;
-- `coordinate_state.txt`;
-- `settings.txt`;
-- `inventory_state.txt`;
-- `ore_targets.txt`.
-
-Az állapotírás ideiglenes fájlt és biztonsági másolatot használ. A turtle-t
-egy váratlan leállás után ne mozgasd el kézzel. A központi menü `Felbehagyott
-munka` pontja csak a valóban aktív mentéseket listázza.
-
-## Futás közbeni kijelzés és vezérlés
-
-A státuszképernyő minden frissítéskor törlődik és ugyanazokat a sorokat írja
-újra: feladat, fázis, haladás, pozíció/irány, fuel, inventory, ellátmány,
-eltelt idő, hátralévő becslés és figyelmeztetések. Így a terminál nem telik meg
-állapotüzenetekkel.
-
-- `Q` vagy `Ctrl+T`: biztonságos leállítás kérése;
-- `S`: azonnali állapotfrissítés a régi közvetlen feladatindításnál.
-
-A branch miner, a területásó és a Nether-építő leállításkor hazatér, lepakol és
-ment. A koordinátás feladat biztonságosan megáll és menti az aktuális világpozíciót.
-
-Az indulási összefoglaló először képlettel kiszámolja a várható műveletszámot,
-majd ezt megszorozza az alapértelmezett `0,8 mp/művelet` értékkel:
-
-```text
-induló idő = várható műveletek × 0,8 mp
-```
-
-A `work_estimator.lua` külön számolja a mozgást, függőleges mozgást, ásást,
-fordulást, lerakást és – ahol szükséges – az ellenőrzéseket. Példák:
-
-```text
-Branch főút = hossz × (oda-vissza mozgás + magasság szerinti ásás)
-Oldalágak = elágazások × 2 oldal × ághossz × oda-vissza út
-3×3 szelet = 5 mozgás + 9 ásás + 6 fordulás
-Terület = szélesség × mélység × magasság + bejárás + hazatérés
-Lépcsőfok = 4 mozgás + 4 ásás + 1 építés
-Védett alagútcella = 4 mozgás + 2 ásás + legfeljebb 6 építés
-Koordinátaút = |ΔX| + |ΔY| + |ΔZ| + irányváltások
-```
-
-Az érctelep mérete, a folyadék, kavics, mob, inventory-ürítés vagy más váratlan
-esemény előre nem ismert. Futás közben a program ezért méri az egyes
-művelettípusok tényleges idejét. Akadály vagy figyelmeztetés esetén növeli a
-tanult járulékos szorzót, majd a még hátralévő képletet azonnal újraszámolja.
-A dashboard egyszerre mutatja a hátralévő várható műveletszámot és az adaptív
-időt, például: `1842 muv. / kb. 00:24:34`.
-
-## Helyzetkezelés
-
-A `situation_manager.lua` közös, strukturált eredményt ad a feladatoknak.
-Kezeli az ismételhető akadályokat, a fáklya tartalék elhelyezési sorrendjét,
-valamint a felülről, alulról vagy elölről érzékelt víz/láva tömítését. Egy
-nem létfontosságú hiba – például egy kihagyott fáklya – alapból nem szakítja
-félbe a teljes munkát. Navigációs bizonytalanságnál viszont a program ment és
-megáll, nem talál ki ellenőrizetlen pozíciót.
-
-## Indítási napló
-
-Az `action_log.lua` az `action_log.txt` fájlba csak az indítás időpontját, a
-feladat nevét és az induláskori fuel-szintet fűzi hozzá. Mozgást vagy fordulást
-nem naplóz.
-
-## Fájlok
-
-| Fájl | Szerep |
+| Choice | Installs |
 | --- | --- |
-| `main.lua` | Központi indító és menürendszer. |
-| `ui.lua` | Nyilas, kattintós menük és strukturált dashboard. |
-| `settings.lua` | Verziózott közös beállítások. |
-| `navigation.lua` | Relatív pozíció, útvonal, mozgás és helyreállítás. |
-| `coordinate_navigation.lua` | KÍSÉRLETI világkoordinátás útvonaltervezés. |
-| `situation_manager.lua` | Akadály-, folyadék- és fáklyahibák kezelése. |
-| `telemetry.lua` | Eltelt idő, mért műveletidő és ETA. |
-| `work_estimator.lua` | Módonkénti műveletszám-képletek és induló időbecslés. |
-| `state_store.lua` | Atomi JSON-állapotmentés és visszaállítás. |
-| `job_request.lua` | A központi menü egyszer használható feladatátadása. |
-| `branch_miner.lua` | Branch mining és egyenes 3×3. |
-| `excavator.lua` | KÍSÉRLETI területásás. |
-| `nether_builder.lua` | Útvonalkészítés: lépcső, védett és sima 1×2-es alagút. |
-| `coordinate_task.lua` | KÍSÉRLETI koordinátás feladat futtatója. |
-| `inventory_manager.lua` | KÍSÉRLETI kapacitásalapú inventory-kezelés. |
-| `torch_manager.lua` | KÍSÉRLETI automatikus fáklyázás. |
-| `ore_scanner.lua` | KÍSÉRLETI érclista és érctelepkövetés. |
+| Install turtle program (`Turtle program telepitese` in the source) | The full turtle system, Rednet telemetry, and `startup.lua` to launch `main` on boot. |
+| Install monitor program (`Megfigyelo telepitese` in the source) | The Rednet monitor and `startup.lua` to launch `remote_monitor` on boot. |
 
-## Downloader: GitHub vagy Pastebin
+The same packages can be selected from the shell with `downloader turtle` and `downloader monitor`. Installation replaces an existing `startup.lua`; the downloader uses a backup while replacing it. A successful in-program update restarts the device. The updater downloads a fresh copy of itself first, then uses that copy for the component list, so newly added components are included in one update. A failed download does not count as a successful update or trigger a success reboot.
 
-A `downloader.lua` elején választható a forrás:
+The downloader fetches the installer itself from Pastebin, then downloads the complete package from the public GitHub repository **without a token**. Its default source is GitHub; `DOWNLOAD_SOURCE` near the top of `downloader.lua` can be changed to `pastebin`, but new modules have no Pastebin IDs. Downloads are staged before replacing working files, and a self-update checks the new Lua syntax. The downloader still points to the current `Forcas76/CCTurtle` GitHub repository until that repository is renamed and its configuration is updated.
 
-```lua
-local DOWNLOAD_SOURCE = "github" -- vagy: "pastebin"
-```
-
-Publikus GitHub-repónál a token maradjon üres. Privát repónál használható
-`Contents: Read-only` jogosultságú fine-grained token, lehetőleg a turtle
-`.github_token` fájljának egyetlen sorában. Ez elsőbbséget kap a kódba írt
-tokenhez képest.
+Additional downloader commands:
 
 ```text
-downloader                 # minden GitHub-komponens
-downloader main            # a teljes központi rendszer
-downloader branch          # branch miner és függőségei
-downloader excavator       # területásó és függőségei
-downloader nether          # útvonalkészítő és függőségei (régi parancsnév)
-downloader coordinate      # koordinátás navigáció és függőségei
-downloader downloader      # csak a downloader
+downloader main        # central system and dependencies
+downloader branch      # branch miner and dependencies
+downloader excavator   # area excavator and dependencies
+downloader nether      # route builder and dependencies; legacy command name
+downloader coordinate  # coordinate navigation and dependencies
+downloader downloader  # downloader only
 ```
 
-Az új modulokhoz jelenleg nincs Pastebin ID, ezért a teljes moduláris rendszer
-telepítéséhez a GitHub-forrás szükséges. A letöltés először ideiglenes fájlba
-történik, és a működő példány csak sikeres letöltés után cserélődik le.
+## Controls and language
 
-## Tesztelés
+Use the arrow keys and Enter in menus. On an Advanced Turtle, you can click menu rows and scroll. Backspace or Escape returns to the previous screen. At numeric prompts, an empty Enter accepts the displayed default. A job starts only after its summary and a final Enter.
 
-A `tests/navigation_test.lua` mock turtle-lel ellenőrzi a relatív mozgást, az
-egzakt hazatérést, a félbemaradt tranzakció helyreállítását, az akadály utáni
-újrapróbálást és az észak=`-Z` világkoordináta-konvenciót.
+**English is the default for a fresh installation.** On the turtle, choose `Settings > Language / Nyelv` to switch between English and Hungarian. On a monitor Computer or Pocket Computer, use the left/right arrows to open its Settings page and change the language there. Each device stores its choice in its own `settings.txt`, so an existing Hungarian selection remains Hungarian after an update. Some dynamic or untranslated technical messages may still appear in their original Hungarian wording.
+
+The program's source labels are often unaccented Hungarian. The English labels below are what the localization layer displays when English is selected.
+
+## Turtle main menu
+
+| English menu item | Source label | Purpose |
+| --- | --- | --- |
+| Branch mining | `Branch mining` | Mine 1×2 or 1×3 main/side branches, or a straight 3×3 tunnel. |
+| Excavate area | `Terulet kiasasa` | **Experimental:** excavate a width × depth × height volume. |
+| Route building | `Utvonal keszites` | Build stairs, a protected 1×2 tunnel, or a plain 1×2 tunnel. |
+| Navigate to coordinates | `Koordinatara navigalas` | **Experimental:** travel from a supplied world position to a target. |
+| Farm maintenance | `Farm karbantartas` | **Experimental:** maintain crops or feed animals. |
+| Task chain | `Feladatlanc` | **Experimental:** run saved steps in a chosen order. |
+| Resume saved job | `Felbehagyott munka` | Preview active saves, including progress and last saved position, then resume. |
+| Manage jobs | `Munka kezelese` | Configure auto-resume, release ownership, or permanently delete a selected saved job. |
+| Settings | `Beallitasok` | Navigation, safety, inventory, torch, ore, and language settings. |
+| Diagnostics | `Diagnosztika` | Check required modules and display the current fuel level. |
+| Update program | `Program frissitese` | Run the downloader for the full turtle package and reboot on success. |
+| Exit | `Kilepes` | Close `main`. |
+
+`Manage jobs > Delete saved job` removes the selected job's resume state **and its backup** after confirmation. If a task chain is active, deleting its save also deletes its active sub-job save. Use release or deletion only when the turtle is physically at its base; deleting a save discards the position needed for a safe resume. Releasing a job does **not** delete its save. A stale branch-mining save can be deleted here before starting a new job.
+
+The `Settings > Navigation and general > Shared base` coordinates and facing provide defaults for *new* coordinate jobs and task chains. Changing the shared base does not relocate an existing saved job.
+
+## Branch mining
+
+| Mode or field | Meaning |
+| --- | --- |
+| `Branch 1x2` | One-block-wide, two-block-high main tunnel with side branches. |
+| `Branch 1x3` | One-block-wide, three-block-high main tunnel with side branches. |
+| `Egyenes 3x3` (Straight 3×3) | Straight 3×3 tunnel without side branches. The turtle moves up one block at the start; its initial level becomes the tunnel floor. |
+| New job | Start from the initial position. |
+| Manual resume | Travel along an already mined main tunnel to the specified distance and start a new section there. This is a fallback when a saved resume cannot be used. |
+| Starting distance | Length of the already existing main tunnel to traverse for manual resume. |
+| Main tunnel / Side branch | Lengths of the new main route and each left/right branch. |
+| Branch spacing | Distance between side branches; default is 3. |
+| Tunnel length | Length of the straight 3×3 tunnel. |
+
+Experimental ore scanning can be enabled for 1×2 and 1×3 modes. After both side branches are cut, the turtle checks their floors, ceilings, side walls, and ends for selected ore IDs. It follows an ore vein only up to the configured depth and block limits, then returns to the exact branch position where it diverted. If it sees a selected ore directly ahead while initially digging a branch, it tries that vein immediately. Temporarily remembered, already inspected branch cells are skipped during the later scan, reducing redundant turning and checking. The temporary map is saved until the left/right branch operation finishes.
+
+## Area excavation — experimental
+
+Enter width (to the turtle's right), depth (forward), and height (upward from the starting level). The turtle follows a serpentine path through the volume. When another layer remains above, it may dig upward during the current pass and process two layers together. Start with a small test volume.
+
+Area excavation can optionally start at a separate world-coordinate work point. The chest base remains where the turtle started; choose the work point and a mining facing relative to the base facing (forward, right, back, or left). The turtle returns to the original base for unloading, fuel, and torches, then navigates back to the same work point and facing. Do not move or rotate the turtle by hand once the job has begun.
+
+## Route building
+
+| Mode | Behavior |
+| --- | --- |
+| Up/down stairs | Ascend or descend one level per step, with two blocks of headroom. |
+| Protected 1×2 tunnel | Enclose an exposed path with a floor, side walls, and ceiling. |
+| Plain 1×2 tunnel | Mine a two-block-high path. Fill a missing floor with `minecraft:cobblestone`. |
+
+The plain tunnel watches for water and lava ahead, above, and below. If it encounters three water-affected steps in a five-step window, or detects lava, it switches the remaining route to the protected profile. The switch is saved across restarts. Steps made before the switch are not retroactively enclosed. If a fluid cannot be sealed safely or building material is exhausted, the turtle stops rather than continuing blindly.
+
+Without torches, slots 2–5 hold building material and slots 6–16 are mining storage. With torches, slot 2 is reserved for torches and building material uses slots 3–5. If material runs out, the turtle returns along its saved route and replenishes from the drop-off chest. The plain tunnel always uses `minecraft:cobblestone` for missing floor blocks. Torch placement is optional; failure to place one, including an empty torch slot, warns but does not abort the plain-tunnel job. The route builder's save file remains `nether_builder_state.txt` for compatibility.
+
+## Farming and task chains — experimental
+
+The farm turtle starts at its base. The drop-off chest is behind it, the fuel chest is above that chest, and a seed/feed chest is to the turtle's right. Slot 1 is for fuel and slot 2 for seeds or feed. The crop profile harvests only recognized, mature vanilla crops and replants them. Animal feeding is experimental: two successful `place` calls do not prove that a new animal was born. After a restart, the farm immediately makes its rounds instead of waiting for a previously saved timer.
+
+A task chain is an editable, saved sequence. Steps can be added, changed, copied, enabled/disabled, reordered, or deleted. The turtle returns to the shared base between steps. Area excavation and farming may start at remote coordinates. Within a chain, branch mining and route building currently start only at the base; remote-start adapters for those modes are not implemented. Coordinate-farm routes require known, unobstructed walking positions. Test real farm layouts in-game before relying on automation.
+
+## Coordinate navigation — experimental
+
+Enter the turtle's current world X/Y/Z, facing, target X/Y/Z, and optionally its final facing. Heading convention: north = −Z, east = +X, south = +Z, west = −X. **The program does not determine its start position with GPS**; it navigates from the coordinates you provide. In open-path mode it stops and saves when blocked; in digging mode it tries to clear the route. It does not invent an unverified detour through unknown water or lava. The standalone coordinate job has no chest-unloading service.
+
+## Live Rednet monitoring
+
+The turtle automatically opens attached wireless modems when available. Standard Wireless and Ender Modems are supported; without a modem, local mining still works. The same `remote_monitor.lua` works on a Pocket Computer and on a regular or Advanced Computer. Multiple turtles can appear on one monitor, and multiple monitor devices can watch the same turtle.
+
+If a Computer has a monitor peripheral attached, the status display is drawn both on its terminal and on the first detected external monitor. The terminal remains interactive. Connecting or removing a monitor while the program is running is detected. On an Advanced Monitor, turtles can be selected by touch.
+
+Use left/right arrows on the Computer or Pocket Computer to switch between status and commands. When an external monitor is present, it **always** remains on the live status page while the Computer terminal may show commands. On the commands page, use up/down or click to choose a command and Enter to send it. Safe stop and return requires a second confirmation. The turtle acknowledges accepted commands or reports an error.
+
+Current commands:
+
+- Refresh data: request an immediate full status update.
+- Unload and resume: for branch mining, area excavation, or route building, return to the chests at a safe point, unload/refuel/replenish, return to work, and continue.
+- Stop job and return home: finish the current safe operation, return to base, and do not automatically continue.
+
+Coordinate navigation rejects unloading requests because it has no chest service. No startup pairing is required: a monitor switched on later discovers a working turtle and receives a complete state packet. Heartbeats arrive every two seconds; after eight seconds without a signal the monitor marks it offline but keeps searching.
+
+## Settings
+
+| Setting | Purpose |
+| --- | --- |
+| Navigation and general | Starting action time, coordinate mode, shared base, fuel reserve, and language. |
+| Safety and situations | Water/lava sealing, retry limits, sealing block, and torch-failure handling. |
+| Inventory EXPERIMENTAL | Capacity check against the predicted drop of the next block. |
+| Torch placement | Default enablement, intervals, and placement mode. |
+| Ore scanning | Default enablement, ore list, and vein-following limits. |
+| Restore defaults | Recreate common defaults, including English as the language. |
+
+Ore IDs use `<mod_name>:<block_name>`, such as `minecraft:coal_ore`. A short vanilla name such as `coal_ore` automatically receives the `minecraft:` prefix. In the ore list, `A` adds, `D` removes/disables, and `K` saves and exits; mouse controls are also available.
+
+## Automatic torches — experimental
+
+With torch placement enabled, slot 2 is reserved for torches and a torch chest must be placed **above the fuel chest**. The turtle returns for more when it runs out. Branch mining has separate main-route and side-branch spacing: the former counts completed main-route digs, the latter counts blocks along a branch.
+
+On the main route, the turtle attempts the torch at the designated dig position once any side branches for that position are complete. On a side branch **without** ore scanning, it can try immediately after digging the relevant block. **With** ore scanning, it places branch torches on the return pass after inspection, avoiding an extra traversal. Side placement uses a wall; overhead placement tries to attach a wall torch above the turtle. If placement fails, it tries another side, an overhead position, then a support block if needed. In branch mining, a missed torch is a warning rather than a fatal error.
+
+## Chest layout and reserved slots
+
+At the starting position, point the turtle toward the intended work area:
+
+```text
+Side view (work direction ->)
+
+  [torch chest]  (only when torches are enabled)
+  [fuel chest]
+  [drop-off chest] [TURTLE]
+```
+
+- The drop-off chest is directly behind the turtle; the fuel chest is above it.
+- When enabled, the torch chest sits above the fuel chest.
+- Slot 1 is the refuelling slot. The turtle drops non-fuel items from it; it consumes a full stack taken from the fuel chest (for example, all 64 coal items).
+- Slot 2 is reserved for torches when torch placement is enabled, except in farming, where it holds seed/feed.
+- Leave space above the turtle so it can reach the stacked chests.
+
+When experimental inventory management is on, `inventory_state.txt` is refreshed whenever the turtle leaves the chests and when it detects a new block type. It checks whether the anticipated drop fits in an existing stack or a free mining slot. It returns to unload only when that item will no longer fit. The file contains one overwritten JSON state line, not a movement log.
+
+## Saves, recovery, and run-time controls
+
+Jobs use shared navigation code for relative position/facing, the route home, and an exact path stack. Before a movement, navigation saves a pending transaction; on restart it reconciles that transaction with the saved position to avoid applying the move twice. State writes use a temporary file and backup. **Do not manually move or turn a turtle after an unexpected shutdown**; check its physical position before resuming.
+
+Important local data includes `settings.txt`, `work_registry.txt`, `branch_miner_state.txt`, `excavator_state.txt`, `nether_builder_state.txt`, `coordinate_state.txt`, `farm_state.txt`, `task_chain_state.txt`, `inventory_state.txt`, and `ore_targets.txt`. The Resume saved job menu lists active saves only. Automatic continuation is opt-in per job; if enabled, a saved job may resume when the program starts. A job requiring physical-position review is not resumed blindly.
+
+The live dashboard redraws a fixed set of rows instead of filling the terminal with messages. It shows task, phase, progress, position/facing, fuel, inventory, supplies, elapsed time, estimated remaining time, and warnings. During ore scanning, the position and timing continue to update.
+
+- `Q` or `Ctrl+T`: request a safe stop.
+- `S`: request an immediate status refresh when starting a legacy task directly.
+
+Branch mining, area excavation, and route building return to base, unload, and save on a safe stop. Coordinate navigation stops safely and saves its current world position.
+
+The initial ETA uses expected action counts × the default **0.8 seconds per action**. `work_estimator.lua` separately estimates movement, vertical movement, digging, turning, placement, and checks. Examples include branch length/spacing, 3×3 tunnel slices, excavation volume, staircase steps, protected tunnel cells, and Manhattan coordinate distance plus turns. During a job, measured action times and unexpected delays adjust the remaining estimate. Ore-vein size, fluids, gravel, mobs, and inventory trips cannot be known exactly in advance.
+
+`situation_manager.lua` handles retryable obstacles, torch fallback placement, and water/lava detected ahead, above, or below. A nonessential failure such as a missed torch normally warns and continues. Navigation uncertainty instead causes a save and stop.
+
+`action_log.lua` appends only a job's start time, job name, and starting fuel level to `action_log.txt`; it does not log every movement or turn.
+
+## Project layout
+
+| File | Role |
+| --- | --- |
+| `main.lua`, `ui.lua`, `settings.lua`, `localization.lua` | Central menu, UI, persistent settings, and language strings. |
+| `navigation.lua`, `coordinate_navigation.lua`, `situation_manager.lua` | Movement, experimental world-coordinate navigation, and situation handling. |
+| `state_store.lua`, `work_registry.lua`, `job_preview.lua`, `job_request.lua` | Atomic saves, job ownership, resume previews, and job hand-off. |
+| `telemetry.lua`, `work_estimator.lua` | Live timing/ETA and initial action-count formulas. |
+| `branch_miner.lua`, `excavator.lua`, `nether_builder.lua` | Mining, area excavation, and route building. |
+| `farm_task.lua`, `task_chain.lua`, `chain_editor.lua`, `coordinate_task.lua` | Experimental farming, task chains, and coordinate jobs. |
+| `inventory_manager.lua`, `torch_manager.lua`, `ore_scanner.lua` | Experimental capacity, torch, and ore systems. |
+| `remote.lua`, `remote_protocol.lua`, `remote_monitor.lua` | Rednet telemetry and remote commands. |
+| `downloader.lua`, `startup_turtle.lua`, `startup_monitor.lua` | Installation, updates, and boot scripts. |
+
+## Tests
+
+The Lua tests use mocked turtle and CC:Tweaked APIs. Run them with Python and [Lupa](https://pypi.org/project/lupa/):
+
+```text
+python tests/run_lua_tests.py
+```
+
+In-game testing is still necessary for movement, chest orientation, fluids, crops, mobs, and wireless range.

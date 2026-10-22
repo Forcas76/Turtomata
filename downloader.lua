@@ -1,10 +1,20 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.1.1"
+local INSTALLER_VERSION = "v1.1.2"
 local localizationOk, Localization = pcall(require, "localization")
+-- A friss telepitesnel a lokalizacios modul meg nincs jelen.
+local bootstrapEnglish = {
+    ["Turtle program telepitese"] = "Install turtle program",
+    ["Megfigyelo telepitese"] = "Install monitor program",
+    ["TELEPITO"] = "INSTALLER",
+    ["Forras"] = "Source",
+    ["Nyilak + ENTER, vagy kattintas"] = "Arrow keys + ENTER, or click",
+    ["komponensek"] = "components",
+}
 local function tr(value)
-    return localizationOk and Localization.text(value) or value
+    return localizationOk and Localization.text(value)
+        or bootstrapEnglish[value] or value
 end
 
 -- Itt valaszd ki a letoltesi forrast: "pastebin" vagy "github".
@@ -14,14 +24,8 @@ local GITHUB = {
     owner = "Forcas76",
     repo = "CCTurtle",
     branch = "main",
-
-    -- Publikus reponal maradjon ures. Privat reponal ide kerulhet a token.
-    -- Fine-grained token eseten eleg a Contents: Read-only jogosultsag.
-    token = "",
-
-    -- Javasolt: a token inkabb ebben a kulon fajlban legyen a turtle gepen.
-    -- Igy a downloader sajat frissitese nem irja felul es nem kerul a repoba.
-    tokenFile = ".github_token",
+    -- Publikus repo: nincs hitelesites. Privat repohoz add meg a tokenfajlt.
+    tokenFile = nil,
 }
 
 -- fileName: a turtle gepen letrehozo fajl neve.
@@ -149,19 +153,18 @@ local function githubHeaders()
     local headers = {
         ["Accept"] = "application/vnd.github.raw+json",
         ["X-GitHub-Api-Version"] = "2022-11-28",
-        ["User-Agent"] = "CC-Tweaked-CCTurtle-Downloader",
+        ["User-Agent"] = "CC-Tweaked-Turtomata-Downloader",
     }
-    local token = GITHUB.token
     if GITHUB.tokenFile and fs.exists(GITHUB.tokenFile) then
         local tokenFile = fs.open(GITHUB.tokenFile, "r")
         if tokenFile then
-            token = tokenFile.readAll() or ""
+            local token = tokenFile.readAll() or ""
             tokenFile.close()
             token = token:gsub("^%s+", ""):gsub("%s+$", "")
+            if token ~= "" then
+                headers["Authorization"] = "Bearer " .. token
+            end
         end
-    end
-    if token ~= "" then
-        headers["Authorization"] = "Bearer " .. token
     end
     return headers
 end
@@ -252,6 +255,14 @@ local function downloadLink(link)
         return false, downloadError
     end
 
+    if link.fileName == "downloader" then
+        local chunk, syntaxError = loadfile(temporaryName)
+        if not chunk then
+            fs.delete(temporaryName)
+            return false, "A letoltott downloader Lua-kodja hibas: "
+                .. tostring(syntaxError)
+        end
+    end
     return installTemporaryFile(temporaryName, link.fileName)
 end
 
@@ -279,10 +290,14 @@ local function downloadAll()
     return allSuccessful
 end
 
+local afterSelfUpdate = false
 local function downloadGroup(names)
     local allSuccessful = true
     for _, name in ipairs(names) do
-        if not downloadThat(name) then allSuccessful = false end
+        -- Az elso szakasz mar telepitette az uj downloadert.
+        if name ~= "downloader" or not afterSelfUpdate then
+            if not downloadThat(name) then allSuccessful = false end
+        end
         if not DEBUG then sleep(1) end
     end
     return allSuccessful
@@ -338,7 +353,7 @@ local function installMenu()
     local selected = 1
     while true do
         delTerm()
-        print("CCTURTLE " .. INSTALLER_VERSION .. " " .. tr("TELEPITO"))
+        print("TURTOMATA " .. INSTALLER_VERSION .. " " .. tr("TELEPITO"))
         print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
         print("")
         for index, item in ipairs(items) do
@@ -359,22 +374,45 @@ local function installMenu()
 end
 
 delTerm()
-print("CCTURTLE " .. INSTALLER_VERSION .. " " .. tr("komponensek"))
+print("TURTOMATA " .. INSTALLER_VERSION .. " " .. tr("komponensek"))
 print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
 print("")
 
-local requested = args[1] and fileMap[string.lower(args[1])] or installMenu()
-if #args > 1 or not requested then
-    printError("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]")
+local requested = args[1] and fileMap[string.lower(args[1])] or nil
+if not args[1] then requested = installMenu() end
+afterSelfUpdate = #args == 2 and args[2] == "--after-self-update"
+if (#args > 1 and not afterSelfUpdate) or not requested then
+    error("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]", 0)
+end
+
+if not afterSelfUpdate then
+    -- A letoltott Lua program nem valtja le a mar futo chunkot, ezert
+    -- az uj fajl telepitese utan uj shell.run kell a friss fajllistahoz.
+    if not downloadThat("downloader") then
+        error("A downloader onfrissitese sikertelen; a tobbi fajl valtozatlan.", 0)
+    end
+    print("Uj downloader indul a friss komponenslistaval...")
+    if not shell.run("downloader", requested, "--after-self-update") then
+        error("A friss downloader nem tudta befejezni a telepitest.", 0)
+    end
+    return
+end
+
+local successful
+if requested == "downloader" then
+    print("A downloader frissitve.")
+    successful = true
 elseif requested == "all" then
-    if downloadGroup(componentGroups.turtleinstall) then print("A turtle program telepitve/frissitve.")
-    else printError("Legalabb egy komponens frissitese sikertelen.") end
+    successful = downloadGroup(componentGroups.turtleinstall)
+    if successful then print("A turtle program telepitve/frissitve.") end
 elseif componentGroups[requested] then
-    if downloadGroup(componentGroups[requested]) then
+    successful = downloadGroup(componentGroups[requested])
+    if successful then
         if requested == "turtleinstall" then print("Turtle telepites kesz. A startup.lua a main programot inditja.")
         elseif requested == "monitorinstall" then print("Megfigyelo telepites kesz. A startup.lua a monitort inditja.")
         else print("A komponenscsomag frissitve.") end
-    else printError("A komponenscsomag frissitese nem teljes.") end
+    end
 else
-    downloadThat(requested)
+    successful = downloadThat(requested)
 end
+if not successful then error("A komponenscsomag frissitese nem teljes.", 0) end

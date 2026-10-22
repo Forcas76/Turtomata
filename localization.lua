@@ -10,9 +10,25 @@ local english = {
     ["Beallitasok"] = "Settings", ["Diagnosztika"] = "Diagnostics",
     ["Kilepes"] = "Exit", ["Program frissitese"] = "Update program",
     ["Felbehagyott munka"] = "Resume saved job",
+    ["Munka kezelese"] = "Manage jobs", ["MUNKA KEZELES"] = "MANAGE JOBS",
+    ["Tulajdonos"] = "Owner", ["Auto folytatas"] = "Auto resume",
+    ["Munka felszabaditasa"] = "Release job",
+    ["Mentett munka torlese"] = "Delete saved job",
+    ["Nincs mentett munka"] = "No saved job",
+    ["MENTES TORLESE"] = "DELETE SAVE",
+    ["MENTES VEGLEGES TORLESE"] = "PERMANENTLY DELETE SAVE",
+    ["A folytatasi mentes vegleg torlodik."] = "The resume save will be deleted permanently.",
+    ["Csak bazison allo turtle-n hasznald!"] = "Only use this while the turtle is at base!",
+    ["Az aktiv reszfeladat mentese is torlodik."] = "The active sub-job save will also be deleted.",
+    ["ENTER = torles"] = "ENTER = delete",
+    ["MENTES TOROLVE"] = "SAVE DELETED", ["TORLESI HIBA"] = "DELETE ERROR",
+    ["A mentes torolve."] = "The save was deleted.",
+    ["Feladat: "] = "Job: ", ["Haladas: "] = "Progress: ",
     ["Branch mining"] = "Branch mining", ["Terulet kiasasa"] = "Excavate area",
     ["Nether utepito"] = "Nether builder", ["Utvonal keszites"] = "Route building",
     ["Koordinatara navigalas"] = "Navigate to coordinates",
+    ["Farm karbantartas"] = "Farm maintenance",
+    ["Feladatlanc"] = "Task chain",
     ["Navigacio es altalanos"] = "Navigation and general",
     ["Biztonsag es helyzetkezeles"] = "Safety and situations",
     ["Inventory KISERLETI"] = "Inventory EXPERIMENTAL",
@@ -133,7 +149,7 @@ local english = {
 
 local function loadLanguage()
     if language then return language end
-    language = "hu"
+    language = "en"
     if fs and fs.exists("settings.txt") then
         local file = fs.open("settings.txt", "r")
         if file then
@@ -141,14 +157,14 @@ local function loadLanguage()
             file.close()
             local ok, value = pcall(textutils.unserializeJSON, raw)
             if ok and type(value) == "table" and value.general
-                and value.general.language == "en" then language = "en" end
+                and value.general.language == "hu" then language = "hu" end
         end
     end
     return language
 end
 
 function localization.setLanguage(value)
-    language = value == "en" and "en" or "hu"
+    language = value == "hu" and "hu" or "en"
 end
 
 function localization.getLanguage()

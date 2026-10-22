@@ -327,9 +327,9 @@ local function listener()
         local event, value = os.pullEventRaw()
         if event == "farm_finished" then return end
         if event == "terminate" or event == "key" and value == keys.q
-            or event == "ccturtle_remote_command" and value == "return_home" then
+            or event == "turtomata_remote_command" and value == "return_home" then
             stopRequested = true
-        elseif event == "ccturtle_remote_command" and value == "service" then
+        elseif event == "turtomata_remote_command" and value == "service" then
             serviceRequested = true
         end
     end

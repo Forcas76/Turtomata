@@ -177,7 +177,7 @@ local function listener()
         local event, key = os.pullEventRaw()
         if event == "coordinate_finished" then return end
         if event == "terminate" or (event == "key" and key == keys.q)
-            or (event == "ccturtle_remote_command" and key == "return_home") then
+            or (event == "turtomata_remote_command" and key == "return_home") then
             stopRequested = true
         end
     end

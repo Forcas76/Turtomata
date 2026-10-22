@@ -126,4 +126,35 @@ function registry.release()
     return store.write(FILE, value)
 end
 
+function registry.deleteSaved(task)
+    local path = jobs[task]
+    if not path then return false, "Ismeretlen feladat." end
+    local owner = registry.load()
+    local chain = store.read(jobs.chain)
+    local step = type(chain) == "table" and chain.childStarted
+        and type(chain.config) == "table" and type(chain.config.steps) == "table"
+        and chain.config.steps[chain.index or 1]
+    local childTask = type(step) == "table" and step.task or nil
+
+    if owner and owner.task == "chain" and chain and chain.active
+        and childTask == task and task ~= "chain" then
+        return false, "A reszfeladat a lanc resze; elobb a lancot torold."
+    end
+    if task == "chain" and owner and owner.task == "chain"
+        and chain and chain.active and childTask then
+        local childPath = jobs[childTask]
+        if not childPath or childTask == "chain" then
+            return false, "A lanc reszfeladata nem azonosithato."
+        end
+        local ok, reason = store.removeAll(childPath)
+        if not ok then return false, reason end
+    end
+    local ok, reason = store.removeAll(path)
+    if not ok then return false, reason end
+    if owner and owner.task == task then
+        return store.removeAll(FILE)
+    end
+    return true
+end
+
 return registry
