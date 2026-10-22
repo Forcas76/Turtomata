@@ -1,7 +1,7 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.1.2"
+local INSTALLER_VERSION = "v1.1.9"
 local localizationOk, Localization = pcall(require, "localization")
 -- A friss telepitesnel a lokalizacios modul meg nincs jelen.
 local bootstrapEnglish = {
