@@ -33,6 +33,8 @@ The same packages can be selected from the shell with `downloader turtle` and `d
 
 The downloader fetches the installer itself from Pastebin, then downloads the complete package from the public GitHub repository **without a token**. Its default source is GitHub; `DOWNLOAD_SOURCE` near the top of `downloader.lua` can be changed to `pastebin`, but new modules have no Pastebin IDs. Downloads are staged before replacing working files, and a self-update checks the new Lua syntax. The downloader still points to the current `Forcas76/CCTurtle` GitHub repository until that repository is renamed and its configuration is updated.
 
+If GitHub responds with **403** (or **429**) during an update, the downloader pauses and retries the same file. It uses GitHub's `Retry-After` or rate-limit reset header when available; otherwise it starts with a 60-second wait and increases it on repeated failures. The wait screen shows a countdown: press `R` or Enter to retry immediately, or `Q`/Esc/Backspace to cancel. A forced retry can still be rate-limited. Cancellation stops the remaining downloads and prevents an in-program success reboot. A 403 can also mean access was denied rather than a temporary limit; cancel and check repository access if waiting does not help.
+
 Additional downloader commands:
 
 ```text

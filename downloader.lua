@@ -11,6 +11,18 @@ local bootstrapEnglish = {
     ["Forras"] = "Source",
     ["Nyilak + ENTER, vagy kattintas"] = "Arrow keys + ENTER, or click",
     ["komponensek"] = "components",
+    ["Ujra"] = "Retry in",
+    ["403: mas hiba is lehet."] = "403 may also mean access denied.",
+    ["R/Enter: proba most"] = "R/Enter: retry now",
+    ["Q/Esc: megszakit"] = "Q/Esc: cancel",
+    ["varakozas"] = "backoff",
+    ["FEJLESZTOI MENU"] = "DEVELOPER MENU",
+    ["Tokenes GitHub frissites"] = "GitHub update with token",
+    ["Publikus GitHub frissites"] = "Public GitHub update",
+    ["Frissites megszakitasa"] = "Cancel update",
+    ["Tokenfajl hianyzik vagy ures."] = "Token file missing or empty.",
+    ["Fel/le + Enter"] = "Up/down + Enter",
+    ["Frissites indul..."] = "Starting update...",
 }
 local function tr(value)
     return localizationOk and Localization.text(value)
@@ -27,6 +39,17 @@ local GITHUB = {
     -- Publikus repo: nincs hitelesites. Privat repohoz add meg a tokenfajlt.
     tokenFile = nil,
 }
+local DEVELOPER_TOKEN_FILE = ".github_token"
+
+local function developerToken()
+    if not fs.exists(DEVELOPER_TOKEN_FILE) then return nil end
+    local file = fs.open(DEVELOPER_TOKEN_FILE, "r")
+    if not file then return nil end
+    local token = file.readAll() or ""
+    file.close()
+    token = token:gsub("^%s+", ""):gsub("%s+$", "")
+    return token ~= "" and token or nil
+end
 
 -- fileName: a turtle gepen letrehozo fajl neve.
 -- githubPath: a fajl helye a GitHub repoban.
@@ -155,26 +178,68 @@ local function githubHeaders()
         ["X-GitHub-Api-Version"] = "2022-11-28",
         ["User-Agent"] = "CC-Tweaked-Turtomata-Downloader",
     }
-    if GITHUB.tokenFile and fs.exists(GITHUB.tokenFile) then
-        local tokenFile = fs.open(GITHUB.tokenFile, "r")
-        if tokenFile then
-            local token = tokenFile.readAll() or ""
-            tokenFile.close()
-            token = token:gsub("^%s+", ""):gsub("%s+$", "")
-            if token ~= "" then
-                headers["Authorization"] = "Bearer " .. token
-            end
-        end
+    if GITHUB.tokenFile then
+        local token = developerToken()
+        if not token then error("Tokenfajl hianyzik vagy ures.", 0) end
+        headers["Authorization"] = "Bearer " .. token
     end
     return headers
 end
 
-local function responseError(errorMessage, failedResponse)
-    if not failedResponse then return errorMessage or "Ismeretlen HTTP hiba." end
+local function header(headers, name)
+    for key, value in pairs(headers or {}) do
+        if type(key) == "string" and string.lower(key) == name then
+            return tostring(value)
+        end
+    end
+end
 
-    local code, message = failedResponse.getResponseCode()
-    failedResponse.close()
-    return "GitHub HTTP hiba: " .. tostring(code) .. " " .. tostring(message or "")
+local function retryDelay(headers, attempts)
+    local retryAfter = tonumber(header(headers, "retry-after") or "")
+    if retryAfter and retryAfter > 0 then return math.ceil(retryAfter), "Retry-After" end
+
+    if header(headers, "x-ratelimit-remaining") == "0" then
+        local reset = tonumber(header(headers, "x-ratelimit-reset") or "")
+        if reset and os.epoch then
+            local remaining = math.ceil(reset - os.epoch("utc") / 1000) + 1
+            if remaining > 0 then return remaining, "GitHub limit reset" end
+        end
+    end
+    -- 403 jogosultsagi hiba is lehet; ilyenkor a felhasznalo megszakithatja.
+    return math.min(60 * (2 ^ math.min(attempts - 1, 4)), 900), "varakozas"
+end
+
+local function waitForGithub(seconds, code, name, source)
+    local remaining = seconds
+    while remaining > 0 do
+        delTerm()
+        print("GitHub " .. tostring(code) .. " " .. name)
+        print(tr("Ujra") .. ": " .. math.floor(remaining / 60) .. "m "
+            .. (remaining % 60) .. "s (" .. tr(source) .. ")")
+        print(tr("403: mas hiba is lehet."))
+        print("")
+        print(tr("R/Enter: proba most"))
+        print(tr("Q/Esc: megszakit"))
+        local timer = os.startTimer(1)
+        while true do
+            local event, value, _, y = os.pullEvent()
+            if event == "key" then
+                if value == keys.r or value == keys.enter then return "force" end
+                if value == keys.q or value == keys.escape
+                    or value == keys.backspace then return "cancel" end
+            elseif event == "char" then
+                if string.lower(value) == "r" then return "force" end
+                if string.lower(value) == "q" then return "cancel" end
+            elseif event == "mouse_click" then
+                if y == 5 then return "force" end
+                if y == 6 then return "cancel" end
+            elseif event == "timer" and value == timer then
+                remaining = remaining - 1
+                break
+            end
+        end
+    end
+    return "retry"
 end
 
 local function downloadFromGithub(link, temporaryName)
@@ -182,30 +247,40 @@ local function downloadFromGithub(link, temporaryName)
         return false, "A HTTP API nincs engedelyezve a CC:Tweaked beallitasokban."
     end
 
-    local response, errorMessage, failedResponse = http.get(
-        githubUrl(link.githubPath),
-        githubHeaders()
-    )
-    if not response then
-        return false, responseError(errorMessage, failedResponse)
-    end
+    local attempts = 0
+    while true do
+        local response, errorMessage, failedResponse = http.get(
+            githubUrl(link.githubPath), githubHeaders())
+        local result = response or failedResponse
+        if not result then return false, errorMessage or "Ismeretlen HTTP hiba." end
 
-    local code, message = response.getResponseCode()
-    local content = response.readAll()
-    response.close()
+        local code, message = result.getResponseCode()
+        local headers = result.getResponseHeaders and result.getResponseHeaders() or {}
+        local content = response and response.readAll() or nil
+        result.close()
 
-    if code < 200 or code >= 300 then
-        return false, "GitHub HTTP hiba: " .. tostring(code) .. " " .. tostring(message or "")
+        if code == 403 or code == 429 then
+            attempts = attempts + 1
+            local delay, source = retryDelay(headers, attempts)
+            local choice = waitForGithub(delay, code, link.fileName, source)
+            if choice == "cancel" then
+                return false, "A frissites megszakitva.", true
+            end
+        else
+            if code < 200 or code >= 300 then
+                return false, "GitHub HTTP hiba: " .. tostring(code) .. " "
+                    .. tostring(message or "")
+            end
+            if not content or content == "" then
+                return false, "A GitHub ures fajlt adott vissza: " .. link.githubPath
+            end
+            local file = fs.open(temporaryName, "w")
+            if not file then return false, "Nem tudom letrehozni: " .. temporaryName end
+            file.write(content)
+            file.close()
+            return true
+        end
     end
-    if not content or content == "" then
-        return false, "A GitHub ures fajlt adott vissza: " .. link.githubPath
-    end
-
-    local file = fs.open(temporaryName, "w")
-    if not file then return false, "Nem tudom letrehozni: " .. temporaryName end
-    file.write(content)
-    file.close()
-    return true
 end
 
 local function downloadFromPastebin(link, temporaryName)
@@ -241,18 +316,18 @@ local function downloadLink(link)
     if fs.exists(temporaryName) then fs.delete(temporaryName) end
 
     print("Letoltes: " .. link.fileName .. " (" .. DOWNLOAD_SOURCE .. ")")
-    local downloaded, downloadError
+    local downloaded, downloadError, cancelled
     if DOWNLOAD_SOURCE == "pastebin" then
         downloaded, downloadError = downloadFromPastebin(link, temporaryName)
     elseif DOWNLOAD_SOURCE == "github" then
-        downloaded, downloadError = downloadFromGithub(link, temporaryName)
+        downloaded, downloadError, cancelled = downloadFromGithub(link, temporaryName)
     else
         return false, "Ismeretlen DOWNLOAD_SOURCE: " .. tostring(DOWNLOAD_SOURCE)
     end
 
     if not downloaded then
         if fs.exists(temporaryName) then fs.delete(temporaryName) end
-        return false, downloadError
+        return false, downloadError, cancelled
     end
 
     if link.fileName == "downloader" then
@@ -270,10 +345,10 @@ local function downloadThat(name)
     local link = links[name]
     if not link then return false, "Ismeretlen komponens: " .. tostring(name) end
 
-    local ok, errorMessage = downloadLink(link)
+    local ok, errorMessage, cancelled = downloadLink(link)
     if ok then print("Letoltes sikeres: " .. link.fileName)
     else printError("Hiba a letoltesnel (" .. link.fileName .. "): " .. errorMessage) end
-    return ok
+    return ok, cancelled
 end
 
 local function downloadAll()
@@ -282,8 +357,10 @@ local function downloadAll()
         local link = links[name]
         if DOWNLOAD_SOURCE == "pastebin" and (not link.pastebinID or link.pastebinID == "") then
             print("Kihagyva (nincs Pastebin ID): " .. link.fileName)
-        elseif not downloadThat(name) then
-            allSuccessful = false
+        else
+            local ok, cancelled = downloadThat(name)
+            if not ok then allSuccessful = false end
+            if cancelled then return false end
         end
         if not DEBUG then sleep(1) end
     end
@@ -296,7 +373,9 @@ local function downloadGroup(names)
     for _, name in ipairs(names) do
         -- Az elso szakasz mar telepitette az uj downloadert.
         if name ~= "downloader" or not afterSelfUpdate then
-            if not downloadThat(name) then allSuccessful = false end
+            local ok, cancelled = downloadThat(name)
+            if not ok then allSuccessful = false end
+            if cancelled then return false end
         end
         if not DEBUG then sleep(1) end
     end
@@ -345,6 +424,89 @@ local fileMap = {
     observer = "monitorinstall",
 }
 
+local secretStep = 0
+local function secretKey(value)
+    local sequence = { keys.right, keys.right, keys.right, keys.left }
+    if value == sequence[secretStep + 1] then
+        secretStep = secretStep + 1
+        if secretStep == #sequence then
+            secretStep = 0
+            return true
+        end
+    else
+        secretStep = value == keys.right and 1 or 0
+    end
+    return false
+end
+
+local function developerMenu()
+    local tokenReady = DOWNLOAD_SOURCE == "github" and developerToken() ~= nil
+    local choices = {
+        { label = "Tokenes GitHub frissites", mode = "token", enabled = tokenReady },
+        { label = "Publikus GitHub frissites", mode = "public", enabled = true },
+        { label = "Frissites megszakitasa", mode = "cancel", enabled = true },
+    }
+    local selected = tokenReady and 1 or 2
+    while true do
+        delTerm()
+        print(tr("FEJLESZTOI MENU"))
+        print(tokenReady and ".github_token: OK"
+            or tr("Tokenfajl hianyzik vagy ures."))
+        print("")
+        for index, choice in ipairs(choices) do
+            print((index == selected and "> " or "  ")
+                .. tr(choice.label) .. (choice.enabled and "" or " [--]"))
+        end
+        print("")
+        print(tr("Fel/le + Enter"))
+        local event, value, _, y = os.pullEvent()
+        if event == "key" then
+            if value == keys.up then
+                selected = selected == 3 and 2 or selected == 2 and 1 or 3
+                if not choices[selected].enabled then selected = 3 end
+            elseif value == keys.down then
+                selected = selected == 1 and 2 or selected == 2 and 3 or 1
+                if not choices[selected].enabled then selected = 2 end
+            elseif value == keys.enter and choices[selected].enabled then
+                return choices[selected].mode
+            elseif value == keys.escape or value == keys.backspace then
+                return "public"
+            end
+        elseif event == "mouse_click" then
+            local clicked = y - 3
+            if choices[clicked] and choices[clicked].enabled then
+                return choices[clicked].mode
+            end
+        end
+    end
+end
+
+local function applyDeveloperMode(mode)
+    if mode == "cancel" then error("A frissites megszakitva.", 0) end
+    if mode == "token" then
+        if not developerToken() then error("Tokenfajl hianyzik vagy ures.", 0) end
+        GITHUB.tokenFile = DEVELOPER_TOKEN_FILE
+    else
+        GITHUB.tokenFile = nil
+    end
+end
+
+local function developerWindow()
+    if not os.startTimer or not os.pullEvent then return end
+    delTerm()
+    print("TURTOMATA " .. INSTALLER_VERSION)
+    print(tr("Frissites indul..."))
+    local timer = os.startTimer(5)
+    while true do
+        local event, value = os.pullEvent()
+        if event == "timer" and value == timer then return end
+        if event == "key" and secretKey(value) then
+            applyDeveloperMode(developerMenu())
+            return
+        end
+    end
+end
+
 local function installMenu()
     local items = {
         { label = tr("Turtle program telepitese"), value = "turtleinstall" },
@@ -363,7 +525,8 @@ local function installMenu()
         print(tr("Nyilak + ENTER, vagy kattintas"))
         local event, p1, p2, p3 = os.pullEvent()
         if event == "key" then
-            if p1 == keys.up then selected = math.max(1, selected - 1)
+            if secretKey(p1) then applyDeveloperMode(developerMenu())
+            elseif p1 == keys.up then selected = math.max(1, selected - 1)
             elseif p1 == keys.down then selected = math.min(#items, selected + 1)
             elseif p1 == keys.enter then return items[selected].value end
         elseif event == "mouse_click" and p3 >= 4 and p3 < 4 + #items then
@@ -379,11 +542,16 @@ print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE)
 print("")
 
 local requested = args[1] and fileMap[string.lower(args[1])] or nil
-if not args[1] then requested = installMenu() end
-afterSelfUpdate = #args == 2 and args[2] == "--after-self-update"
-if (#args > 1 and not afterSelfUpdate) or not requested then
+afterSelfUpdate = args[2] == "--after-self-update"
+local inheritedToken = afterSelfUpdate and args[3] == "--developer-token"
+if (#args > 1 and not afterSelfUpdate)
+    or #args > (inheritedToken and 3 or afterSelfUpdate and 2 or 1)
+    or (args[3] and not inheritedToken) or (args[1] and not requested) then
     error("Hasznalat: downloader [turtle|monitor|all|main|branch|excavator|nether|navigation|coordinate|ui|settings|downloader]", 0)
 end
+if inheritedToken then applyDeveloperMode("token")
+elseif not afterSelfUpdate and args[1] then developerWindow()
+elseif not args[1] then requested = installMenu() end
 
 if not afterSelfUpdate then
     -- A letoltott Lua program nem valtja le a mar futo chunkot, ezert
@@ -392,7 +560,14 @@ if not afterSelfUpdate then
         error("A downloader onfrissitese sikertelen; a tobbi fajl valtozatlan.", 0)
     end
     print("Uj downloader indul a friss komponenslistaval...")
-    if not shell.run("downloader", requested, "--after-self-update") then
+    local continued
+    if GITHUB.tokenFile then
+        continued = shell.run("downloader", requested,
+            "--after-self-update", "--developer-token")
+    else
+        continued = shell.run("downloader", requested, "--after-self-update")
+    end
+    if not continued then
         error("A friss downloader nem tudta befejezni a telepitest.", 0)
     end
     return

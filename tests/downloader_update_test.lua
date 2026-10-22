@@ -100,6 +100,171 @@ assert(not pcall(oldChunk, "turtle"),
     "Hibas downloader nem telepulhet.")
 assert(files.downloader == DOWNLOADER_SOURCE)
 
+local baseGet = http.get
+local oldKeys = keys
+local oldStartTimer, oldPullEvent, oldEpoch = os.startTimer, os.pullEvent, os.epoch
+keys = { r = 1, q = 2, enter = 3, escape = 4, backspace = 5,
+    right = 6, left = 7, up = 8, down = 9 }
+local timerId, timers, eventMode, timerSeconds = 0, 0, "automatic", 0
+os.startTimer = function(seconds)
+    timerId = timerId + 1
+    timerSeconds = seconds
+    if seconds == 1 then timers = timers + 1 end
+    return timerId
+end
+os.pullEvent = function()
+    if eventMode == "force" and timerSeconds == 1 then
+        eventMode = "automatic"
+        return "key", keys.r
+    end
+    if eventMode == "cancel" and timerSeconds == 1 then
+        return "key", keys.q
+    end
+    return "timer", timerId
+end
+local function forbidden(headers)
+    return {
+        getResponseCode = function() return 403, "Forbidden" end,
+        getResponseHeaders = function() return headers end,
+        close = function() end,
+    }
+end
+
+reset()
+local failures = 0
+http.get = function(url, headers)
+    if failures == 0 then
+        failures = 1
+        requests[#requests + 1] = "downloader.lua"
+        return nil, "rate limited", forbidden({ ["Retry-After"] = "2" })
+    end
+    return baseGet(url, headers)
+end
+assert(pcall(oldChunk, "downloader"))
+assert(timers == 2 and #requests == 2,
+    "403 utan a Retry-After idejeig varjon, majd folytassa.")
+
+reset()
+failures, timers, eventMode = 0, 0, "automatic"
+os.epoch = function() return 1000000 end
+http.get = function(url, headers)
+    if failures == 0 then
+        failures = 1
+        requests[#requests + 1] = "downloader.lua"
+        local response = forbidden({ ["X-RateLimit-Remaining"] = "0",
+            ["X-RateLimit-Reset"] = "1003" })
+        response.readAll = function() return "rate limited" end
+        return response
+    end
+    return baseGet(url, headers)
+end
+assert(pcall(oldChunk, "downloader"))
+assert(timers == 4 and #requests == 2,
+    "A GitHub reset ido az elso sikertelen valaszbol is ervenyesuljon.")
+os.epoch = oldEpoch
+
+reset()
+failures, timers, eventMode = 0, 0, "force"
+http.get = function(url, headers)
+    if failures == 0 then
+        failures = 1
+        requests[#requests + 1] = "downloader.lua"
+        return nil, "rate limited", forbidden({ ["Retry-After"] = "120" })
+    end
+    return baseGet(url, headers)
+end
+assert(pcall(oldChunk, "downloader"))
+assert(#requests == 2 and timers == 1,
+    "R-rel a varakozas kozben azonnal probaljon ujra.")
+
+reset()
+failures, timers, eventMode = 0, 0, "cancel"
+http.get = function(url)
+    requests[#requests + 1] = url:match("/contents/([^?]+)")
+    return nil, "rate limited", forbidden({})
+end
+assert(not pcall(oldChunk, "turtle"), "Q-val megszakithato a frissites.")
+assert(#requests == 1 and files.downloader == DOWNLOADER_SOURCE,
+    "Megszakitas utan ne telepitsen es ne kerjen tovabbi fajlokat.")
+
+reset()
+eventMode = "cancel"
+http.get = function(url, headers)
+    local path = url:match("/contents/([^?]+)")
+    if path == "new_feature.lua" then
+        requests[#requests + 1] = path
+        return nil, "rate limited", forbidden({ ["Retry-After"] = "30" })
+    end
+    return baseGet(url, headers)
+end
+assert(not pcall(oldChunk, "turtle"),
+    "Az onfrissites utani varakozas is megszakithato.")
+assert(#requests == 2 and requests[1] == "downloader.lua"
+    and requests[2] == "new_feature.lua",
+    "Megszakitas utan a csomag tobbi fajlja nem toltheto le.")
+
+local function authenticatedGet(url, headers)
+    assert(headers.Authorization == "Bearer stale-private-token",
+        "A fejlesztoi mod mindket letoltesi szakaszban hasznalja a tokent.")
+    local path = url:match("/contents/([^?]+)")
+    requests[#requests + 1] = path
+    local body = path == "downloader.lua" and latest or "return true"
+    return {
+        getResponseCode = function() return 200, "OK" end,
+        readAll = function() return body end,
+        close = function() end,
+    }
+end
+local queuedEvents = {}
+local function queueKeys(...)
+    queuedEvents = {}
+    for _, code in ipairs({ ... }) do
+        queuedEvents[#queuedEvents + 1] = { "key", code }
+    end
+end
+os.pullEvent = function()
+    local event = table.remove(queuedEvents, 1)
+    if event then return event[1], event[2] end
+    return "timer", timerId
+end
+
+reset()
+http.get = authenticatedGet
+queueKeys(keys.right, keys.right, keys.right, keys.left,
+    keys.enter)
+assert(pcall(oldChunk, "turtle"),
+    "Programbol inditott frissitesnel elerheto a fejlesztoi menu.")
+assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
+
+reset()
+http.get = authenticatedGet
+queueKeys(keys.right, keys.right, keys.right, keys.left,
+    keys.enter, keys.enter)
+assert(pcall(oldChunk), "Kozvetlen inditasnal is mukodjon a titkos menu.")
+assert(requests[1] == "downloader.lua" and requests[2] == "new_feature.lua")
+
+reset()
+files[".github_token"] = nil
+http.get = baseGet
+queueKeys(keys.right, keys.right, keys.right, keys.left, keys.enter)
+assert(pcall(oldChunk, "downloader"),
+    "Token nelkul a fejlesztoi menu publikus frissitese maradjon elerheto.")
+assert(not pcall(oldChunk, "downloader", "--after-self-update",
+    "--developer-token"),
+    "Az orokolt tokenes mod nem futhat hianyzo tokenfajllal.")
+
+reset()
+http.get = authenticatedGet
+queueKeys(keys.right, keys.right, keys.right, keys.left,
+    keys.down, keys.down, keys.enter)
+assert(not pcall(oldChunk, "turtle"),
+    "A fejlesztoi menubol a frissites megszakithato.")
+assert(#requests == 0, "Megszakitaskor semmi nem toltheto le.")
+
+http.get = baseGet
+keys = oldKeys
+os.startTimer, os.pullEvent, os.epoch = oldStartTimer, oldPullEvent, oldEpoch
+
 fs, http, shell = oldFs, oldHttp, oldShell
 term, textutils = oldTerm, oldTextutils
 print, printError = oldPrint, oldPrintError

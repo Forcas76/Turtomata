@@ -431,6 +431,15 @@ local DOWNLOAD_SOURCE = "github" -- vagy: "pastebin"
 Publikus GitHub-repónál nem kell token. Alapbeállítással a downloader nem
 küld hitelesítési fejlécet. Privát repóhoz később külön beállítható tokenfájl.
 
+Ha frissítéskor a GitHub **403**-at (vagy **429**-et) ad, a downloader vár, majd
+ugyanazt a fájlt újrapróbálja. A `Retry-After` vagy a GitHub limit-visszaállítási
+idejét használja; ezek nélkül 60 másodpercről induló, ismétlésenként növekvő
+várakozás következik. Várakozás közben `R` vagy Enter azonnal újrapróbál,
+`Q`/Esc/Backspace megszakítja a frissítést. A kényszerített próba újra limitbe
+ütközhet. Megszakításkor a többi fájlt nem tölti le és a programból indított
+frissítés nem indítja újra sikeresként a gépet. A 403 jogosultsági hiba is
+lehet; ha a várakozás nem segít, ellenőrizd a repo elérhetőségét.
+
 ```text
 downloader                 # minden GitHub-komponens
 downloader main            # a teljes központi rendszer
