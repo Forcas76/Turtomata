@@ -9,6 +9,7 @@ for name in (
     "navigation_test.lua", "situation_test.lua", "estimator_test.lua",
     "ore_scanner_test.lua",
     "ore_discovery_test.lua",
+    "ore_menu_test.lua",
     "localization_test.lua",
     "base_dock_test.lua",
     "base_dock_modded_test.lua",

@@ -279,9 +279,11 @@ nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
 Az érclistában az új blokk teljes alakja `<mod_neve>:<blokk_neve>`, például
 `minecraft:coal_ore`. A vanilla rövid forma (`coal_ore`) automatikusan
 `minecraft:` előtagot kap. A listában az `A` elnevezett csoportot hoz létre,
-az `E` blokkazonosítót ad hozzá, a `D` töröl vagy kikapcsol, a `K` ment és
-kilép. Az ismeretlen `raw` jelöltek itt jóváhagyhatók vagy elutasíthatók;
-egérrel is kezelhető.
+az `E` blokkazonosítót ad hozzá, a `V` megmutatja a kijelölt csoport blokk-ID-it,
+a `D` megerősítés után töröl vagy kikapcsol, a `K` ment és kilép. Egérrel a
+csoport nevére kattintva is megnyitható az ID-lista; a jelölőre kattintva
+kapcsolható a csoport. Az ismeretlen `raw` jelöltek itt jóváhagyhatók vagy
+elutasíthatók.
 
 ## Automatikus fáklyázás – KÍSÉRLETI
 

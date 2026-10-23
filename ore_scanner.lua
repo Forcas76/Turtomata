@@ -210,6 +210,15 @@ end
 
 local function deleteRow(row)
     if not row then return false end
+    local action = row.kind == "group" and "beepitett csoport kikapcsolasa"
+        or row.kind == "candidate" and "jelolt elutasitasa"
+        or row.kind == "rejected" and "elutasitas torlese"
+        or "torles"
+    if not UI.confirm("ERCLISTA MEGEROSITES", {
+        row.label,
+        "Muvelet: " .. action,
+        "A mentes a K: kesz gombbal tortenik.",
+    }, "ENTER = megerosites") then return false end
     if row.kind == "group" then
         -- A beepitett vanilla sor megmarad, de minden valtozata kikapcsol.
         for _, name in ipairs(groups[row.index].ids) do selected[name] = nil end
@@ -233,6 +242,23 @@ local function deleteRow(row)
     selected[name] = nil
     table.remove(custom, row.index)
     return true
+end
+
+local function viewRow(row)
+    if not row then return end
+    local group = row.kind == "group" and groups[row.index]
+        or row.kind == "customGroup" and customGroups[row.index]
+    local lines = {}
+    if group then
+        for index, id in ipairs(group.ids) do
+            lines[#lines + 1] = index .. ". " .. id
+        end
+    elseif row.kind == "custom" or row.kind == "candidate"
+        or row.kind == "rejected" then
+        lines[1] = row.id or row.label
+    end
+    if #lines == 0 then return end
+    UI.confirm("BLOKK ID-K: " .. row.label, lines, "ENTER = vissza")
 end
 
 function scanner.editTargets()
@@ -263,7 +289,7 @@ function scanner.editTargets()
         term.setCursorPos(1, height - 2)
         write(string.sub("< Elozo     Kovetkezo >", 1, width))
         term.setCursorPos(1, height - 1)
-        write(string.sub("A:+csop E:+blokk D:torol", 1, width))
+        write(string.sub("A:+cs E:+ID V:lista D:torol", 1, width))
         term.setCursorPos(1, height)
         write(string.sub("K: kesz", 1, width))
 
@@ -272,14 +298,16 @@ function scanner.editTargets()
             local x, y = p2, p3
             if y >= 3 and y <= 2 + (last - first + 1) then
                 cursor = first + y - 3
-                toggleRow(rows[cursor])
+                if x <= 4 then toggleRow(rows[cursor])
+                else viewRow(rows[cursor]) end
             elseif y == height - 2 then
                 if x <= math.floor(width / 2) then page = math.max(1, page - 1)
                 else page = math.min(pageCount, page + 1) end
                 cursor = (page - 1) * pageSize + 1
             elseif y == height - 1 then
-                if x <= math.floor(width / 3) then addCustom()
-                elseif x <= math.floor(width * 2 / 3) then addToGroup(rows[cursor])
+                if x <= math.floor(width / 4) then addCustom()
+                elseif x <= math.floor(width / 2) then addToGroup(rows[cursor])
+                elseif x <= math.floor(width * 3 / 4) then viewRow(rows[cursor])
                 else deleteRow(rows[cursor]) end
             elseif y == height then
                 local ok, reason = saveTargets()
@@ -307,6 +335,7 @@ function scanner.editTargets()
             local char = string.lower(p1)
             if char == "a" then addCustom()
             elseif char == "e" then addToGroup(rows[cursor])
+            elseif char == "v" then viewRow(rows[cursor])
             elseif char == "d" then deleteRow(rows[cursor])
             elseif char == "k" then
                 local ok, reason = saveTargets()
