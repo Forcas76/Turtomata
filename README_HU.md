@@ -257,7 +257,7 @@ fizikailag ellenőrzött relatív helyzete a folytatás menüjéből módosítha
 
 Érckeresés mellett az oldalágak ellenőrzése és fáklyázása már az ásás utáni
 első visszaúton történik: nincs külön újabb érckereső ki- és visszajárás.
-Az új, `raw` szót tartalmazó blokkazonosító első telérét a megadott határig
+Az új, `raw` vagy `ore` szót tartalmazó blokkazonosító első telérét a megadott határig
 kibányászhatja, de a következő telért jóváhagyásig kihagyja.
 Az élő állapotpanel az érckeresés lépései
 alatt is frissíti a pozíciót, az eltelt időt és a hátralévő becslést.
@@ -279,10 +279,13 @@ nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
 Az érclistában az új blokk teljes alakja `<mod_neve>:<blokk_neve>`, például
 `minecraft:coal_ore`. A vanilla rövid forma (`coal_ore`) automatikusan
 `minecraft:` előtagot kap. A listában az `A` elnevezett csoportot hoz létre,
-az `E` blokkazonosítót ad hozzá, a `V` megmutatja a kijelölt csoport blokk-ID-it,
-a `D` megerősítés után töröl vagy kikapcsol, a `K` ment és kilép. Egérrel a
+az `E` blokkazonosítót ad hozzá, a `V` megnyitja a kijelölt csoport blokk-ID-it.
+A `V` nézetben nyíllal vagy kattintással választható ki egy ID; a megnyitott
+elemet módosítani vagy megerősítés után törölni lehet. Az új ID ugyanitt is
+hozzáadható. A beépített csoportok módosításait is az érclista menti.
+A főlistában a `D` megerősítés után töröl vagy kikapcsol, a `K` ment és kilép. Egérrel a
 csoport nevére kattintva is megnyitható az ID-lista; a jelölőre kattintva
-kapcsolható a csoport. Az ismeretlen `raw` jelöltek itt jóváhagyhatók vagy
+kapcsolható a csoport. Az ismeretlen `raw`/`ore` jelöltek itt jóváhagyhatók vagy
 elutasíthatók.
 
 ## Automatikus fáklyázás – KÍSÉRLETI

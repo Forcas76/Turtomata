@@ -24,6 +24,7 @@ local groups = {
 local selected = {}
 local custom = {}
 local customGroups = {}
+local groupOverrides = {}
 local pendingCandidates = {}
 local rejectedIds = {}
 local loaded = false
@@ -43,11 +44,20 @@ local function loadTargets()
     loaded = true
     local saved = StateStore.read(TARGETS_FILE)
     if type(saved) ~= "table"
-        or (saved.version ~= 1 and saved.version ~= 2) then return end
+        or (saved.version ~= 1 and saved.version ~= 2
+            and saved.version ~= 3) then return end
     if type(saved.selected) == "table" then selected = saved.selected end
     if type(saved.custom) == "table" then custom = saved.custom end
     if type(saved.customGroups) == "table" then
         customGroups = saved.customGroups
+    end
+    if type(saved.groupOverrides) == "table" then
+        groupOverrides = saved.groupOverrides
+        for _, group in ipairs(groups) do
+            if type(groupOverrides[group.label]) == "table" then
+                group.ids = groupOverrides[group.label]
+            end
+        end
     end
     if type(saved.pendingCandidates) == "table" then
         pendingCandidates = saved.pendingCandidates
@@ -57,16 +67,18 @@ end
 
 local function saveTargets()
     return StateStore.write(TARGETS_FILE, {
-        version = 2,
+        version = 3,
         selected = selected,
         custom = custom,
         customGroups = customGroups,
+        groupOverrides = groupOverrides,
         pendingCandidates = pendingCandidates,
         rejectedIds = rejectedIds,
     })
 end
 
 local function groupChecked(group)
+    if #group.ids == 0 then return false end
     for _, name in ipairs(group.ids) do
         if selected[name] ~= true then return false end
     end
@@ -128,15 +140,27 @@ local function validBlockName(value)
         and string.match(value, "^[a-z0-9_.-]+:[a-z0-9_./-]+$") ~= nil
 end
 
-local function readBlockId()
-    write("Blokk ID (mod:blokk): ")
-    local value = string.lower(read() or "")
-    value = value:gsub("^%s+", ""):gsub("%s+$", "")
+local function heuristicOreName(id)
+    local basename = (id:match("^[^:]+:(.+)$") or id):lower()
+    return basename:find("raw", 1, true) ~= nil
+        or basename:find("ore", 1, true) ~= nil
+end
+
+local function normalizeBlockName(value)
+    value = string.lower(tostring(value or ""))
+        :gsub("^%s+", ""):gsub("%s+$", "")
     if not value:find(":", 1, true)
         and value:match("^[a-z0-9_./-]+$") then
         value = "minecraft:" .. value
     end
     if validBlockName(value) then return value end
+    return nil
+end
+
+local function readBlockId()
+    write("Blokk ID (mod:blokk): ")
+    local value = normalizeBlockName(read())
+    if value then return value end
     printError("Hibas ID. Pelda: create:zinc_ore")
     sleep(1.5)
     return nil
@@ -156,23 +180,27 @@ local function addCustom()
 end
 
 local function addToGroup(row)
-    if not row or row.kind ~= "customGroup" then return false end
+    if not row or (row.kind ~= "customGroup" and row.kind ~= "group") then
+        return false
+    end
+    local group = row.kind == "group" and groups[row.index]
+        or customGroups[row.index]
     clearScreen()
-    print("Csoport: " .. customGroups[row.index].label)
+    print("Csoport: " .. group.label)
     local id = readBlockId()
     if not id then return false end
-    local group = customGroups[row.index]
     for _, existing in ipairs(group.ids) do
         if existing == id then return true end
     end
     group.ids[#group.ids + 1] = id
+    if row.kind == "group" then groupOverrides[group.label] = group.ids end
     selected[id], pendingCandidates[id], rejectedIds[id] = true, nil, nil
     return true
 end
 
 local function decideCandidate(row)
     if not row or row.kind ~= "candidate" then return end
-    local choice = UI.choice("UJ RAW BLOKK", {
+    local choice = UI.choice("UJ ERC BLOKK", {
         "Uj csoport", "Meglevo csoport", "Elutasitas", "Vissza",
     })
     if choice == 1 then
@@ -208,6 +236,7 @@ local function toggleRow(row)
     end
 end
 
+local forgetId
 local function deleteRow(row)
     if not row then return false end
     local action = row.kind == "group" and "beepitett csoport kikapcsolasa"
@@ -234,31 +263,125 @@ local function deleteRow(row)
     end
     if row.kind == "customGroup" then
         local group = table.remove(customGroups, row.index)
-        for _, id in ipairs(group.ids) do selected[id] = nil end
+        for _, id in ipairs(group.ids) do forgetId(id) end
         return true
     end
     local name = custom[row.index]
     if not name then return false end
-    selected[name] = nil
     table.remove(custom, row.index)
+    forgetId(name)
     return true
+end
+
+local function referencedElsewhere(id)
+    for _, group in ipairs(groups) do
+        for _, value in ipairs(group.ids) do
+            if value == id then return true end
+        end
+    end
+    for _, group in ipairs(customGroups) do
+        for _, value in ipairs(group.ids) do
+            if value == id then return true end
+        end
+    end
+    for _, value in ipairs(custom) do
+        if value == id then return true end
+    end
+    return false
+end
+
+forgetId = function(id)
+    if referencedElsewhere(id) then return end
+    selected[id] = nil
+    if heuristicOreName(id) then rejectedIds[id] = true end
 end
 
 local function viewRow(row)
     if not row then return end
+    local standalone = row.kind == "custom"
     local group = row.kind == "group" and groups[row.index]
         or row.kind == "customGroup" and customGroups[row.index]
-    local lines = {}
-    if group then
-        for index, id in ipairs(group.ids) do
-            lines[#lines + 1] = index .. ". " .. id
+        or standalone and { label = row.label, ids = { custom[row.index] } }
+    if not group then
+        if row.kind == "candidate" or row.kind == "rejected" then
+            UI.confirm("BLOKK ID: " .. row.label,
+                { row.id or row.label }, "ENTER = vissza")
         end
-    elseif row.kind == "custom" or row.kind == "candidate"
-        or row.kind == "rejected" then
-        lines[1] = row.id or row.label
+        return
     end
-    if #lines == 0 then return end
-    UI.confirm("BLOKK ID-K: " .. row.label, lines, "ENTER = vissza")
+    while true do
+        local items = {}
+        for index, id in ipairs(group.ids) do
+            items[#items + 1] = { label = id, value = index }
+        end
+        if not standalone then
+            items[#items + 1] = { label = "Blokk ID hozzaadasa", value = "add" }
+        end
+        items[#items + 1] = { label = "Vissza", value = "back" }
+        local index = UI.menu("BLOKK ID-K: " .. group.label, items)
+        if not index or index == "back" then return end
+        if index == "add" then
+            addToGroup(row)
+        else
+            local oldId = group.ids[index]
+            local action = UI.menu("BLOKK ID: " .. oldId, {
+                { label = "Modositas", value = "edit" },
+                { label = "Torles", value = "delete" },
+                { label = "Vissza", value = "back" },
+            })
+            if action == "edit" then
+                local newId = UI.input("BLOKK ID MODOSITASA", "Blokk ID",
+                    oldId, function(value)
+                        local normalized = normalizeBlockName(value)
+                        if not normalized then
+                            return false, nil, "Formatum: <mod_neve>:<blokk_neve>"
+                        end
+                        return true, normalized
+                    end, "Formatum: <mod_neve>:<blokk_neve>")
+                if newId and newId ~= oldId then
+                    local duplicate = false
+                    for otherIndex, id in ipairs(group.ids) do
+                        if otherIndex ~= index and id == newId then
+                            duplicate = true
+                            break
+                        end
+                    end
+                    if duplicate then
+                        UI.message("Mar szerepel a csoportban", newId, "error")
+                        UI.waitForEnter()
+                    else
+                        local enabled = selected[oldId] == true
+                        group.ids[index] = newId
+                        if standalone then
+                            custom[row.index] = newId
+                            group.label, row.label = newId, newId
+                        elseif row.kind == "group" then
+                            groupOverrides[group.label] = group.ids
+                        end
+                        forgetId(oldId)
+                        if enabled then selected[newId] = true end
+                        pendingCandidates[newId], rejectedIds[newId] = nil, nil
+                    end
+                end
+            elseif action == "delete" then
+                if UI.confirm("BLOKK ID TORLESE", {
+                    "Csoport: " .. group.label,
+                    "Blokk ID: " .. oldId,
+                }, "ENTER = torles") then
+                    if standalone then
+                        table.remove(custom, row.index)
+                        forgetId(oldId)
+                        return
+                    end
+                    table.remove(group.ids, index)
+                    if row.kind == "group" then
+                        groupOverrides[group.label] = group.ids
+                    end
+                    forgetId(oldId)
+                end
+            end
+        end
+    end
 end
 
 function scanner.editTargets()
@@ -385,8 +508,7 @@ function scanner.discoveryId(blockData)
     local id = type(blockData) == "table" and blockData.name
     if type(id) ~= "string" or knownId(id)
         or rejectedIds[id] or pendingCandidates[id] then return nil end
-    local basename = id:match("^[^:]+:(.+)$") or id
-    return basename:find("raw", 1, true) and id or nil
+    return heuristicOreName(id) and id or nil
 end
 
 local function beginDiscovery(id, pose)

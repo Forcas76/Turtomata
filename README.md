@@ -91,7 +91,7 @@ The `Settings > Navigation and general > Shared base` coordinates and facing pro
 | Branch spacing | Distance between side branches; default is 3. |
 | Tunnel length | Length of the straight 3×3 tunnel. |
 
-Experimental ore scanning can be enabled for 1×2 and 1×3 modes. Each side branch is excavated outward, then inspected and torched on the same return trip; the turtle no longer makes a separate full scanning trip. It follows selected veins only up to the configured depth and block limits. A previously unknown block ID containing `raw` may have its **first vein** mined up to those limits. Later veins of that ID are skipped until the player approves it in the ore list. Unfinished physical movements require position review before resuming.
+Experimental ore scanning can be enabled for 1×2 and 1×3 modes. Each side branch is excavated outward, then inspected and torched on the same return trip; the turtle no longer makes a separate full scanning trip. It follows selected veins only up to the configured depth and block limits. A previously unknown block ID containing `raw` or `ore` may have its **first vein** mined up to those limits. Later veins of that ID are skipped until the player approves it in the ore list. Unfinished physical movements require position review before resuming.
 
 ## Area excavation — experimental
 
@@ -148,7 +148,7 @@ Coordinate navigation rejects unloading requests because it has no chest service
 | Ore scanning | Default enablement, ore list, and vein-following limits. |
 | Restore defaults | Recreate common defaults, including English as the language. |
 
-Ore IDs use `<mod_name>:<block_name>`, such as `minecraft:coal_ore`. A short vanilla name such as `coal_ore` automatically receives the `minecraft:` prefix. In the ore list, `A` adds a named custom group, `E` adds an ID to that group, `D` removes/disables, and `K` saves and exits. Unknown `raw` candidates can be approved into a group or rejected there; mouse controls are also available.
+Ore IDs use `<mod_name>:<block_name>`, such as `minecraft:coal_ore`. A short vanilla name such as `coal_ore` automatically receives the `minecraft:` prefix. In the ore list, `A` adds a named custom group, `E` adds an ID, `V` opens the selected group's ID list, `D` removes/disables after confirmation, and `K` saves and exits. In the `V` list, select an ID with the arrow keys or mouse to edit it or delete it after confirmation; IDs can also be added there. Edits to built-in groups are saved as overrides. Unknown `raw`/`ore` candidates can be approved into a group or rejected there.
 
 ## Automatic torches — experimental
 

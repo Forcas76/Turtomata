@@ -95,6 +95,22 @@ ok, reason, count = Scanner.mineAhead("right", 1, api, candidate)
 assert(ok and count == 0 and mined == 2,
     "A masodik telert jovahagyasig nem szabad kibanyaszni.")
 
+local oreCandidate = { name = "example:tin_ore" }
+assert(Scanner.discoveryId(oreCandidate) == oreCandidate.name)
+assert(Scanner.discoveryId({ name = "minecraft:coal_ore" }) == nil,
+    "Az ismert, kikapcsolt ercet ne tekintse uj jeloltnek.")
+assert(Scanner.discoveryId({ name = "example:stone" }) == nil)
+blocks["0,0,1"], blocks["0,0,2"] = oreCandidate.name, oreCandidate.name
+ok, reason, count = Scanner.mineAhead("right", 1, api, oreCandidate)
+assert(ok, reason)
+assert(count == 2 and mined == 4, "Az elso ore telert is banyassza ki.")
+saved = textutils.unserializeJSON(files["ore_targets.txt"])
+assert(saved.pendingCandidates[oreCandidate.name].status == "pending_decision")
+blocks["0,0,1"] = oreCandidate.name
+ok, reason, count = Scanner.mineAhead("right", 1, api, oreCandidate)
+assert(ok and count == 0 and mined == 4,
+    "A masodik ore telert jovahagyasig ki kell hagyni.")
+
 fs, textutils, turtle = oldFs, oldTextutils, oldTurtle
 package.loaded.ore_scanner = oldScanner
 return true
