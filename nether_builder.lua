@@ -59,12 +59,8 @@ local replayCompletedPath
 
 local function saveState()
     if not persistenceEnabled then return end
-    if sharedNav then
-        sharedNav.state.pose.x = position.x
-        sharedNav.state.pose.y = position.y
-        sharedNav.state.pose.z = position.z
-        sharedNav.state.pose.heading = heading
-    end
+    local pose = sharedNav and sharedNav:getPose()
+        or { x = position.x, y = position.y, z = position.z, heading = heading }
     local payload = {
         version = 1,
         active = runtime.active,
@@ -77,8 +73,8 @@ local function saveState()
         floodEncounters = runtime.floodEncounters,
         floodShell = runtime.floodShell,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
-        position = { x = position.x, y = position.y, z = position.z },
-        heading = heading,
+        position = { x = pose.x, y = pose.y, z = pose.z },
+        heading = pose.heading,
         config = config,
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
@@ -515,9 +511,7 @@ local function learnDrop(blockData, before)
 end
 
 local function inspectDepositChest()
-    local exists, data = turtle.inspect()
-    return exists and type(data) == "table"
-        and string.find(data.name or "", "chest", 1, true) ~= nil
+    return BaseDock.learnAtBase(sharedNav)
 end
 
 local function unloadAndLoadBuilders(requiredBlocks)

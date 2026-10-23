@@ -44,6 +44,14 @@ assert(Store.write("branch_miner_state.txt", {
 assert(Registry.autoCandidate() == nil)
 assert(Registry.load().status == "needs_attention")
 
+assert(Registry.resume("branch_miner"))
+assert(Store.write("branch_miner_state.txt", {
+    version = 1, active = true, config = {},
+    oreScan = { active = true, pending = { operation = "push" } },
+}))
+assert(Registry.autoCandidate() == nil,
+    "Fuggo erc-lepessel nem indulhat auto folytatas.")
+
 local good = Store.read("branch_miner_state.txt")
 files["branch_miner_state.txt"] = "corrupt"
 assert(Store.read("branch_miner_state.txt").active == true)
@@ -101,6 +109,12 @@ assert(files[".branch_miner_state.txt.tmp"] == nil)
 assert(Registry.load() == nil)
 assert(files[".work_registry.txt.bak"] == nil)
 assert(Registry.start("excavator", false))
+files["ore_targets.txt"] = "ore-list-preserved"
+assert(Registry.discardLegacyJobs())
+assert(Registry.load() == nil)
+assert(Store.read("excavator_state.txt") == nil)
+assert(files["ore_targets.txt"] == "ore-list-preserved",
+    "A regi munkak torlese nem erintheti az erclistat.")
 
 fs, textutils = previousFs, previousTextutils
 package.loaded["state_store"] = nil

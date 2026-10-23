@@ -82,6 +82,7 @@ function registry.autoCandidate()
     end
     local navigation = state.navigation or state
     if navigation.pending or state.pending
+        or state.oreScan and (state.oreScan.pending or state.oreScan.pendingOre)
         or state.remote and state.remote.navigation
             and state.remote.navigation.pending then
         registry.update("needs_attention", "Fuggo fizikai lepes: kezileg ellenorizd a helyet.")
@@ -155,6 +156,16 @@ function registry.deleteSaved(task)
         return store.removeAll(FILE)
     end
     return true
+end
+
+-- Csak a verziofrissiteskor, elozetes felhasznaloi figyelmeztetes utan.
+-- Az erclista es a kozponti beallitasok nem munkamentesek.
+function registry.discardLegacyJobs()
+    for _, path in pairs(jobs) do
+        local ok, reason = store.removeAll(path)
+        if not ok then return false, reason end
+    end
+    return store.removeAll(FILE)
 end
 
 return registry

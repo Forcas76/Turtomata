@@ -72,9 +72,8 @@ function estimator.branch(config, state)
         formula[#formula + 1] = string.format("Ag: %d pont x 2 x %d blokk", junctions, branchLength)
 
         if config.oreScanEnabled then
-            add(plan, "move", junctions * 4 * branchLength)
             add(plan, "inspect", junctions * 2 * branchLength * (height + 2))
-            formula[#formula + 1] = "Erc: bejaras + dinamikus talalat"
+            formula[#formula + 1] = "Erc: vizsgalat az ag visszautjan + dinamikus talalat"
         end
     end
 

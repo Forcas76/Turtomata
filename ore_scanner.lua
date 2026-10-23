@@ -2,9 +2,10 @@
 -- A modul csak a branch miner altal atadott, poziciokovetett mozgasokat hasznalja.
 
 local scanner = {}
+local UI = require("ui")
+local StateStore = require("state_store")
 
 local TARGETS_FILE = "ore_targets.txt"
-local TARGETS_TEMP_FILE = ".ore_targets.tmp"
 
 local groups = {
     { label = "Szen", ids = { "minecraft:coal_ore", "minecraft:deepslate_coal_ore" } },
@@ -22,6 +23,9 @@ local groups = {
 
 local selected = {}
 local custom = {}
+local customGroups = {}
+local pendingCandidates = {}
+local rejectedIds = {}
 local loaded = false
 
 local function clearScreen()
@@ -37,29 +41,29 @@ end
 local function loadTargets()
     if loaded then return end
     loaded = true
-    if not fs.exists(TARGETS_FILE) then return end
-    local file = fs.open(TARGETS_FILE, "r")
-    if not file then return end
-    local content = file.readAll()
-    file.close()
-    local ok, saved = pcall(textutils.unserializeJSON, content)
-    if not ok or type(saved) ~= "table" or saved.version ~= 1 then return end
+    local saved = StateStore.read(TARGETS_FILE)
+    if type(saved) ~= "table"
+        or (saved.version ~= 1 and saved.version ~= 2) then return end
     if type(saved.selected) == "table" then selected = saved.selected end
     if type(saved.custom) == "table" then custom = saved.custom end
+    if type(saved.customGroups) == "table" then
+        customGroups = saved.customGroups
+    end
+    if type(saved.pendingCandidates) == "table" then
+        pendingCandidates = saved.pendingCandidates
+    end
+    if type(saved.rejectedIds) == "table" then rejectedIds = saved.rejectedIds end
 end
 
 local function saveTargets()
-    local file = fs.open(TARGETS_TEMP_FILE, "w")
-    if not file then return false, "Nem irhato az erclista ideiglenes fajlja." end
-    file.write(textutils.serializeJSON({
-        version = 1,
+    return StateStore.write(TARGETS_FILE, {
+        version = 2,
         selected = selected,
         custom = custom,
-    }))
-    file.close()
-    if fs.exists(TARGETS_FILE) then fs.delete(TARGETS_FILE) end
-    fs.move(TARGETS_TEMP_FILE, TARGETS_FILE)
-    return true
+        customGroups = customGroups,
+        pendingCandidates = pendingCandidates,
+        rejectedIds = rejectedIds,
+    })
 end
 
 local function groupChecked(group)
@@ -92,6 +96,30 @@ local function buildRows()
             checked = selected[name] == true,
         }
     end
+    for index, group in ipairs(customGroups) do
+        rows[#rows + 1] = {
+            kind = "customGroup", index = index, label = group.label,
+            checked = groupChecked(group),
+        }
+    end
+    local candidateIds = {}
+    for id in pairs(pendingCandidates) do candidateIds[#candidateIds + 1] = id end
+    table.sort(candidateIds)
+    for _, id in ipairs(candidateIds) do
+        rows[#rows + 1] = {
+            kind = "candidate", id = id,
+            label = "? " .. id, checked = false,
+        }
+    end
+    local rejected = {}
+    for id in pairs(rejectedIds) do rejected[#rejected + 1] = id end
+    table.sort(rejected)
+    for _, id in ipairs(rejected) do
+        rows[#rows + 1] = {
+            kind = "rejected", id = id,
+            label = "- " .. id, checked = false,
+        }
+    end
     return rows
 end
 
@@ -100,50 +128,81 @@ local function validBlockName(value)
         and string.match(value, "^[a-z0-9_.-]+:[a-z0-9_./-]+$") ~= nil
 end
 
-local function addCustom()
-    clearScreen()
-    print("=== UJ ERC/BLOKK ===")
-    print("Formatum:")
-    print("<mod_neve>:<blokk_neve>")
-    print("")
-    print("Vanilla: minecraft:coal_ore")
-    print("Rovid vanilla: coal_ore")
-    print("Modolt: create:zinc_ore")
-    write("Azonosito: ")
+local function readBlockId()
+    write("Blokk ID (mod:blokk): ")
     local value = string.lower(read() or "")
     value = value:gsub("^%s+", ""):gsub("%s+$", "")
-    -- Namespace nelkuli rovid nevnel a vanilla minecraft namespace az alap.
-    if not string.find(value, ":", 1, true)
-        and string.match(value, "^[a-z0-9_./-]+$") then
+    if not value:find(":", 1, true)
+        and value:match("^[a-z0-9_./-]+$") then
         value = "minecraft:" .. value
     end
-    if not validBlockName(value) then
-        printError("Hibas blokknev. Pelda: coal_ore vagy mod:tin_ore")
-        sleep(1.5)
-        return false
-    end
-    for _, name in ipairs(custom) do
-        if name == value then selected[value] = true return true end
-    end
-    for _, group in ipairs(groups) do
-        for _, name in ipairs(group.ids) do
-            if name == value then
-                for _, groupedName in ipairs(group.ids) do
-                    selected[groupedName] = true
-                end
-                return true
-            end
-        end
-    end
-    custom[#custom + 1] = value
-    selected[value] = true
+    if validBlockName(value) then return value end
+    printError("Hibas ID. Pelda: create:zinc_ore")
+    sleep(1.5)
+    return nil
+end
+
+local function addCustom()
+    clearScreen()
+    print("=== UJ ERCCSOPORT ===")
+    write("Csoport neve: ")
+    local label = (read() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if label == "" then return false end
+    local value = readBlockId()
+    if not value then return false end
+    customGroups[#customGroups + 1] = { label = label, ids = { value } }
+    selected[value], pendingCandidates[value], rejectedIds[value] = true, nil, nil
     return true
+end
+
+local function addToGroup(row)
+    if not row or row.kind ~= "customGroup" then return false end
+    clearScreen()
+    print("Csoport: " .. customGroups[row.index].label)
+    local id = readBlockId()
+    if not id then return false end
+    local group = customGroups[row.index]
+    for _, existing in ipairs(group.ids) do
+        if existing == id then return true end
+    end
+    group.ids[#group.ids + 1] = id
+    selected[id], pendingCandidates[id], rejectedIds[id] = true, nil, nil
+    return true
+end
+
+local function decideCandidate(row)
+    if not row or row.kind ~= "candidate" then return end
+    local choice = UI.choice("UJ RAW BLOKK", {
+        "Uj csoport", "Meglevo csoport", "Elutasitas", "Vissza",
+    })
+    if choice == 1 then
+        local label = UI.input("UJ CSOPORT", "Nev", row.id)
+        if label and label ~= "" then
+            customGroups[#customGroups + 1] = { label = label, ids = { row.id } }
+            selected[row.id], pendingCandidates[row.id] = true, nil
+        end
+    elseif choice == 2 then
+        local labels = {}
+        for _, group in ipairs(customGroups) do labels[#labels + 1] = group.label end
+        if #labels == 0 then return end
+        local index = UI.choice("CSOPORT", labels)
+        if index then
+            customGroups[index].ids[#customGroups[index].ids + 1] = row.id
+            selected[row.id], pendingCandidates[row.id] = true, nil
+        end
+    elseif choice == 3 then
+        rejectedIds[row.id], pendingCandidates[row.id] = true, nil
+    end
 end
 
 local function toggleRow(row)
     if row.kind == "group" then
         toggleGroup(groups[row.index])
-    else
+    elseif row.kind == "customGroup" then
+        toggleGroup(customGroups[row.index])
+    elseif row.kind == "candidate" then
+        decideCandidate(row)
+    elseif row.kind == "custom" then
         local name = custom[row.index]
         selected[name] = selected[name] and nil or true
     end
@@ -154,6 +213,19 @@ local function deleteRow(row)
     if row.kind == "group" then
         -- A beepitett vanilla sor megmarad, de minden valtozata kikapcsol.
         for _, name in ipairs(groups[row.index].ids) do selected[name] = nil end
+        return true
+    end
+    if row.kind == "candidate" then
+        rejectedIds[row.id], pendingCandidates[row.id] = true, nil
+        return true
+    end
+    if row.kind == "rejected" then
+        rejectedIds[row.id] = nil
+        return true
+    end
+    if row.kind == "customGroup" then
+        local group = table.remove(customGroups, row.index)
+        for _, id in ipairs(group.ids) do selected[id] = nil end
         return true
     end
     local name = custom[row.index]
@@ -191,7 +263,7 @@ function scanner.editTargets()
         term.setCursorPos(1, height - 2)
         write(string.sub("< Elozo     Kovetkezo >", 1, width))
         term.setCursorPos(1, height - 1)
-        write(string.sub("A:+ uj   D: torol/ki", 1, width))
+        write(string.sub("A:+csop E:+blokk D:torol", 1, width))
         term.setCursorPos(1, height)
         write(string.sub("K: kesz", 1, width))
 
@@ -206,7 +278,8 @@ function scanner.editTargets()
                 else page = math.min(pageCount, page + 1) end
                 cursor = (page - 1) * pageSize + 1
             elseif y == height - 1 then
-                if x <= math.floor(width / 2) then addCustom()
+                if x <= math.floor(width / 3) then addCustom()
+                elseif x <= math.floor(width * 2 / 3) then addToGroup(rows[cursor])
                 else deleteRow(rows[cursor]) end
             elseif y == height then
                 local ok, reason = saveTargets()
@@ -233,6 +306,7 @@ function scanner.editTargets()
         elseif event == "char" then
             local char = string.lower(p1)
             if char == "a" then addCustom()
+            elseif char == "e" then addToGroup(rows[cursor])
             elseif char == "d" then deleteRow(rows[cursor])
             elseif char == "k" then
                 local ok, reason = saveTargets()
@@ -259,6 +333,52 @@ function scanner.matches(blockData)
         and selected[blockData.name] == true
 end
 
+local function knownId(id)
+    if selected[id] ~= nil then return true end
+    for _, group in ipairs(groups) do
+        for _, name in ipairs(group.ids) do
+            if name == id then return true end
+        end
+    end
+    for _, entry in ipairs(custom) do
+        if entry == id then return true end
+    end
+    for _, group in ipairs(customGroups) do
+        for _, name in ipairs(group.ids) do
+            if name == id then return true end
+        end
+    end
+    return false
+end
+
+function scanner.discoveryId(blockData)
+    loadTargets()
+    local id = type(blockData) == "table" and blockData.name
+    if type(id) ~= "string" or knownId(id)
+        or rejectedIds[id] or pendingCandidates[id] then return nil end
+    local basename = id:match("^[^:]+:(.+)$") or id
+    return basename:find("raw", 1, true) and id or nil
+end
+
+local function beginDiscovery(id, pose)
+    pendingCandidates[id] = {
+        status = "in_progress",
+        x = pose.x, y = pose.y, z = pose.z,
+        mined = 0,
+    }
+    local ok, reason = saveTargets()
+    if not ok then pendingCandidates[id] = nil end
+    return ok, reason
+end
+
+local function finishDiscovery(id, mined)
+    local candidate = pendingCandidates[id]
+    if not candidate then return true end
+    candidate.status = "pending_decision"
+    candidate.mined = mined or 0
+    return saveTargets()
+end
+
 local function coordinatesAfter(pose, move)
     local result = { x = pose.x, y = pose.y, z = pose.z }
     if move.kind == "u" then result.y = result.y + 1
@@ -268,37 +388,6 @@ local function coordinatesAfter(pose, move)
     elseif move.heading == 2 then result.z = result.z - 1
     elseif move.heading == 3 then result.x = result.x - 1 end
     return result
-end
-
-local function samePosition(a, b)
-    return a and b and a.x == b.x and a.y == b.y and a.z == b.z
-end
-
-local function endpoint(anchor, path)
-    local pose = { x = anchor.x, y = anchor.y, z = anchor.z }
-    for _, move in ipairs(path or {}) do pose = coordinatesAfter(pose, move) end
-    return pose
-end
-
-local function normalizePending(state, pose)
-    if type(state.pending) ~= "table" then return true end
-    local endBefore = endpoint(state.anchor, state.path)
-    local move = state.pending.move
-    if state.pending.operation == "push" then
-        local endAfter = coordinatesAfter(endBefore, move)
-        if samePosition(pose, endAfter) then state.path[#state.path + 1] = copyMove(move)
-        elseif not samePosition(pose, endBefore) then return false end
-    elseif state.pending.operation == "pop" then
-        local parentPath = {}
-        for index = 1, math.max(0, #state.path - 1) do
-            parentPath[index] = copyMove(state.path[index])
-        end
-        local parentEnd = endpoint(state.anchor, parentPath)
-        if samePosition(pose, parentEnd) then table.remove(state.path)
-        elseif not samePosition(pose, endBefore) then return false end
-    end
-    state.pending = nil
-    return true
 end
 
 local function createSession(side, api)
@@ -438,7 +527,7 @@ local function keyForPose(pose)
     return tostring(pose.x) .. "," .. tostring(pose.y) .. "," .. tostring(pose.z)
 end
 
-local function mineSelectedVein(session, api, firstMove, firstData)
+local function mineSelectedVein(session, api, firstMove, firstData, discoveryId)
     local baseLength = #session.path
     local maxDepth = api.maxDepth or 4
     local maxBlocks = api.maxBlocks or 16
@@ -449,6 +538,7 @@ local function mineSelectedVein(session, api, firstMove, firstData)
     }
 
     session.phase = "erctelep"
+    session.discoveryId = discoveryId
     session.veinMined = 0
     session.visited = {}
     session.minedPositions = {}
@@ -468,7 +558,7 @@ local function mineSelectedVein(session, api, firstMove, firstData)
             else
                 session.pendingOre = { move = copyMove(move), stage = "before_dig" }
                 api.checkpoint(session)
-                local dug, code, reason = api.digOre(move, knownData)
+                local dug, code, reason = api.digOre(move, knownData, discoveryId)
                 if dug then
                     session.pendingOre.stage = "dug"
                     api.checkpoint(session)
@@ -490,7 +580,10 @@ local function mineSelectedVein(session, api, firstMove, firstData)
                     )
                     if not serviced then return false, serviceReason end
                     local exists, refreshed = inspectMove(api, move)
-                    if not exists or not scanner.matches(refreshed) then return false, "changed" end
+                    if not exists or not (scanner.matches(refreshed)
+                        or discoveryId and refreshed.name == discoveryId) then
+                        return false, "changed"
+                    end
                     knownData = refreshed
                 elseif code == "changed" then
                     session.pendingOre = nil
@@ -533,7 +626,8 @@ local function mineSelectedVein(session, api, firstMove, firstData)
             local nextKey = keyForPose(nextPose)
             if not session.visited[nextKey] then
                 local exists, data = inspectMove(api, move)
-                if exists and scanner.matches(data) then
+                if exists and (scanner.matches(data)
+                    or discoveryId and data.name == discoveryId) then
                     local ok, reason = enterOre(move, data)
                     if ok then
                         stack[#stack + 1] = {
@@ -563,17 +657,30 @@ end
 -- az eredeti facingre ter vissza.
 function scanner.mineAhead(side, branchStep, api, firstData)
     loadTargets()
-    if not scanner.matches(firstData) then return true, nil, 0 end
+    local discoveryId = scanner.discoveryId(firstData)
+    if not scanner.matches(firstData) and not discoveryId then
+        return true, nil, 0
+    end
     local session = createSession(side, api)
     session.phase = "elore_talalt_ercteler"
     session.branchStep = branchStep or 0
+    if discoveryId then
+        local saved, saveReason = beginDiscovery(discoveryId, session.anchor)
+        if not saved then return false, saveReason end
+    end
     api.checkpoint(session)
     local firstMove = { kind = "h", heading = session.anchor.heading }
-    local mined, reason = mineSelectedVein(session, api, firstMove, firstData)
+    local mined, reason = mineSelectedVein(
+        session, api, firstMove, firstData, discoveryId
+    )
     local minedCount = session.veinMined or 0
     local minedPositions = session.minedPositions or {}
     if mined then api.face(session.anchor.heading) end
     api.checkpoint(nil)
+    if discoveryId and mined then
+        local saved, saveReason = finishDiscovery(discoveryId, minedCount)
+        if not saved then return false, saveReason, minedCount, minedPositions end
+    end
     return mined, reason, minedCount, minedPositions
 end
 
@@ -581,8 +688,22 @@ local function scanSurface(session, api, move, surfaceName)
     session.surface = surfaceName
     api.checkpoint(session)
     local exists, data = inspectMove(api, move)
-    if not exists or not scanner.matches(data) then return true end
-    return mineSelectedVein(session, api, move, data)
+    local discoveryId = exists and scanner.discoveryId(data)
+    if not exists or not scanner.matches(data) and not discoveryId then
+        return true
+    end
+    if discoveryId then
+        local saved, saveReason = beginDiscovery(discoveryId, api.getPose())
+        if not saved then return false, saveReason end
+    end
+    local mined, reason = mineSelectedVein(session, api, move, data, discoveryId)
+    if discoveryId and mined then
+        local saved, saveReason = finishDiscovery(discoveryId, session.veinMined)
+        if not saved then return false, saveReason end
+        session.discoveryId = nil
+        api.checkpoint(session)
+    end
+    return mined, reason
 end
 
 local function scanHorizontalLevel(session, api, branchHeading, atEnd, label)
@@ -696,17 +817,100 @@ function scanner.scanBranch(side, branchLength, mode, api, skipSteps)
     return true
 end
 
+-- A banyaszat vege mar a mellekag csucsan van. Innen egyetlen visszauton
+-- vizsgaljuk at a cellakat es helyezzuk el a faklyakat.
+function scanner.scanReturnBranch(side, branchLength, mode, api, resumed)
+    loadTargets()
+    local tip = api.getPose()
+    local branchHeading = resumed and resumed.branchHeading or tip.heading
+    local vectors = {
+        [0] = { x = 0, z = 1 }, [1] = { x = 1, z = 0 },
+        [2] = { x = 0, z = -1 }, [3] = { x = -1, z = 0 },
+    }
+    local vector = vectors[branchHeading]
+    local mainHeading = side == "left" and (branchHeading + 1) % 4
+        or (branchHeading + 3) % 4
+    local anchor = {
+        x = tip.x - vector.x * branchLength,
+        y = tip.y,
+        z = tip.z - vector.z * branchLength,
+        heading = mainHeading,
+    }
+    local session = resumed or {
+        active = true, phase = "ag_visszaut_vizsgalat", side = side,
+        branchStep = branchLength, scanLevel = 0, surface = "indulas",
+        anchor = anchor, path = {}, visited = {}, veinMined = 0,
+        returnScan = true, branchHeading = branchHeading,
+    }
+    if not resumed then
+        for _ = 1, branchLength do
+            session.path[#session.path + 1] = { kind = "h", heading = branchHeading }
+        end
+    end
+    api.checkpoint(session)
+    for step = session.branchStep, 1, -1 do
+        if api.shouldStop() then return false, "Felhasznaloi leallitas." end
+        session.branchStep = step
+        api.checkpoint(session)
+        local scanned, reason = scanBranchCell(
+            session, api, branchHeading, mode, step == branchLength
+        )
+        if not scanned then return false, reason end
+        if api.placeBranchTorch then
+            local placed, torchReason = api.placeBranchTorch(side, step)
+            if not placed then return false, torchReason end
+        end
+        local moved, moveReason = leaveMove(session, api)
+        if not moved then return false, moveReason end
+        session.branchStep = step - 1
+        api.checkpoint(session)
+    end
+    api.face(mainHeading)
+    api.checkpoint(nil)
+    return true
+end
+
+function scanner.resumeReturnBranch(savedState, branchLength, mode, api)
+    if type(savedState) ~= "table" or not savedState.returnScan
+        or type(savedState.path) ~= "table" then
+        return false, "Nincs visszauti agvizsgalati mentes."
+    end
+    if savedState.pending or savedState.pendingOre then
+        return false, "Fuggo erc-lepes: a fizikai helyzetet kezzel ellenorizni kell."
+    end
+    local step = math.min(savedState.branchStep or #savedState.path, branchLength)
+    while #savedState.path > step do
+        local ok, reason = leaveMove(savedState, api)
+        if not ok then return false, reason end
+    end
+    if savedState.discoveryId then
+        local ok, reason = finishDiscovery(savedState.discoveryId,
+            savedState.veinMined or 0)
+        if not ok then return false, reason end
+        savedState.discoveryId = nil
+    end
+    savedState.branchStep = math.min(step, #savedState.path)
+    api.checkpoint(savedState)
+    return scanner.scanReturnBranch(savedState.side, branchLength, mode,
+        api, savedState)
+end
+
 function scanner.recover(savedState, api)
     if type(savedState) ~= "table" or not savedState.active
         or type(savedState.anchor) ~= "table" or type(savedState.path) ~= "table" then
         return true
     end
-    if not normalizePending(savedState, api.getPose()) then
-        return false, "Az erc-utvonal mentese nem egyezik a fizikai pozicioval."
+    if savedState.pending or savedState.pendingOre then
+        return false, "Fuggo erc-lepes: a fizikai helyzetet kezzel ellenorizni kell."
     end
     api.checkpoint(savedState)
     local returned, reason = retreatToAnchor(savedState, api)
     if not returned then return false, reason end
+    if savedState.discoveryId then
+        local ok, saveReason = finishDiscovery(savedState.discoveryId,
+            savedState.veinMined or 0)
+        if not ok then return false, saveReason end
+    end
     api.checkpoint(nil)
     return true
 end

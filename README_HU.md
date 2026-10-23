@@ -34,7 +34,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.1.2**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.2.0**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 
@@ -250,8 +250,16 @@ ládabázis kezdőirányához képest választható: egyenesen, jobbra, hátra v
 balra. Ürítéshez, tankoláshoz és fáklyáért mindig az eredeti ládákhoz tér
 vissza, majd ugyanarra a munkapontra és facingre áll vissza.
 
-Érckeresés mellett az oldalági fáklyák az érckereső visszaútján kerülnek le.
-Így nincs külön fáklyázó bejárás. Az élő állapotpanel az érckeresés lépései
+Az 1.2 első indításakor a régi, félbehagyott munkamentések figyelmeztetés után
+eldobhatók; az új útvonal-logika nem folytatja őket vakon. Az érclista és az
+általános beállítások megmaradnak. A mentett branch-munka hossza, opciói és
+fizikailag ellenőrzött relatív helyzete a folytatás menüjéből módosítható.
+
+Érckeresés mellett az oldalágak ellenőrzése és fáklyázása már az ásás utáni
+első visszaúton történik: nincs külön újabb érckereső ki- és visszajárás.
+Az új, `raw` szót tartalmazó blokkazonosító első telérét a megadott határig
+kibányászhatja, de a következő telért jóváhagyásig kihagyja.
+Az élő állapotpanel az érckeresés lépései
 alatt is frissíti a pozíciót, az eltelt időt és a hátralévő becslést.
 Indítás után a turtle-t nem szabad kézzel elmozgatni vagy elforgatni. Nyílt
 út módban akadálynál biztonságosan megáll és ment; ásó módban megpróbál utat
@@ -262,7 +270,7 @@ nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
 | A kijelzőn | Ékezetes cím | Magyarázat |
 | --- | --- | --- |
 | `Navigacio es altalanos` | Navigáció és általános | Kezdő műveletidő, koordinátás mód és fuel-tartalék. |
-| `Biztonsag es helyzetkezeles` | Biztonság és helyzetkezelés | Víz/láva lezárása, ismétlési limit, tömítőblokk és fáklyahiba viselkedése. |
+| `Biztonsag es helyzetkezeles` | Biztonság és helyzetkezelés | Víz/láva lezárása, ismétlési limit, bővíthető tömítőblokklista és fáklyahiba viselkedése. |
 | `Inventory KISERLETI` | KÍSÉRLETI inventory-kezelés | A következő blokk dropjának tényleges elférését vizsgáló rendszer. |
 | `Faklyazas` | Fáklyázás | Alapértelmezett engedélyezés, távolság és elhelyezési mód. |
 | `Erckereses` | Érckeresés | Alapértelmezett engedélyezés, érclista és követési limitek. |
@@ -270,8 +278,10 @@ nyitni. Ismeretlen víz- vagy lávahelyzetnél nem választ vak kerülőutat.
 
 Az érclistában az új blokk teljes alakja `<mod_neve>:<blokk_neve>`, például
 `minecraft:coal_ore`. A vanilla rövid forma (`coal_ore`) automatikusan
-`minecraft:` előtagot kap. A listában az `A` hozzáad, a `D` töröl vagy
-kikapcsol, a `K` ment és kilép; egérrel is kezelhető.
+`minecraft:` előtagot kap. A listában az `A` elnevezett csoportot hoz létre,
+az `E` blokkazonosítót ad hozzá, a `D` töröl vagy kikapcsol, a `K` ment és
+kilép. Az ismeretlen `raw` jelöltek itt jóváhagyhatók vagy elutasíthatók;
+egérrel is kezelhető.
 
 ## Automatikus fáklyázás – KÍSÉRLETI
 

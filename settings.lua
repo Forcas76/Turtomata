@@ -28,6 +28,7 @@ local DEFAULTS = {
         lavaFailureFatal = true,
         torchFailureFatal = false,
         sealBlock = "minecraft:cobblestone",
+        sealBlocks = { "minecraft:cobblestone", "minecraft:cobbled_deepslate" },
     },
     inventory = {
         experimental = false,

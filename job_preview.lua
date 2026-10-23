@@ -43,6 +43,11 @@ function preview.describe(job, saved)
             add(lines, "Oldalag", config.branchLength)
             add(lines, "Agkoz", config.branchSpacing)
             add(lines, "Utolso kesz ag", saved.branchesCompletedAt)
+        if type(saved.branchProgress) == "table" then
+            add(lines, "Aktualis agpont", saved.branchProgress.at)
+            add(lines, "Bal/jobb kesz", bool(saved.branchProgress.leftDone)
+                .. "/" .. bool(saved.branchProgress.rightDone))
+        end
         end
         add(lines, "Kezdoeltolas", config.startOffset)
         add(lines, "Erc", bool(config.oreScanEnabled))
@@ -50,7 +55,8 @@ function preview.describe(job, saved)
         add(lines, "Inv.", bool(config.experimentalInventory))
         add(lines, "Fuel tartalek", config.fuelReserve)
         add(lines, "Tevekenyseg", saved.activity)
-        add(lines, "Mentett fizikai hely", pose(saved.position))
+        add(lines, "Mentett fizikai hely", pose(
+            saved.navigation and saved.navigation.pose or saved.position))
     elseif job.task == "excavator" then
         add(lines, "Meret", string.format("%sx%sx%s",
             tostring(config.width or "?"), tostring(config.depth or "?"),

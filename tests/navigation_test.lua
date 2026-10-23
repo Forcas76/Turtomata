@@ -49,8 +49,19 @@ local pendingNav = Navigation.new({ state = {
     pending = { operation = "push", move = { kind = "h", heading = 0 } },
     anchors = { home = { index = 0, pose = { x = 0, y = 0, z = 0, heading = 0 } } },
 } })
-assert(pendingNav:recoverPending().ok)
+assert(pendingNav:recoverPending().code == "uncertain_pose")
+assert(pendingNav:resolvePending({ x = 0, y = 0, z = 1, heading = 0 }).ok)
 equal(#pendingNav.state.path, 1, "pending push konyvelese")
+
+local pendingTurn = Navigation.new({ state = {
+    pose = { x = 0, y = 0, z = 0, heading = 0 },
+    path = {}, anchors = {},
+    pending = { operation = "turn",
+        before = { x = 0, y = 0, z = 0, heading = 0 }, heading = 1 },
+} })
+assert(pendingTurn:recoverPending().code == "uncertain_pose")
+assert(pendingTurn:resolvePending({ x = 0, y = 0, z = 0, heading = 1 }).ok)
+equal(pendingTurn:getPose().heading, 1, "ellenorzott fordulas")
 
 -- Akadaly utan korlatozott, tobbszoros ujraprobalas.
 physical = { x = 0, y = 0, z = 0, heading = 0, failForward = 3 }

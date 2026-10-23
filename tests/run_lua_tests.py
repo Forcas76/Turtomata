@@ -8,8 +8,10 @@ lua.execute(f'package.path = "{package_path};" .. package.path')
 for name in (
     "navigation_test.lua", "situation_test.lua", "estimator_test.lua",
     "ore_scanner_test.lua",
+    "ore_discovery_test.lua",
     "localization_test.lua",
     "base_dock_test.lua",
+    "base_dock_modded_test.lua",
     "registry_test.lua",
     "job_setup_test.lua",
     "remote_test.lua",
@@ -23,3 +25,8 @@ for name in (
     if result is not True:
         raise SystemExit(f"{name} did not return true")
     print(f"{name}: OK")
+
+parse_lua = lua.eval("function(source, name) return assert(load(source, name)) end")
+for source_path in root.glob("*.lua"):
+    parse_lua(source_path.read_text(encoding="utf-8"), source_path.name)
+print("Lua syntax: OK")

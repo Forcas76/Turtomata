@@ -72,8 +72,13 @@ function navigation:snapshot()
         path = path,
         pending = self.state.pending and {
             operation = self.state.pending.operation,
-            move = copyMove(self.state.pending.move),
+            move = self.state.pending.move and copyMove(self.state.pending.move) or nil,
             before = self.state.pending.before and copyPose(self.state.pending.before) or nil,
+            heading = self.state.pending.heading,
+            turn = self.state.pending.turn and {
+                before = copyPose(self.state.pending.turn.before),
+                heading = self.state.pending.turn.heading,
+            } or nil,
         } or nil,
         anchors = anchors,
     }
@@ -99,22 +104,27 @@ function navigation:distanceHome()
     return self:distanceTo(home.x, home.y, home.z)
 end
 
-function navigation:_turnRight()
-    local function action() return turtle.turnRight() end
+function navigation:_turn(delta, action)
+    local parent = self.state.pending
+    local turn = { operation = "turn", before = self:getPose(),
+        heading = (self.state.pose.heading + delta) % 4 }
+    if parent then parent.turn = turn
+    else self.state.pending = turn end
+    self:_checkpoint("before_turn")
     local ok = self.telemetry and self.telemetry:measure("turn", action) or action()
-    if ok == false then return result(false, "turn_failed", "Nem tudok jobbra fordulni.") end
-    self.state.pose.heading = (self.state.pose.heading + 1) % 4
-    self:_checkpoint("turn")
+    if ok ~= false then self.state.pose.heading = turn.heading end
+    if parent then parent.turn = nil else self.state.pending = nil end
+    self:_checkpoint(ok == false and "turn_failed" or "turn")
+    if ok == false then return result(false, "turn_failed", "Nem tudok fordulni.") end
     return result(true, "ok")
 end
 
+function navigation:_turnRight()
+    return self:_turn(1, turtle.turnRight)
+end
+
 function navigation:_turnLeft()
-    local function action() return turtle.turnLeft() end
-    local ok = self.telemetry and self.telemetry:measure("turn", action) or action()
-    if ok == false then return result(false, "turn_failed", "Nem tudok balra fordulni.") end
-    self.state.pose.heading = (self.state.pose.heading + 3) % 4
-    self:_checkpoint("turn")
-    return result(true, "ok")
+    return self:_turn(3, turtle.turnLeft)
 end
 
 function navigation:turnRight() return self:_turnRight() end
@@ -156,39 +166,50 @@ end
 
 function navigation:recoverPending()
     local pending = self.state.pending
-    if type(pending) ~= "table" or type(pending.move) ~= "table" then
-        self.state.pending = nil
-        return result(true, "ok")
+    if not pending then return result(true, "ok") end
+    return result(false, "uncertain_pose",
+        "Fuggo fizikai muvelet: a valos helyzetet ellenorizni kell.")
+end
+
+-- A hivonak fizikailag ellenorzott poziciot es iranyt kell atadnia.
+-- A mentesben szereplo pose ehhez onmagaban nem eleg bizonyitek.
+function navigation:resolvePending(actual)
+    local pending = self.state.pending
+    if not pending then return result(true, "ok") end
+    if type(actual) ~= "table" or type(actual.x) ~= "number"
+        or type(actual.y) ~= "number" or type(actual.z) ~= "number"
+        or type(actual.heading) ~= "number" then
+        return result(false, "bad_pose", "Ellenorzott helyzet es irany kell.")
     end
-    local before = self:_pathEndpoint(self.state.path)
-    if pending.operation == "step" then
-        local before = pending.before
-        local after = self:_positionAfter(before, pending.move)
-        if not samePosition(self.state.pose, before) and not samePosition(self.state.pose, after) then
-            return result(false, "pose_mismatch", "A pozicio nem egyezik a fuggoben levo lepessel.")
-        end
-    elseif pending.operation == "push" then
-        local after = self:_positionAfter(before, pending.move)
-        if samePosition(self.state.pose, after) then
-            self.state.path[#self.state.path + 1] = copyMove(pending.move)
-        elseif not samePosition(self.state.pose, before) then
-            return result(false, "pose_mismatch", "A pozicio nem egyezik a fuggoben levo mozgassal.")
-        end
-    elseif pending.operation == "pop" then
-        local parent = {}
-        for index = 1, math.max(0, #self.state.path - 1) do
-            parent[index] = copyMove(self.state.path[index])
-        end
-        if samePosition(self.state.pose, self:_pathEndpoint(parent)) then
-            table.remove(self.state.path)
-        elseif not samePosition(self.state.pose, before) then
-            return result(false, "pose_mismatch", "A visszaut pozicioja nem egyezik a mentessel.")
-        end
+    local before = pending.before or self:_pathEndpoint(self.state.path)
+    local after
+    if pending.operation == "turn" then
+        after = copyPose(before)
+        after.heading = pending.heading
+    elseif pending.move then
+        local move = pending.operation == "pop"
+            and navigation.inverse(pending.move) or pending.move
+        after = self:_positionAfter(before, move)
     else
-        return result(false, "bad_pending", "Ismeretlen fuggoben levo navigacios muvelet.")
+        return result(false, "bad_pending", "Ismeretlen fuggoben levo muvelet.")
     end
+    local wasBefore = samePosition(actual, before)
+    local wasAfter = samePosition(actual, after)
+    if pending.operation == "turn" then
+        wasBefore = wasBefore and actual.heading == before.heading
+        wasAfter = wasAfter and actual.heading == after.heading
+    end
+    if not wasBefore and not wasAfter then
+        return result(false, "pose_mismatch", "Nem egyezik a lepes ket oldalan.")
+    end
+    if wasAfter and not wasBefore and pending.operation == "push" then
+        self.state.path[#self.state.path + 1] = copyMove(pending.move)
+    elseif wasAfter and not wasBefore and pending.operation == "pop" then
+        table.remove(self.state.path)
+    end
+    self.state.pose = copyPose(actual)
     self.state.pending = nil
-    self:_checkpoint("pending_recovered")
+    self:_checkpoint("pending_resolved")
     return result(true, "ok")
 end
 
@@ -249,7 +270,8 @@ end
 
 function navigation:push(move, options)
     move = copyMove(move)
-    self.state.pending = { operation = "push", move = copyMove(move) }
+    self.state.pending = { operation = "push", move = copyMove(move),
+        before = self:getPose() }
     self:_checkpoint("before_push")
     local moved = self:_tryMove(move, options)
     if not moved.ok then
@@ -266,7 +288,8 @@ end
 function navigation:pop(options)
     local move = self.state.path[#self.state.path]
     if not move then return result(true, "at_anchor") end
-    self.state.pending = { operation = "pop", move = copyMove(move) }
+    self.state.pending = { operation = "pop", move = copyMove(move),
+        before = self:getPose() }
     self:_checkpoint("before_pop")
     local moved = self:_tryMove(navigation.inverse(move), options)
     if not moved.ok then

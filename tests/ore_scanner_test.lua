@@ -101,4 +101,37 @@ assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
 assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1",
     "Az erckereses visszautja nem kezelte a faklyapontokat.")
 
+-- A frissen kiásott ág végéről közvetlenül visszafelé vizsgáljon:
+-- nincs még egy oda-vissza bejárás.
+pose = { x = 2, y = 0, z = 0, heading = 1 }
+world, inspectedAt, torchSteps = {}, {}, {}
+local horizontalMoves = 0
+local normalMove = api.moveOpen
+api.moveOpen = function(move)
+    if move.kind == "h" then horizontalMoves = horizontalMoves + 1 end
+    return normalMove(move)
+end
+scanned, scanReason = Scanner.scanReturnBranch("right", 2, 1, api)
+assert(scanned, scanReason)
+assert(horizontalMoves == 2, "A vizsgalat ne jarja be ujra kifele az agat.")
+assert(pose.x == 0 and pose.y == 0 and pose.z == 0 and pose.heading == 0)
+assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1")
+
+-- Megszakitas utan a mar kesz csucscellat ne vizsgalja ujra.
+pose = { x = 2, y = 0, z = 0, heading = 1 }
+world, inspectedAt, torchSteps = {}, {}, {}
+local savedSession
+api.checkpoint = function(session) savedSession = session end
+api.shouldStop = function() return pose.x == 1 end
+scanned = Scanner.scanReturnBranch("right", 2, 1, api)
+assert(not scanned and savedSession and savedSession.returnScan)
+assert(savedSession.branchStep == 1 and pose.x == 1)
+api.shouldStop = function() return false end
+local inspectedAtTip = inspectedAt["2,0,0"] or 0
+scanned, scanReason = Scanner.resumeReturnBranch(savedSession, 2, 1, api)
+assert(scanned, scanReason)
+assert((inspectedAt["2,0,0"] or 0) == inspectedAtTip)
+assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
+assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1")
+
 return true

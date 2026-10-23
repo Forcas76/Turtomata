@@ -43,9 +43,13 @@ local runtime = {
     activity = "menu",
     mainCompleted = 0,
     branchesCompletedAt = 0,
+    branchProgress = nil,
     mainTorchHandledThrough = 0,
+    torchOutcomes = {},
     oreScan = nil,
     oreAheadVisited = nil,
+    fluidRisk = false,
+    needsSealSupply = false,
 }
 local sharedNav = nil
 local navigationState = nil
@@ -56,23 +60,23 @@ local activeBranchContext = nil
 
 local function saveState()
     if not persistenceEnabled then return end
-    if sharedNav then
-        sharedNav.state.pose.x = position.x
-        sharedNav.state.pose.y = position.y
-        sharedNav.state.pose.z = position.z
-        sharedNav.state.pose.heading = heading
-    end
+    local pose = sharedNav and sharedNav:getPose()
+        or { x = position.x, y = position.y, z = position.z, heading = heading }
     local payload = {
-        version = 1,
+        version = 2,
         active = runtime.active,
         activity = runtime.activity,
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
+        branchProgress = runtime.branchProgress,
         mainTorchHandledThrough = runtime.mainTorchHandledThrough,
+        torchOutcomes = runtime.torchOutcomes,
         oreScan = runtime.oreScan,
         oreAheadVisited = runtime.oreAheadVisited,
-        position = { x = position.x, y = position.y, z = position.z },
-        heading = heading,
+        fluidRisk = runtime.fluidRisk,
+        needsSealSupply = runtime.needsSealSupply,
+        position = { x = pose.x, y = pose.y, z = pose.z },
+        heading = pose.heading,
         navigation = sharedNav and sharedNav:snapshot() or navigationState,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         config = config,
@@ -88,7 +92,7 @@ end
 
 local function loadState()
     local saved = stateStore.read(STATE_FILE)
-    if type(saved) ~= "table" or saved.version ~= 1 then return nil end
+    if type(saved) ~= "table" or saved.version ~= 2 then return nil end
     if not saved.active or type(saved.config) ~= "table"
         or type(saved.position) ~= "table" then return nil end
     return saved
@@ -149,10 +153,14 @@ local function configure()
             runtime.activity = saved.activity or "ismeretlen"
             runtime.mainCompleted = saved.mainCompleted or 0
             runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
+            runtime.branchProgress = saved.branchProgress
             runtime.mainTorchHandledThrough = saved.mainTorchHandledThrough
                 or saved.mainCompleted or 0
+            runtime.torchOutcomes = saved.torchOutcomes or {}
             runtime.oreScan = saved.oreScan
             runtime.oreAheadVisited = saved.oreAheadVisited
+            runtime.fluidRisk = saved.fluidRisk == true
+            runtime.needsSealSupply = saved.needsSealSupply == true
             navigationState = saved.navigation
             telemetryState = saved.telemetry
         else
@@ -213,8 +221,12 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.mainCompleted = saved.mainCompleted or 0
         runtime.branchesCompletedAt = saved.branchesCompletedAt or 0
+        runtime.branchProgress = saved.branchProgress
+        runtime.torchOutcomes = saved.torchOutcomes or {}
         runtime.oreScan = saved.oreScan
         runtime.oreAheadVisited = saved.oreAheadVisited
+        runtime.fluidRisk = saved.fluidRisk == true
+        runtime.needsSealSupply = saved.needsSealSupply == true
         navigationState = saved.navigation
         telemetryState = saved.telemetry
     else
@@ -483,17 +495,36 @@ end
 local serviceAndResume
 local buildOreApi
 
+local function sealBlockNames()
+    local targets = config.safety and config.safety.sealBlocks
+    if type(targets) ~= "table" or #targets == 0 then
+        targets = { config.safety and config.safety.sealBlock
+            or "minecraft:cobblestone" }
+    end
+    return targets
+end
+
+local function isSealBlock(name)
+    for _, target in ipairs(sealBlockNames()) do
+        if target == name then return true end
+    end
+    return false
+end
+
 local function selectSealBlock()
-    local target = config.safety and config.safety.sealBlock or "minecraft:cobblestone"
     local firstMiningSlot = config.torchEnabled and 3 or 2
-    for slot = firstMiningSlot, 16 do
-        local detail = turtle.getItemDetail(slot)
-        if detail and detail.name == target and turtle.getItemCount(slot) > 0 then
-            turtle.select(slot)
-            return true
+    for _, target in ipairs(sealBlockNames()) do
+        for slot = firstMiningSlot, 16 do
+            local detail = turtle.getItemDetail(slot)
+            if detail and detail.name == target and turtle.getItemCount(slot) > 0 then
+                turtle.select(slot)
+                return true
+            end
         end
     end
-    return false, "Nincs " .. target .. " tomitoblokk az inventory-ban."
+    runtime.needsSealSupply = true
+    saveState()
+    return false, "Nincs engedelyezett tomitoblokk az inventory-ban."
 end
 
 local function managedDig(direction)
@@ -509,7 +540,8 @@ local function managedDig(direction)
     local hasBlock, blockData = inspect()
     if not hasBlock then return true end
     if direction == "forward" and config.oreScanEnabled and activeBranchContext
-        and oreScanner and oreScanner.matches(blockData) then
+        and oreScanner and (oreScanner.matches(blockData)
+            or oreScanner.discoveryId(blockData)) then
         setActivity("ag_elore_erc")
         local mined, reason, minedCount, minedPositions = oreScanner.mineAhead(
             activeBranchContext.side,
@@ -535,6 +567,8 @@ local function managedDig(direction)
         return true
     end
     if sharedSituations and sharedSituations:fluidKind(direction) then
+        runtime.fluidRisk = true
+        saveState()
         local cleared = sharedSituations:clearFluidSource(direction, selectSealBlock, function()
             return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
         end)
@@ -571,7 +605,8 @@ end
 
 local function digForwardUntilClear()
     local attempts = 0
-    while turtle.detect() do
+    while turtle.detect() or sharedSituations
+        and sharedSituations:fluidKind("forward") do
         local dug, reason = managedDig("forward")
         if not dug then return false, reason or "Nem tudom kiasni az elottem levo blokkot." end
         sleep(0.15)
@@ -582,13 +617,47 @@ local function digForwardUntilClear()
 end
 
 local forward
+local moveVerticalTo
+
+local function sealOuterFluid()
+    if not sharedSituations then return true end
+    local first = sharedSituations:fluidKind("forward")
+    if first then
+        runtime.fluidRisk = true
+        saveState()
+    end
+    if not runtime.fluidRisk then return true end
+    local startY, startHeading = position.y, heading
+    local ok, reason = true, nil
+    for _, level in ipairs({ -1, 0, 1 }) do
+        ok, reason = moveVerticalTo(startY + level)
+        if not ok then break end
+        if sharedSituations:fluidKind("forward") then
+            local sealed = sharedSituations:sealFluid("forward", selectSealBlock)
+            if sealed.kind ~= "handled" and sealed.kind ~= "skipped" then
+                ok, reason = false, sealed.reason
+                break
+            end
+            if runtime.needsSealSupply then
+                ok, reason = false, "Nincs tomitoblokk a kulso falhoz."
+                break
+            end
+        end
+    end
+    local restored, restoreReason = moveVerticalTo(startY)
+    if not restored then return false, restoreReason end
+    face(startHeading)
+    return ok, reason
+end
 
 local function clearVerticalColumn()
-    if turtle.detectUp() then
+    if turtle.detectUp() or sharedSituations
+        and sharedSituations:fluidKind("up") then
         local dug, reason = managedDig("up")
         if not dug then return false, reason or "Nem tudom kiasni a felso blokkot." end
     end
-    if config.tunnelMode >= 2 and turtle.detectDown() then
+    if config.tunnelMode >= 2 and (turtle.detectDown()
+        or sharedSituations and sharedSituations:fluidKind("down")) then
         local dug, reason = managedDig("down")
         if not dug then return false, reason or "Nem tudom kiasni az also blokkot." end
     end
@@ -609,6 +678,8 @@ local function clearTunnelCrossSection()
     if not moved then return false, moveReason end
     cleared, reason = clearVerticalColumn()
     if not cleared then return false, reason end
+    local outerOk, outerReason = sealOuterFluid()
+    if not outerOk then return false, outerReason end
 
     turnAround()
     moved, _, moveReason = forward()
@@ -617,6 +688,8 @@ local function clearTunnelCrossSection()
     if not moved then return false, moveReason end
     cleared, reason = clearVerticalColumn()
     if not cleared then return false, reason end
+    outerOk, outerReason = sealOuterFluid()
+    if not outerOk then return false, outerReason end
 
     turnAround()
     moved, _, moveReason = forward()
@@ -696,7 +769,7 @@ local function navigateTo(targetX, targetZ, targetHeading)
     return ok, reason
 end
 
-local function moveVerticalTo(targetY)
+moveVerticalTo = function(targetY)
     while position.y > targetY do
         if not refuelFromInventory(1) then return false, "Nincs fuel a leereszkedeshez." end
         local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
@@ -732,6 +805,48 @@ local function moveVerticalTo(targetY)
     return true
 end
 
+local function sealNearbyFluid()
+    if not runtime.fluidRisk or returningHome then return true end
+    local startY, startHeading = position.y, heading
+    local levels = config.tunnelMode == 1 and { 0, 1 } or { -1, 0, 1 }
+    local function seal(direction)
+        if not sharedSituations:fluidKind(direction) then return true end
+        local outcome = sharedSituations:sealFluid(direction, selectSealBlock)
+        if outcome.kind == "handled" then return true end
+        if runtime.needsSealSupply then
+            return false, "Tömitoblokk kell a folyadek melletti reshez."
+        end
+        if outcome.kind == "skipped" then return true end
+        return false, outcome.reason or "Nem zarhato le a folyadek."
+    end
+    local ok, reason = true, nil
+    for _, level in ipairs(levels) do
+        ok, reason = moveVerticalTo(startY + level)
+        if not ok then break end
+        for _, side in ipairs({ 1, 3 }) do
+            face((startHeading + side) % 4)
+            ok, reason = seal("forward")
+            if not ok then break end
+        end
+        if not ok then break end
+        if level == levels[1] then
+            ok, reason = seal("down")
+            if not ok then break end
+        end
+        if level == levels[#levels] then
+            ok, reason = seal("up")
+            if not ok then break end
+        end
+    end
+    local restored, restoreReason = moveVerticalTo(startY)
+    if not restored then return false, restoreReason end
+    face(startHeading)
+    if not ok then return false, reason end
+    runtime.fluidRisk = false
+    saveState()
+    return true
+end
+
 local function returnHome()
     returningHome = true
     setActivity("hazateres")
@@ -752,19 +867,22 @@ end
 
 local function unloadBehind()
     turnAround()
-    local hasBlock, block = turtle.inspect()
-    if not hasBlock or not string.find(block.name or "", "chest", 1, true) then
-        return false, "Nincs leado lada kozvetlenul a turtle mogott."
-    end
+    local learned, learnReason = BaseDock.learnAtBase(sharedNav)
+    if not learned then return false, learnReason end
     local selected = turtle.getSelectedSlot()
     local allDeposited = true
+    local keptSeal = false
     for slot = 1, 16 do
         turtle.select(slot)
         if turtle.getItemCount(slot) > 0 then
+            local detail = turtle.getItemDetail(slot)
             local keepForFuel = slot == 1 and turtle.refuel(0)
             local keepForTorch = slot == 2 and config.torchEnabled
                 and torchManager and torchManager.keepReservedSlot(config)
-            if not keepForFuel and not keepForTorch then
+            local keepForSeal = not keptSeal and detail
+                and isSealBlock(detail.name) and slot >= (config.torchEnabled and 3 or 2)
+            if keepForSeal then keptSeal = true end
+            if not keepForFuel and not keepForTorch and not keepForSeal then
                 turtle.drop()
                 if turtle.getItemCount(slot) > 0 then allDeposited = false end
             end
@@ -853,6 +971,32 @@ local function serviceHome(requiredForTrip)
         turnAround()
         return false, unloadReason
     end
+    if runtime.needsSealSupply then
+        local selected = turtle.getSelectedSlot()
+        local ready = selectSealBlock()
+        if not ready then
+            local first = config.torchEnabled and 3 or 2
+            local empty = nil
+            for slot = first, 16 do
+                if turtle.getItemCount(slot) == 0 then empty = slot break end
+            end
+            if not empty then return false, "Nincs szabad hely tomitoblokknak." end
+            turtle.select(empty)
+            if not turtle.suck(64) then
+                turtle.select(selected)
+                return false, "Nincs tomitoblokk a leado ladaban."
+            end
+            local item = turtle.getItemDetail(empty)
+            if not item or not isSealBlock(item.name) then
+                turtle.drop()
+                turtle.select(selected)
+                return false, "A leado lada elso targya nem engedelyezett tomitoblokk."
+            end
+        end
+        turtle.select(selected)
+        runtime.needsSealSupply = false
+        saveState()
+    end
     local fueled, fuelReason = refuelFromUpperChest(requiredForTrip)
     if not fueled then return false, fuelReason end
     turtle.select(config.torchEnabled and 3 or 2)
@@ -917,10 +1061,34 @@ local function placeTorchNow()
     local function above()
         return torchManager.placeAbove(function() return heading end, face)
     end
-    sharedSituations:placeTorchWithFallback({
+    local function supportedAbove()
+        if turtle.detectUp() then return false, "A fej feletti hely foglalt." end
+        local raised = sharedNav:step({ kind = "u" })
+        if not raised.ok then return false, raised.reason end
+        local supported = turtle.detectUp()
+        local reason = nil
+        if not supported and sharedSituations:fluidKind("up") then
+            reason = "Folyadek van a faklya tamasza helyen."
+        elseif not supported then
+            local selected = turtle.getSelectedSlot()
+            local ready, missing = selectSealBlock()
+            if ready then supported = turtle.placeUp()
+            else reason = missing end
+            turtle.select(selected)
+        end
+        local lowered = sharedNav:step({ kind = "d" })
+        if not lowered.ok then
+            error("Nem tudok visszaereszkedni a faklyatamasz utan: "
+                .. tostring(lowered.reason), 0)
+        end
+        if not supported then return false, reason or "Nem teheto le tamasza a faklyanak." end
+        return above()
+    end
+    local outcome = sharedSituations:placeTorchWithFallback({
         preferred = config.torchPlacementMode == 2 and above or side((originalHeading + 1) % 4),
         otherSide = side((originalHeading + 3) % 4),
         above = config.torchPlacementMode == 2 and nil or above,
+        supportPreferred = supportedAbove,
     })
     -- A sikertelen fizikai faklyalerakas nem allithatja le a banyaszatot.
     -- A helyzetkezelo figyelmeztetese tovabbra is megmarad.
@@ -929,7 +1097,12 @@ local function placeTorchNow()
         local resumed, reason = serviceAndResume("Elfogyott a faklya.")
         if not resumed then return false, reason end
     end
-    return true
+    return true, nil, outcome.kind == "handled"
+end
+
+local function noteTorch(key, physicallyPlaced)
+    runtime.torchOutcomes[key] = physicallyPlaced and "placed" or "skipped"
+    saveState()
 end
 
 local function mineForward(steps, label, carveCrossSection)
@@ -959,23 +1132,44 @@ local function mineForward(steps, label, carveCrossSection)
             end
         end
         local dug, digReason = digForwardUntilClear()
-        if not dug then return false, digReason end
+        if not dug then
+            if runtime.needsSealSupply and not returningHome then
+                local resumed, serviceReason = serviceAndResume(
+                    "Tomitoblokk kell a folyadekhoz.")
+                if not resumed then return false, serviceReason end
+            else return false, digReason end
+        else
 
         local moved, moveCode, moveReason = forward()
         if not moved and moveCode == "fuel" and not returningHome then
             local resumed, reason = serviceAndResume("Keves az uzemanyag. " .. moveReason)
             if not resumed then return false, reason end
         elseif not moved then
-            return false, moveReason
+            if runtime.needsSealSupply and not returningHome then
+                local resumed, serviceReason = serviceAndResume(
+                    "Tomitoblokk kell a folyadekhoz.")
+                if not resumed then return false, serviceReason end
+            else return false, moveReason end
         else
             if carveCrossSection then
                 local cleared, clearReason = clearTunnelCrossSection()
                 if not cleared then return false, clearReason end
+                local sealed, sealReason = sealNearbyFluid()
+                if not sealed then
+                    if runtime.needsSealSupply then
+                        local resumed, serviceReason = serviceAndResume(
+                            "Tomitoblokk kell a folyadekhoz.")
+                        if not resumed then return false, serviceReason end
+                        sealed, sealReason = sealNearbyFluid()
+                        if not sealed then return false, sealReason end
+                    else return false, sealReason end
+                end
             end
             if step == 1 or step % 8 == 0 or step == steps then
                 status(label .. " " .. step .. "/" .. steps)
             end
             step = step + 1
+        end
         end
     end
     return true
@@ -990,7 +1184,7 @@ local function oreMoveOpen(move)
     return true
 end
 
-local function oreInspectAndDig(move)
+local function oreInspectAndDig(move, _, discoveryId)
     local inspect, dig
     if move.kind == "u" then
         inspect, dig = turtle.inspectUp, turtle.digUp
@@ -1002,7 +1196,8 @@ local function oreInspectAndDig(move)
     end
 
     local hasBlock, blockData = inspect()
-    if not hasBlock or not oreScanner.matches(blockData) then
+    if not hasBlock or not (oreScanner.matches(blockData)
+        or discoveryId and blockData.name == discoveryId) then
         return false, "changed", "A kijelolt erc mar nincs a helyen."
     end
     if not config.experimentalInventory or not inventoryManager then
@@ -1055,11 +1250,13 @@ buildOreApi = function()
             if placedBySide[branchStep] then return true end
             local previousReturning = returningHome
             returningHome = false
-            local placed, reason = placeTorchNow()
+            local placed, reason, physicallyPlaced = placeTorchNow()
             returningHome = previousReturning
             if placed then
                 placedBySide[branchStep] = true
-                saveState()
+                noteTorch(string.format("branch:%d:%s:%d",
+                    config.startOffset + runtime.mainCompleted,
+                    side, branchStep), physicallyPlaced)
             end
             return placed, reason
         end,
@@ -1083,7 +1280,13 @@ local function mineBranch(turnFunction, sideName, placeTorches, carveCrossSectio
         end
         -- Ercellenorzes nelkul a kesz agat mar az asas kozben faklyazzuk.
         -- A sikertelen helyezest a kozos helyzetkezelo nem vegzetesnek veszi.
-        return placeTorchNow()
+        local ok, reason, physicallyPlaced = placeTorchNow()
+        if ok then
+            noteTorch(string.format("branch:%d:%s:%d",
+                config.startOffset + runtime.mainCompleted,
+                sideKey, branchStep), physicallyPlaced)
+        end
+        return ok, reason
     end
     local completed, reason = true, nil
     for branchStep = 1, config.branchLength do
@@ -1099,6 +1302,15 @@ local function mineBranch(turnFunction, sideName, placeTorches, carveCrossSectio
         if not completed then return false, reason end
         completed, reason = placePlannedTorch(branchStep)
         if not completed then return false, reason end
+    end
+    if carveCrossSection and config.oreScanEnabled then
+        setActivity(sideKey == "left" and "bal_ag_vissza_erc"
+            or "jobb_ag_vissza_erc")
+        local scanned, scanReason = oreScanner.scanReturnBranch(
+            sideKey, config.branchLength, config.tunnelMode, buildOreApi()
+        )
+        if not scanned then return false, scanReason end
+        return true
     end
     turnAround()
     local previousReturningState = returningHome
@@ -1146,6 +1358,12 @@ local function minePendingBranches(absoluteStep)
     end
     if runtime.branchesCompletedAt >= absoluteStep then return true end
 
+    if not runtime.branchProgress or runtime.branchProgress.at ~= absoluteStep then
+        runtime.branchProgress = { at = absoluteStep, leftDone = false,
+            rightDone = false }
+        saveState()
+    end
+
     local delayTorches = config.oreScanEnabled and config.torchEnabled
     if not runtime.oreAheadVisited or runtime.oreAheadVisited.at ~= absoluteStep then
         runtime.oreAheadVisited = {
@@ -1155,36 +1373,28 @@ local function minePendingBranches(absoluteStep)
         saveState()
     end
 
-    setActivity("bal_oldalagat")
-    local leftOk, leftReason = mineBranch(
-        turnLeft, "Bal", not delayTorches, true
-    )
-    if not leftOk then return false, leftReason end
-
-    setActivity("jobb_oldalagat")
-    local rightOk, rightReason = mineBranch(
-        turnRight, "Jobb", not delayTorches, true
-    )
-    if not rightOk then return false, rightReason end
-
-    if config.oreScanEnabled then
-        local oreApi = buildOreApi()
-        setActivity("bal_ag_erckereses")
-        local scanned, scanReason = oreScanner.scanBranch(
-            "left", config.branchLength, config.tunnelMode, oreApi,
-            runtime.oreAheadVisited.left
+    if not runtime.branchProgress.leftDone then
+        setActivity("bal_oldalagat")
+        local leftOk, leftReason = mineBranch(
+            turnLeft, "Bal", not delayTorches, true
         )
-        if not scanned then return false, scanReason end
+        if not leftOk then return false, leftReason end
+        runtime.branchProgress.leftDone = true
+        saveState()
+    end
 
-        setActivity("jobb_ag_erckereses")
-        scanned, scanReason = oreScanner.scanBranch(
-            "right", config.branchLength, config.tunnelMode, oreApi,
-            runtime.oreAheadVisited.right
+    if not runtime.branchProgress.rightDone then
+        setActivity("jobb_oldalagat")
+        local rightOk, rightReason = mineBranch(
+            turnRight, "Jobb", not delayTorches, true
         )
-        if not scanned then return false, scanReason end
+        if not rightOk then return false, rightReason end
+        runtime.branchProgress.rightDone = true
+        saveState()
     end
 
     runtime.branchesCompletedAt = absoluteStep
+    runtime.branchProgress = nil
     runtime.oreAheadVisited = nil
     setActivity("agak_keszen")
     return true
@@ -1222,8 +1432,9 @@ local function placeCurrentMainTorch(localStep)
     if mainTorchPointsCache[localStep] then
         -- A kijelolt fotengely-ponton mar elkeszult a keresztmetszet es
         -- az esetleges ket oldalagat is. Most probaljuk lerakni a faklyat.
-        local placed, reason = placeTorchNow()
+        local placed, reason, physicallyPlaced = placeTorchNow()
         if not placed then return false, reason end
+        noteTorch("main:" .. localStep, physicallyPlaced)
     end
     runtime.mainTorchHandledThrough = localStep
     saveState()
@@ -1285,14 +1496,29 @@ local function runMining()
         runtime.active = true
         setActivity("auto_ujrainditas")
         if runtime.oreScan and runtime.oreScan.active then
-            print("Erc-utvonal biztonsagos visszafejtese...")
-            local recovered, recoverReason = oreScanner.recover(
-                runtime.oreScan, buildOreApi()
-            )
+            local returnScan = runtime.oreScan.returnScan
+            print(returnScan and "Oldalag visszauti vizsgalatanak folytatasa..."
+                or "Erc-utvonal biztonsagos visszafejtese...")
+            local side = runtime.oreScan.side
+            local recovered, recoverReason
+            if returnScan then
+                recovered, recoverReason = oreScanner.resumeReturnBranch(
+                    runtime.oreScan, config.branchLength, config.tunnelMode,
+                    buildOreApi())
+            else
+                recovered, recoverReason = oreScanner.recover(
+                    runtime.oreScan, buildOreApi())
+            end
             if not recovered then
                 printError("Nem tudtam visszafejteni az erc-utvonalat: "
                     .. tostring(recoverReason))
                 return
+            end
+            if returnScan and runtime.branchProgress
+                and runtime.branchProgress.at == config.startOffset
+                    + runtime.mainCompleted then
+                runtime.branchProgress[side .. "Done"] = true
+                saveState()
             end
         end
         if not returnHome() then return end
@@ -1332,6 +1558,7 @@ local function runMining()
         runtime.activity = "indulas"
         runtime.mainCompleted = 0
         runtime.branchesCompletedAt = 0
+        runtime.branchProgress = nil
         runtime.mainTorchHandledThrough = 0
         runtime.oreScan = nil
         runtime.oreAheadVisited = nil
@@ -1379,6 +1606,18 @@ local function runMining()
 
     if stopReason then printError("A banyaszat leallt: " .. stopReason)
     else print("A beallitott banyaszati szakasz elkeszult.") end
+
+    -- Aktiv erc-kitero/visszauti vizsgalat mellett a sima koordinatas
+    -- hazateres elmozditana a turtle-t a scanner mentett utvonala alol.
+    if runtime.oreScan and runtime.oreScan.active then
+        local recovered, recoverReason = oreScanner.recover(
+            runtime.oreScan, buildOreApi())
+        if not recovered then
+            printError("Erc-utvonal miatt nem indulok vakon haza: "
+                .. tostring(recoverReason))
+            return
+        end
+    end
 
     if returnHome() then
         local finalOk, finalReason = serviceHome(config.fuelReserve)

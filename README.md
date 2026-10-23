@@ -2,7 +2,7 @@
 
 Modular [CC:Tweaked](https://tweaked.cc/) software for mining, route building, farming, and live monitoring with Minecraft turtles. The central turtle program is `main.lua`; a Pocket Computer or regular Computer can run `remote_monitor.lua` to watch turtles and issue commands over Rednet.
 
-**Current version:** v1.1.2 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
+**Current version:** v1.2.0 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
 
 [Magyar dokumentáció / Hungarian documentation](README_HU.md)
 
@@ -73,6 +73,8 @@ The program's source labels are often unaccented Hungarian. The English labels b
 
 `Manage jobs > Delete saved job` removes the selected job's resume state **and its backup** after confirmation. If a task chain is active, deleting its save also deletes its active sub-job save. Use release or deletion only when the turtle is physically at its base; deleting a save discards the position needed for a safe resume. Releasing a job does **not** delete its save. A stale branch-mining save can be deleted here before starting a new job.
 
+On the first 1.2 startup, pre-1.2 unfinished job saves may be discarded after an explicit warning; they are not blindly auto-resumed under the new route logic. `ore_targets.txt` and general settings are kept. The saved branch-job menu also offers length, option, and physically verified relative-position corrections.
+
 The `Settings > Navigation and general > Shared base` coordinates and facing provide defaults for *new* coordinate jobs and task chains. Changing the shared base does not relocate an existing saved job.
 
 ## Branch mining
@@ -89,7 +91,7 @@ The `Settings > Navigation and general > Shared base` coordinates and facing pro
 | Branch spacing | Distance between side branches; default is 3. |
 | Tunnel length | Length of the straight 3×3 tunnel. |
 
-Experimental ore scanning can be enabled for 1×2 and 1×3 modes. After both side branches are cut, the turtle checks their floors, ceilings, side walls, and ends for selected ore IDs. It follows an ore vein only up to the configured depth and block limits, then returns to the exact branch position where it diverted. If it sees a selected ore directly ahead while initially digging a branch, it tries that vein immediately. Temporarily remembered, already inspected branch cells are skipped during the later scan, reducing redundant turning and checking. The temporary map is saved until the left/right branch operation finishes.
+Experimental ore scanning can be enabled for 1×2 and 1×3 modes. Each side branch is excavated outward, then inspected and torched on the same return trip; the turtle no longer makes a separate full scanning trip. It follows selected veins only up to the configured depth and block limits. A previously unknown block ID containing `raw` may have its **first vein** mined up to those limits. Later veins of that ID are skipped until the player approves it in the ore list. Unfinished physical movements require position review before resuming.
 
 ## Area excavation — experimental
 
@@ -140,13 +142,13 @@ Coordinate navigation rejects unloading requests because it has no chest service
 | Setting | Purpose |
 | --- | --- |
 | Navigation and general | Starting action time, coordinate mode, shared base, fuel reserve, and language. |
-| Safety and situations | Water/lava sealing, retry limits, sealing block, and torch-failure handling. |
+| Safety and situations | Water/lava sealing, retry limits, an ordered, extensible sealing-block list, and torch-failure handling. |
 | Inventory EXPERIMENTAL | Capacity check against the predicted drop of the next block. |
 | Torch placement | Default enablement, intervals, and placement mode. |
 | Ore scanning | Default enablement, ore list, and vein-following limits. |
 | Restore defaults | Recreate common defaults, including English as the language. |
 
-Ore IDs use `<mod_name>:<block_name>`, such as `minecraft:coal_ore`. A short vanilla name such as `coal_ore` automatically receives the `minecraft:` prefix. In the ore list, `A` adds, `D` removes/disables, and `K` saves and exits; mouse controls are also available.
+Ore IDs use `<mod_name>:<block_name>`, such as `minecraft:coal_ore`. A short vanilla name such as `coal_ore` automatically receives the `minecraft:` prefix. In the ore list, `A` adds a named custom group, `E` adds an ID to that group, `D` removes/disables, and `K` saves and exits. Unknown `raw` candidates can be approved into a group or rejected there; mouse controls are also available.
 
 ## Automatic torches — experimental
 

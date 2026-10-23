@@ -11,11 +11,13 @@ local WorkRegistry = require("work_registry")
 local JobPreview = require("job_preview")
 local JobSetup = require("job_setup")
 local ChainEditor = require("chain_editor")
+local Navigation = require("navigation")
 
 local currentSettings = Settings.load()
 Localization.setLanguage(currentSettings.general.language)
 local remoteOk, Remote = pcall(require, "remote")
 local REMOTE_ACTIVE_FILE = ".remote_active_job"
+local V12_MARKER = ".turtomata_12_ready"
 if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
 
 local function boolText(value) return value and "BE" or "KI" end
@@ -112,6 +114,55 @@ local function torchSettings()
     end
 end
 
+local function sealBlockSettings()
+    local blocks = currentSettings.safety.sealBlocks
+    if type(blocks) ~= "table" then
+        blocks = { currentSettings.safety.sealBlock or "minecraft:cobblestone" }
+        currentSettings.safety.sealBlocks = blocks
+    end
+    while true do
+        local items = {}
+        for index, name in ipairs(blocks) do
+            items[#items + 1] = { label = name, value = index }
+        end
+        items[#items + 1] = { label = "+ Blokk hozzaadasa", value = "add" }
+        items[#items + 1] = { label = "Vissza", value = "back" }
+        local choice = ui.menu("TOMITOBLOKKOK (SORREND)", items)
+        if not choice or choice == "back" then return end
+        if choice == "add" then
+            local value = ui.input("UJ TOMITOBLOKK", "Blokk ID", "", function(raw)
+                raw = string.lower(tostring(raw or "")):gsub("^%s+", ""):gsub("%s+$", "")
+                if not raw:find(":", 1, true) then raw = "minecraft:" .. raw end
+                if not raw:match("^[a-z0-9_.-]+:[a-z0-9_./-]+$") then
+                    return false, nil, "Formatum: mod:blokk"
+                end
+                return true, raw
+            end)
+            if value then
+                local present = false
+                for _, old in ipairs(blocks) do
+                    if old == value then present = true break end
+                end
+                if not present then blocks[#blocks + 1] = value saveSettings() end
+            end
+        else
+            local action = ui.choice(blocks[choice], {
+                "Feljebb", "Lejjebb", "Torles", "Vissza",
+            })
+            if action == 1 and choice > 1 then
+                blocks[choice - 1], blocks[choice] = blocks[choice], blocks[choice - 1]
+                saveSettings()
+            elseif action == 2 and choice < #blocks then
+                blocks[choice + 1], blocks[choice] = blocks[choice], blocks[choice + 1]
+                saveSettings()
+            elseif action == 3 and #blocks > 1 then
+                table.remove(blocks, choice)
+                saveSettings()
+            end
+        end
+    end
+end
+
 local function safetySettings()
     while true do
         local choice = ui.menu("BEALLITASOK > BIZTONSAG", {
@@ -119,7 +170,7 @@ local function safetySettings()
             { label = "Lava lezarasa", suffix = boolText(currentSettings.safety.sealLava), value = "lava" },
             { label = "Faklyahiba vegzetes", suffix = boolText(currentSettings.safety.torchFailureFatal), value = "torch" },
             { label = "Ujraprobalasi limit", suffix = currentSettings.safety.retryLimit, value = "retry" },
-            { label = "Tomitoblokk", suffix = currentSettings.safety.sealBlock, value = "block" },
+            { label = "Tomitoblokkok", suffix = #(currentSettings.safety.sealBlocks or {}), value = "block" },
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return end
@@ -128,15 +179,7 @@ local function safetySettings()
         elseif choice == "torch" then toggle("safety.torchFailureFatal")
         elseif choice == "retry" then editInteger("Ujraprobalasi limit", "safety.retryLimit", 1, 100)
         elseif choice == "block" then
-            local value = ui.input("Tomitoblokk", "Blokk", currentSettings.safety.sealBlock, function(raw)
-                raw = string.lower(tostring(raw or "")):gsub("^%s+", ""):gsub("%s+$", "")
-                if not string.find(raw, ":", 1, true) then raw = "minecraft:" .. raw end
-                if not string.match(raw, "^[a-z0-9_.-]+:[a-z0-9_./-]+$") then
-                    return false, nil, "Formatum: <mod_neve>:<blokk_neve>"
-                end
-                return true, raw
-            end, "Formatum: <mod_neve>:<blokk_neve>")
-            if value then currentSettings.safety.sealBlock = value saveSettings() end
+            sealBlockSettings()
         end
     end
 end
@@ -477,6 +520,111 @@ local function coordinateTask()
     launch("coordinate", "coordinate_task", "new", config, appendEstimate(summary, estimate))
 end
 
+local function editSavedBranch(job)
+    local saved = stateStore.clone(job.saved)
+    local config = saved.config
+    while true do
+        local pose = saved.navigation and saved.navigation.pose
+            or { x = saved.position.x, y = saved.position.y,
+                z = saved.position.z, heading = saved.heading }
+        local choice = ui.menu("FOLYTATAS BEALLITASAI", {
+            { label = "Fout hossza", suffix = config.mainLength, value = "main" },
+            { label = "Oldalag hossza", suffix = config.branchLength,
+                enabled = config.tunnelMode ~= 3, value = "branch" },
+            { label = "Agkoz", suffix = config.branchSpacing,
+                enabled = config.tunnelMode ~= 3, value = "spacing" },
+            { label = "Erckereses", suffix = boolText(config.oreScanEnabled),
+                enabled = config.tunnelMode ~= 3, value = "ore" },
+            { label = "Faklyazas", suffix = boolText(config.torchEnabled), value = "torch" },
+            { label = "Relativ hely / irany", suffix = string.format("%d,%d,%d h%d",
+                pose.x, pose.y, pose.z, pose.heading), value = "pose" },
+            { label = "Mentes", value = "save" },
+            { label = "Vissza", value = "back" },
+        })
+        if not choice or choice == "back" then return end
+        if choice == "main" then
+            local value = ui.integer("Fout hossza", "Blokk", config.mainLength,
+                math.max(1, saved.mainCompleted or 0))
+            if value then config.mainLength = value end
+        elseif choice == "branch" or choice == "spacing" then
+            if saved.branchProgress then
+                ui.message("Aktiv oldalag", "Agkozben ezt nem lehet atallitani.")
+                ui.waitForEnter()
+            else
+                local field = choice == "branch" and "branchLength" or "branchSpacing"
+                local value = ui.integer(choice == "branch" and "Oldalag hossza" or "Agkoz",
+                    "Blokk", config[field], 1)
+                if value then config[field] = value end
+            end
+        elseif choice == "ore" then
+            if saved.branchProgress or saved.oreScan and saved.oreScan.active then
+                ui.message("Aktiv oldalag", "Erckeresest csak agkezdoponton allits.")
+                ui.waitForEnter()
+            else
+                config.oreScanEnabled = not config.oreScanEnabled
+            end
+        elseif choice == "torch" then
+            config.torchEnabled = not config.torchEnabled
+            if config.torchEnabled then
+                config.mainTorchInterval = math.max(1,
+                    (config.mainTorchInterval and config.mainTorchInterval > 0)
+                        and config.mainTorchInterval or currentSettings.torches.interval)
+                config.branchTorchInterval = math.max(1,
+                    (config.branchTorchInterval and config.branchTorchInterval > 0)
+                        and config.branchTorchInterval or currentSettings.torches.interval)
+            end
+        elseif choice == "pose" then
+            local actual = {}
+            local cancelled = false
+            for _, field in ipairs({ "x", "y", "z" }) do
+                actual[field] = ui.integer("RELATIV HELY", field:upper(), pose[field])
+                if actual[field] == nil then cancelled = true break end
+            end
+            if not cancelled then
+                local chosen = ui.choice("IRANY", { "+Z", "+X", "-Z", "-X" },
+                    pose.heading + 1)
+                if not chosen then cancelled = true
+                else actual.heading = chosen - 1 end
+            end
+            if not cancelled then
+                if saved.oreScan and saved.oreScan.active then
+                    ui.message("Erc-kitero aktiv", "Elobb a kitero helyzetet ellenorizd.")
+                    ui.waitForEnter()
+                elseif ui.confirm("FIZIKAI HELY ELLENORZESE", {
+                    "A megadott helyen ALL a turtle?",
+                    "A hibas ertek teves mozgast okozhat.",
+                }, "ENTER = tenyleg itt all") then
+                    local nav = Navigation.new({ state = saved.navigation or {
+                        pose = pose, path = {}, anchors = {},
+                    } })
+                    local resolved = nav.state.pending
+                        and nav:resolvePending(actual) or nil
+                    if resolved and not resolved.ok then
+                        ui.message("Helyzetelteres", resolved.reason, "error")
+                        ui.waitForEnter()
+                    else
+                        if not resolved then nav:setPose(actual) end
+                        saved.navigation = nav:snapshot()
+                        saved.position = { x = actual.x, y = actual.y, z = actual.z }
+                        saved.heading = actual.heading
+                    end
+                end
+            end
+        elseif choice == "save" then
+            local lines = JobPreview.describe(job, saved)
+            if ui.confirm("MENTETT MUNKA MODOSITASA", lines,
+                "ENTER = mentes") then
+                local ok, reason = stateStore.write(job.file, saved)
+                ui.message(ok and "MENTVE" or "MENTESI HIBA",
+                    ok and "A munka uj adatokkal folytathato." or tostring(reason),
+                    ok and nil or "error")
+                ui.waitForEnter()
+                if ok then return end
+            end
+        end
+    end
+end
+
 local function resumeMenu()
     local jobs = JobPreview.list()
     local items = {}
@@ -488,6 +636,14 @@ local function resumeMenu()
     items[#items + 1] = { label = "Vissza", value = "back" }
     local selected = ui.menu("FOLYTATHATO MUNKAK", items)
     if not selected or selected == "back" then return end
+    local action = ui.menu("MENTETT MUNKA", {
+        { label = "Attekintes es folytatas", value = "resume" },
+        { label = "Folytatas beallitasai", value = "edit",
+            enabled = selected.task == "branch_miner" },
+        { label = "Vissza", value = "back" },
+    })
+    if action == "edit" then editSavedBranch(selected) return end
+    if action ~= "resume" then return end
     local lines = JobPreview.describe(selected, selected.saved)
     if not ui.confirm("MENTETT MUNKA", lines, "ENTER = folytatas") then return end
     launch(selected.task, selected.program, "resume", {}, lines, { confirmed = true })
@@ -593,6 +749,8 @@ local function updateTurtleProgram()
     local confirmed = ui.confirm("Program frissitese", {
         "A teljes turtle program frissul.",
         "Siker utan az eszkoz ujraindul.",
+        "Regi munkamentesek elveszhetnek.",
+        "Az erclista megmarad.",
     }, "ENTER = frissites", { onKey = function(key)
         if key == keys.right then
             secretStep = secretStep == 3 and 1 or secretStep + 1
@@ -622,7 +780,35 @@ local function updateTurtleProgram()
     end
 end
 
+local function checkLegacyJobs()
+    if fs.exists(V12_MARKER) then return true end
+    local saved = JobPreview.list()
+    local owner = WorkRegistry.load()
+    if #saved > 0 or owner then
+        if not ui.confirm("1.2 MUNKAMENTES FIGYELMEZTETES", {
+            "A regi feladatok nem folytathatok biztosan.",
+            "A regi munkamentesek torlodnek.",
+            "Az erclista es beallitasok megmaradnak.",
+        }, "ENTER = elfogadas") then
+            return false
+        end
+        local ok, reason = WorkRegistry.discardLegacyJobs()
+        if not ok then
+            ui.message("Mentes torlesi hiba", tostring(reason), "error")
+            ui.waitForEnter()
+            return false
+        end
+    end
+    local ok, reason = stateStore.write(V12_MARKER, { version = 1, ready = true })
+    if not ok then
+        ui.message("Allapotmentesi hiba", tostring(reason), "error")
+        ui.waitForEnter()
+    end
+    return ok
+end
+
 local function menuLoop()
+    if not checkLegacyJobs() then return end
     local auto = WorkRegistry.autoCandidate()
     if auto then
         local programs = {

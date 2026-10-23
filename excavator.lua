@@ -52,12 +52,8 @@ local headings = {
 
 local function saveState()
     if not persistenceEnabled then return end
-    if sharedNav then
-        sharedNav.state.pose.x = position.x
-        sharedNav.state.pose.y = position.y
-        sharedNav.state.pose.z = position.z
-        sharedNav.state.pose.heading = heading
-    end
+    local pose = sharedNav and sharedNav:getPose()
+        or { x = position.x, y = position.y, z = position.z, heading = heading }
     local payload = {
         version = 1,
         active = runtime.active,
@@ -65,8 +61,8 @@ local function saveState()
         baseCompleted = runtime.baseCompleted,
         torchSteps = runtime.torchSteps,
         visited = visited,
-        position = { x = position.x, y = position.y, z = position.z },
-        heading = heading,
+        position = { x = pose.x, y = pose.y, z = pose.z },
+        heading = pose.heading,
         navigation = sharedNav and sharedNav:snapshot() or navigationState,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         remote = runtime.remote,
@@ -395,16 +391,22 @@ end
 local serviceAndResume
 
 local function selectSealBlock()
-    local target = config.safety and config.safety.sealBlock or "minecraft:cobblestone"
+    local targets = config.safety and config.safety.sealBlocks
+    if type(targets) ~= "table" or #targets == 0 then
+        targets = { config.safety and config.safety.sealBlock
+            or "minecraft:cobblestone" }
+    end
     local firstMiningSlot = config.torchEnabled and 3 or 2
-    for slot = firstMiningSlot, 16 do
-        local detail = turtle.getItemDetail(slot)
-        if detail and detail.name == target and turtle.getItemCount(slot) > 0 then
-            turtle.select(slot)
-            return true
+    for _, target in ipairs(targets) do
+        for slot = firstMiningSlot, 16 do
+            local detail = turtle.getItemDetail(slot)
+            if detail and detail.name == target and turtle.getItemCount(slot) > 0 then
+                turtle.select(slot)
+                return true
+            end
         end
     end
-    return false, "Nincs " .. target .. " tomitoblokk az inventory-ban."
+    return false, "Nincs engedelyezett tomitoblokk az inventory-ban."
 end
 
 local function managedDig(direction)
@@ -569,10 +571,10 @@ end
 
 local function unloadBehind()
     turnAround()
-    local hasBlock, block = turtle.inspect()
-    if not hasBlock or not string.find(block.name or "", "chest", 1, true) then
+    local learned, learnReason = BaseDock.learnAtBase(sharedNav)
+    if not learned then
         turnAround()
-        return false, "Nincs leado lada a turtle mogott."
+        return false, learnReason
     end
     local allDeposited = true
     for slot = 1, 16 do
