@@ -10,6 +10,8 @@ local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
 local WorkEstimator = require("work_estimator")
+local SwarmSafety = require("swarm_safety")
+local SwarmSession = require("swarm_session")
 local centralRequest, centralRequestError = jobRequest.consume("branch_miner", programArgs)
 
 local position = { x = 0, y = 0, z = 0 }
@@ -57,6 +59,17 @@ local sharedTelemetry = nil
 local telemetryState = nil
 local sharedSituations = nil
 local activeBranchContext = nil
+
+local function swarmLinkAlive()
+    if not config.swarmTrunkOnly then return true end
+    local session = SwarmSession.load()
+    local now = os.epoch and os.epoch("utc") or 0
+    return session and session.active and session.role == "leader"
+        and session.jobId == config.swarmJobId
+        and session.status ~= "emergency_stop"
+        and session.coordinatorId and session.lastHeartbeatAt
+        and now - session.lastHeartbeatAt <= 6000
+end
 
 local function saveState()
     if not persistenceEnabled then return end
@@ -528,6 +541,9 @@ local function selectSealBlock()
 end
 
 local function managedDig(direction)
+    if not swarmLinkAlive() then
+        return false, "Kezeloi kapcsolat megszakadt; helyben megallas."
+    end
     local inspect, dig
     if direction == "up" then
         inspect, dig = turtle.inspectUp, turtle.digUp
@@ -539,6 +555,8 @@ local function managedDig(direction)
 
     local hasBlock, blockData = inspect()
     if not hasBlock then return true end
+    local safe, unsafeReason = SwarmSafety.mayDig(direction)
+    if not safe then return false, unsafeReason end
     if direction == "forward" and config.oreScanEnabled and activeBranchContext
         and oreScanner and (oreScanner.matches(blockData)
             or oreScanner.discoveryId(blockData)) then
@@ -711,6 +729,9 @@ local function nextPositionForward()
 end
 
 forward = function()
+    if not swarmLinkAlive() then
+        return false, "link_lost", "Kezeloi kapcsolat megszakadt; helyben megallas."
+    end
     if returningHome and heading == 2 and BaseDock.chestOnReturn(sharedNav) then
         return false, "dock_reached", "A leado lada elott allok."
     end
@@ -728,6 +749,11 @@ forward = function()
     local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
         { kind = "h", heading = heading }, {
         onBlocked = function(_, moveResult)
+            local safe, unsafeReason = SwarmSafety.mayDig("forward")
+            if not safe then
+                return { result = { ok = false, code = "protected",
+                    reason = unsafeReason } }
+            end
             local dug, reason = digForwardUntilClear()
             if dug then
                 if turtle.attack() then sleep(0.2) end
@@ -771,10 +797,16 @@ end
 
 moveVerticalTo = function(targetY)
     while position.y > targetY do
+        if not swarmLinkAlive() then return false, "Kezeloi kapcsolat megszakadt." end
         if not refuelFromInventory(1) then return false, "Nincs fuel a leereszkedeshez." end
         local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
             { kind = "d" }, {
                 onBlocked = function(_, moveResult)
+                    local safe, unsafeReason = SwarmSafety.mayDig("down")
+                    if not safe then
+                        return { result = { ok = false, code = "protected",
+                            reason = unsafeReason } }
+                    end
                     if turtle.detectDown() then
                         local dug, reason = managedDig("down")
                         if dug then return { action = "retry" } end
@@ -787,10 +819,16 @@ moveVerticalTo = function(targetY)
         if not moved.ok then return false, moved.reason end
     end
     while position.y < targetY do
+        if not swarmLinkAlive() then return false, "Kezeloi kapcsolat megszakadt." end
         if not refuelFromInventory(1) then return false, "Nincs fuel a felemelkedeshez." end
         local moved = assert(sharedNav, "A navigacios modul nincs inicializalva."):step(
             { kind = "u" }, {
                 onBlocked = function(_, moveResult)
+                    local safe, unsafeReason = SwarmSafety.mayDig("up")
+                    if not safe then
+                        return { result = { ok = false, code = "protected",
+                            reason = unsafeReason } }
+                    end
                     if turtle.detectUp() then
                         local dug, reason = managedDig("up")
                         if dug then return { action = "retry" } end
@@ -848,6 +886,9 @@ local function sealNearbyFluid()
 end
 
 local function returnHome()
+    if not swarmLinkAlive() then
+        return false, "Kezeloi kapcsolat megszakadt; nincs vak hazateres."
+    end
     returningHome = true
     setActivity("hazateres")
     status("Hazateres")
@@ -856,7 +897,8 @@ local function returnHome()
     if ok then ok, reason = navigateTo(0, 0, 0) end
     if ok then ok, reason = moveVerticalTo(0) end
     if ok or reason == "A leado lada elott allok." then
-        ok, reason = BaseDock.seek(sharedNav, 2)
+        if swarmLinkAlive() then ok, reason = BaseDock.seek(sharedNav, 2)
+        else ok, reason = false, "Kezeloi kapcsolat megszakadt." end
         if ok then face(0) end
     end
     returningHome = false
@@ -961,6 +1003,9 @@ local function refuelFromUpperChest(requiredAfterService)
 end
 
 local function serviceHome(requiredForTrip)
+    if not swarmLinkAlive() then
+        return false, "Kezeloi kapcsolat megszakadt; nincs lada-kiszolgalas."
+    end
     if position.x ~= 0 or position.y ~= 0 or position.z ~= 0 then
         return false, "A lada-kiszolgalas csak a kezdohelyen vegezheto."
     end
@@ -1019,6 +1064,9 @@ local function tripFuelRequirement(targetX, targetZ)
 end
 
 serviceAndResume = function(reasonText, extraFuel)
+    if not swarmLinkAlive() then
+        return false, "Kezeloi kapcsolat megszakadt; helyben megallas."
+    end
     local savedX, savedY, savedZ = position.x, position.y, position.z
     local savedHeading = heading
     local savedActivity = runtime.activity
@@ -1109,6 +1157,9 @@ local function mineForward(steps, label, carveCrossSection)
     if carveCrossSection == nil then carveCrossSection = true end
     local step = 1
     while step <= steps do
+        if not swarmLinkAlive() then
+            return false, "Kezeloi kapcsolat megszakadt; helyben megallas."
+        end
         if stopRequested and not returningHome then
             return false, "Felhasznaloi leallitas."
         end
@@ -1151,6 +1202,9 @@ local function mineForward(steps, label, carveCrossSection)
                 if not resumed then return false, serviceReason end
             else return false, moveReason end
         else
+            if not swarmLinkAlive() then
+                return false, "Kezeloi kapcsolat megszakadt; helyben megallas."
+            end
             if carveCrossSection then
                 local cleared, clearReason = clearTunnelCrossSection()
                 if not cleared then return false, clearReason end
@@ -1196,6 +1250,10 @@ local function oreInspectAndDig(move, _, discoveryId)
     end
 
     local hasBlock, blockData = inspect()
+    local safe, unsafeReason = SwarmSafety.mayDig(
+        move.kind == "u" and "up" or move.kind == "d" and "down"
+            or "forward")
+    if not safe then return false, "protected", unsafeReason end
     if not hasBlock or not (oreScanner.matches(blockData)
         or discoveryId and blockData.name == discoveryId) then
         return false, "changed", "A kijelolt erc mar nincs a helyen."
@@ -1351,6 +1409,7 @@ local function travelToStartOffset()
 end
 
 local function minePendingBranches(absoluteStep)
+    if config.swarmTrunkOnly then return true end
     if stopRequested then return false, "Felhasznaloi leallitas." end
     if config.tunnelMode == 3 then return true end
     if absoluteStep <= 0 or absoluteStep % config.branchSpacing ~= 0 then
@@ -1448,7 +1507,28 @@ local function returnAndService()
     end
 end
 
+local function parkSwarmLeader()
+    if not config.swarmTrunkOnly then return true end
+    if not swarmLinkAlive() then return false, "Kezeloi kapcsolat megszakadt." end
+    if position.x ~= 0 or position.y ~= 0 or position.z ~= 0 then
+        return false, "A vezetot csak a bazisrol lehet felreallitani."
+    end
+    face(3) -- A segedek jobbra sorakoznak; a vezeto balra all felre.
+    local cleared, clearReason = digForwardUntilClear()
+    if not cleared then return false, clearReason end
+    local moved, _, moveReason = forward()
+    if not moved then return false, moveReason end
+    local clearTop, topReason = managedDig("up")
+    if not clearTop then return false, topReason end
+    face(0)
+    return true
+end
+
 local function runMining()
+    if config.swarmTrunkOnly and not swarmLinkAlive() then
+        printError("Nincs aktiv kezelojel; nem indulok el.")
+        return
+    end
     persistenceEnabled = true
     sharedTelemetry = Telemetry.new(telemetryState, { defaultSeconds = config.defaultActionSeconds or 0.8 })
     sharedSituations = Situations.new(config.safety or {}, { telemetry = sharedTelemetry })
@@ -1607,6 +1687,12 @@ local function runMining()
     if stopReason then printError("A banyaszat leallt: " .. stopReason)
     else print("A beallitott banyaszati szakasz elkeszult.") end
 
+    if config.swarmTrunkOnly and not swarmLinkAlive() then
+        setActivity("needs_attention")
+        printError("Kapcsolatvesztes: a turtle helyben marad. Ne indits vak hazaterest.")
+        return
+    end
+
     -- Aktiv erc-kitero/visszauti vizsgalat mellett a sima koordinatas
     -- hazateres elmozditana a turtle-t a scanner mentett utvonala alol.
     if runtime.oreScan and runtime.oreScan.active then
@@ -1622,13 +1708,20 @@ local function runMining()
     if returnHome() then
         local finalOk, finalReason = serviceHome(config.fuelReserve)
         if finalOk then
+            if not stopReason and config.swarmTrunkOnly then
+                finalOk, finalReason = parkSwarmLeader()
+            end
+        end
+        if finalOk then
             if not stopReason then
                 runtime.active = false
                 setActivity("kesz")
             else
                 setActivity("megallitva_otthon")
             end
-            print("Kesz: a turtle otthon van, az inventory ures.")
+            print(config.swarmTrunkOnly and
+                "Kesz: a vezeto a bazistol balra, biztonsagos varakozohelyen all."
+                or "Kesz: a turtle otthon van, az inventory ures.")
         else printError("Hazaertem, de a lada-kiszolgalas sikertelen: " .. finalReason) end
     end
 end
@@ -1637,7 +1730,7 @@ local function miningTask()
     local ok, errorMessage = pcall(runMining)
     if not ok then
         printError("Programhiba: " .. tostring(errorMessage))
-        if distanceHome() > 0 then returnAndService() end
+        if distanceHome() > 0 and swarmLinkAlive() then returnAndService() end
     end
     miningFinished = true
     os.queueEvent("miner_finished")

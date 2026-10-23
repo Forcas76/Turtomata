@@ -12,6 +12,8 @@ local JobPreview = require("job_preview")
 local JobSetup = require("job_setup")
 local ChainEditor = require("chain_editor")
 local Navigation = require("navigation")
+local SwarmSession = require("swarm_session")
+local SwarmMenu = require("swarm_menu")
 
 local currentSettings = Settings.load()
 Localization.setLanguage(currentSettings.general.language)
@@ -301,6 +303,12 @@ end
 
 local function launch(task, program, action, config, summary, options)
     options = options or {}
+    local swarm = SwarmSession.load()
+    if swarm and swarm.active and not options.swarmLeader then
+        ui.message("KOZOS MUNKA", "Aktiv parositas mellett onallo feladat nem indul.", "error")
+        ui.waitForEnter()
+        return
+    end
     if not programExists(program) then
         ui.message("Hianyzo program", program .. ".lua nem talalhato.", "error")
         ui.waitForEnter()
@@ -809,7 +817,8 @@ end
 
 local function menuLoop()
     if not checkLegacyJobs() then return end
-    local auto = WorkRegistry.autoCandidate()
+    local swarm = SwarmSession.load()
+    local auto = not (swarm and swarm.active) and WorkRegistry.autoCandidate()
     if auto then
         local programs = {
             branch_miner = "branch_miner", excavator = "excavator",
@@ -827,6 +836,7 @@ local function menuLoop()
         local hasResume = #JobPreview.list() > 0
         local choice = ui.menu("TURTOMATA " .. Version.label, {
             { label = "Branch mining", value = "branch" },
+            { label = "Kozos munka", suffix = "KISERLETI PAROSITAS", value = "swarm" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
             { label = "Utvonal keszites", value = "nether" },
             { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
@@ -838,11 +848,42 @@ local function menuLoop()
             { label = "Diagnosztika", value = "diagnostics" },
             { label = "Program frissitese", value = "update" },
             { label = "Kilepes", value = "exit" },
-        }, { allowBack = false })
+        }, { allowBack = false, onRefresh = function(items)
+            local session = SwarmSession.load()
+            local offers = SwarmSession.offers()
+            items[2].suffix = session and session.active and session.status
+                or (#offers > 0 and ("ELERHETO: " .. #offers)
+                    or "KISERLETI PAROSITAS")
+        end })
         if choice == "branch" then
             local config, summary = JobSetup.branch(currentSettings)
             if config then launch("branch_miner", "branch_miner", "new",
                 config, summary, { confirmed = true }) end
+        elseif choice == "swarm" then
+            local requested = SwarmMenu.run()
+            if requested and requested.action == "start_trunk" then
+                local session = requested.session
+                launch("branch_miner", "branch_miner", "new", {
+                    swarmTrunkOnly = true, swarmJobId = session.jobId,
+                    tunnelMode = session.tunnelMode,
+                    mainLength = session.mainLength,
+                    branchLength = 0, branchSpacing = session.branchSpacing,
+                    startMode = 1, startOffset = 0,
+                    torchEnabled = false, oreScanEnabled = false,
+                    experimentalInventory = false, fuelReserve = 5,
+                }, {}, { confirmed = true, swarmLeader = true })
+            elseif requested and requested.action == "resume_trunk" then
+                launch("branch_miner", "branch_miner", "resume", {}, {},
+                    { confirmed = true, swarmLeader = true })
+            elseif requested and requested.action == "start_worker" then
+                if programExists("swarm_worker") then
+                    shell.run("swarm_worker")
+                    ui.waitForEnter("ENTER = vissza a fomenube")
+                else
+                    ui.message("Hianyzo program", "swarm_worker.lua", "error")
+                    ui.waitForEnter()
+                end
+            end
         elseif choice == "excavator" then
             local config, summary = JobSetup.excavator(currentSettings)
             if config then launch("excavator", "excavator", "new",

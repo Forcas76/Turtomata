@@ -6,8 +6,10 @@ os.getComputerID = function() return 42 end
 os.getComputerLabel = function() return "Banyasz" end
 os.epoch = function() return 123456 end
 
+local swarmSaved
 package.loaded["state_store"] = {
     read = function(path)
+        if path == "swarm_session.txt" then return swarmSaved end
         if path == ".remote_active_job" then
             return { task = "branch_miner" }
         end
@@ -24,6 +26,10 @@ package.loaded["state_store"] = {
                 },
             }
         end
+    end,
+    write = function(path, value)
+        if path == "swarm_session.txt" then swarmSaved = value end
+        return true
     end,
 }
 
@@ -75,6 +81,68 @@ Remote.handleCommand(7, {
 })
 assert(#sentMessages == 2 and sentMessages[2].message.accepted == true)
 assert(queued[2][1] == "turtomata_remote_command" and queued[2][2] == "service")
+
+local Session = require("swarm_session")
+local SwarmProtocol = require("swarm_protocol")
+local opened, _, leader = Session.openLeader({
+    mainLength = 12, branchLength = 4, branchSpacing = 3, tunnelMode = 1,
+})
+assert(opened and Remote.snapshot().swarm.jobId == leader.jobId)
+Remote.handleSwarm(25, SwarmProtocol.message("coordinator_claim", {
+    jobId = leader.jobId, leaderId = 42, requestId = "claim-1",
+}))
+assert(sentMessages[3].protocol == SwarmProtocol.CHANNEL)
+assert(sentMessages[3].message.accepted == true)
+assert(Session.load().coordinatorId == 25)
+Remote.handleSwarm(26, SwarmProtocol.message("coordinator_claim", {
+    jobId = leader.jobId, leaderId = 42, requestId = "claim-2",
+}))
+assert(sentMessages[4].message.accepted == false)
+Remote.handleSwarm(26, SwarmProtocol.message("coordinator_heartbeat", {
+    jobId = leader.jobId, leaderId = 42, coordinatorId = 26, epoch = 1,
+}))
+assert(Session.load().lastHeartbeatAt == nil)
+Remote.handleSwarm(25, SwarmProtocol.message("coordinator_heartbeat", {
+    jobId = leader.jobId, leaderId = 42, coordinatorId = 25, epoch = 1,
+}))
+assert(Session.load().lastHeartbeatAt == 123456)
+assert(Remote.snapshot().swarm.coordinatorOnline == true)
+Remote.handleSwarm(25, SwarmProtocol.message("branch_ready_ack", {
+    jobId = leader.jobId, coordinatorId = 25, epoch = 1,
+    branchKey = leader.jobId .. ":3:left", accepted = true,
+}))
+assert(Session.load().publishSide == "right")
+Remote.handleSwarm(25, SwarmProtocol.message("branch_ready_ack", {
+    jobId = leader.jobId, coordinatorId = 25, epoch = 1,
+    branchKey = leader.jobId .. ":3:left", accepted = true,
+}))
+assert(Session.load().publishSide == "right")
+Remote.handleSwarm(25, SwarmProtocol.message("swarm_stop", {
+    jobId = leader.jobId, coordinatorId = 25, epoch = 1,
+}))
+assert(Session.load().status == "emergency_stop")
+
+swarmSaved = {
+    version = 1, active = true, role = "worker", jobId = "10-12345",
+    leaderId = 10, coordinatorId = 25, epoch = 1, slot = 2,
+    status = "registered_no_motion", mainLength = 12,
+    branchLength = 4, branchSpacing = 3, tunnelMode = 1,
+}
+Remote.handleSwarm(25, SwarmProtocol.message("task_offer", {
+    jobId = "10-12345", coordinatorId = 25, epoch = 1,
+    workerId = 42, branchKey = "10-12345:3:left", z = 3, side = "left",
+}))
+assert(Session.load().assignedBranch == "10-12345:3:left")
+assert(Session.load().status == "assigned_no_motion")
+assert(sentMessages[5].message.type == "task_ack")
+assert(sentMessages[5].message.accepted == true)
+swarmSaved.status = "leave_pending"
+swarmSaved.leaveRequestId = "leave-42"
+Remote.handleSwarm(25, SwarmProtocol.message("leave_ack", {
+    jobId = swarmSaved.jobId, coordinatorId = 25, epoch = 1,
+    workerId = 42, requestId = "leave-42", accepted = true,
+}))
+assert(Session.load().active == false and Session.load().status == "left")
 
 os.getComputerID, os.getComputerLabel, os.epoch = oldId, oldLabel, oldEpoch
 os.queueEvent = oldQueueEvent

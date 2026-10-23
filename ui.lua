@@ -58,6 +58,7 @@ function ui.menu(title, items, options)
     local selected = math.max(1, math.min(options.selected or 1, #items))
     local offset = 0
     while true do
+        if options.onRefresh then options.onRefresh(items) end
         local width, height = size()
         local firstRow, footerRows = 3, 2
         local visible = math.max(1, height - firstRow - footerRows + 1)

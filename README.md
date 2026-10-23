@@ -2,11 +2,15 @@
 
 Modular [CC:Tweaked](https://tweaked.cc/) software for mining, route building, farming, and live monitoring with Minecraft turtles. The central turtle program is `main.lua`; a Pocket Computer or regular Computer can run `remote_monitor.lua` to watch turtles and issue commands over Rednet.
 
-**Current version:** v1.2.0 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
+**Current version:** v1.3.0 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
 
 [Magyar dokumentáció / Hungarian documentation](README_HU.md)
 
 > **Experimental features:** Area excavation, coordinate navigation, farming, task chains, ore scanning, automatic torch placement, and inventory-capacity prediction are still experimental. Test them in a safe area before leaving a turtle unattended.
+
+**Experimental shared branch mining:** Place leader turtle #1 in front of the deposit chest, facing the main tunnel. Queue helpers to its right, one block apart, with the same facing; confirm each slot locally (slot 2 is one block right, slot 3 two blocks right). The slot is not a GPS measurement. Open a shared job on #1, then manually claim coordinator status on the intended Computer or Pocket Computer's Commands page. Helpers join on their own screens. Once the coordinator heartbeat is present, #1 mines **only the main tunnel** and parks one block left of base. Finished branch points are published with acknowledgements. A helper with an assigned branch can then be started locally; the coordinator serializes traffic through the narrow trunk and shared dock while helpers may mine distinct branches concurrently. The helper returns to its slot after unloading and refuelling at the original chests.
+
+This first worker implementation is limited to **1×2/1×3 branches**; shared ore searching and torch placement are not enabled. Give helpers enough initial fuel (or fuel in slot 1) to reach the first service trip. A connection loss, uncertain move, or local stop keeps reservations and requires manual position correction/reconciliation; it does not trigger a blind return. A helper may withdraw a pending join only with a coordinator acknowledgement, or leave from its own slot when free; then the leader may close the advertisement once all helpers have left. The coordinator's Commands page also has a confirmed emergency stop, which halts all participants in place; it does not send them home. **Treat this as unverified in-game experimental code: test with two turtles in a disposable area before using valuable inventories or more workers.** A coordinator restart requires a new leader acknowledgement before further grants.
 
 ## Getting started
 

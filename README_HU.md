@@ -2,6 +2,12 @@
 
 [English documentation](README.md)
 
+## Közös munka – kísérleti párosítás
+
+Az 1-es turtle a leadóláda előtt, a főág felé néz; a segédek tőle jobbra, egymástól egy-egy blokkra, ugyanabba az irányba nézve állnak. A sorszámot a segéd saját menüjében kell helyben megerősíteni; ez nem GPS-mérés. Az 1-es turtle meghirdeti a munkát, majd a kiválasztott computer/tablet Parancsok oldalán kézzel elfogadod a koordinátori szerepet. A segédek a saját menüjükből csatlakoznak. Élő koordinátorjel után az 1-es **csak a főágat** ássa ki, a bázistól balra egy blokkra félreáll, és visszaigazolással hirdeti a kész ághelyeket. A kiosztott segédet helyben indíthatod; a koordinátor a szűk főfolyosó és a közös láda forgalmát sorosítja, miközben a segédek külön oldalágakon párhuzamosan dolgozhatnak. Lepakolás/tankolás után a segéd visszatér saját sorhelyére.
+
+Az első változat csak **1×2/1×3 oldalágat** kezel; közös módban érckeresés és fáklyázás még nincs. A segédeknek az első ládás kiszolgálásig elegendő kezdő fuel kell (vagy éghető tárgy az 1-es slotban). Kapcsolatvesztés, bizonytalan lépés vagy helyi leállítás esetén a foglalások megmaradnak, nincs vak hazatérés: a valós pozíciót a turtle-n kell javítani és a koordinátoron jóváhagyni. A függő jelentkezés csak koordinátori visszaigazolással vonható vissza; a szabad segéd a saját sorhelyéről kiléphet, majd az 1-es turtle lezárhatja a munkát, ha minden segéd kilépett. A kezelő Parancsok oldalán a megerősített közös vészleállítás minden résztvevőt helyben állít meg, nem indít közös hazatérést. **Játékon belül még nem ellenőrzött, kísérleti rendszer:** először két turtle-lel, veszteségmentesen tesztelhető területen próbáld. A koordinátor újraindítása után új vezetői visszaigazolás kell a további engedélyekhez.
+
 ## V2 kiserleti funkciok
 
 A `main` menuben a feladatlapok szerkeszthetok: a nyilakkal/kattintassal
@@ -34,7 +40,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.2.0**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.3.0**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 

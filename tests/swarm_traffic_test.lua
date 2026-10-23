@@ -1,0 +1,30 @@
+local Traffic = require("swarm_traffic")
+local state = {}
+local branch = "job:3:left"
+assert(Traffic.branchReady(state, branch))
+assert(Traffic.claimBranch(state, branch, 31))
+assert(Traffic.claimBranch(state, branch, 31))
+assert(not Traffic.claimBranch(state, branch, 32))
+local a = { x = 0, y = 0, z = 3 }
+local b = { x = 1, y = 0, z = 3 }
+assert(Traffic.reserveCell(state, a, 31))
+assert(not Traffic.reserveCell(state, a, 32))
+assert(not Traffic.releaseCell(state, "0,0,3", 31, a))
+assert(Traffic.reserveCell(state, b, 31))
+assert(Traffic.releaseCell(state, "0,0,3", 31, b))
+assert(Traffic.reserveDock(state, 31))
+assert(not Traffic.reserveDock(state, 32))
+assert(Traffic.reserveCorridor(state, "trunk:0-3", 31, "out"))
+assert(not Traffic.reserveCorridor(state, "trunk:0-3", 32, "home"))
+assert(not Traffic.reserveCorridor(state, "trunk:0-3", 31, "home"))
+assert(Traffic.markUncertain(state, 31))
+assert(not Traffic.reserveCell(state, { x = 2, y = 0, z = 3 }, 31))
+assert(not Traffic.reserveCorridor(state, "trunk:3-6", 31, "out"))
+assert(state.cells["1,0,3"] == "31")
+assert(state.branches[branch].owner == "31")
+assert(state.dockOwner == "31")
+assert(not Traffic.releaseCorridor(state, "trunk:0-3", 31, true))
+assert(state.corridors["trunk:0-3"].owner == "31")
+assert(not Traffic.releaseDock(state, 31, false))
+assert(Traffic.releaseDock(state, 31, true))
+return true

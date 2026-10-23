@@ -1,7 +1,7 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.2.0"
+local INSTALLER_VERSION = "v1.3.0"
 local localizationOk, Localization = pcall(require, "localization")
 -- A friss telepitesnel a lokalizacios modul meg nincs jelen.
 local bootstrapEnglish = {
@@ -131,6 +131,14 @@ local links = {
     version = { pastebinID = "", githubPath = "version.lua", fileName = "version.lua" },
     localization = { pastebinID = "", githubPath = "localization.lua", fileName = "localization.lua" },
     remoteprotocol = { pastebinID = "", githubPath = "remote_protocol.lua", fileName = "remote_protocol.lua" },
+    swarmgeometry = { pastebinID = "", githubPath = "swarm_geometry.lua", fileName = "swarm_geometry.lua" },
+    swarmsafety = { pastebinID = "", githubPath = "swarm_safety.lua", fileName = "swarm_safety.lua" },
+    swarmprotocol = { pastebinID = "", githubPath = "swarm_protocol.lua", fileName = "swarm_protocol.lua" },
+    swarmsession = { pastebinID = "", githubPath = "swarm_session.lua", fileName = "swarm_session.lua" },
+    swarmmenu = { pastebinID = "", githubPath = "swarm_menu.lua", fileName = "swarm_menu.lua" },
+    swarmcoordinator = { pastebinID = "", githubPath = "swarm_coordinator.lua", fileName = "swarm_coordinator.lua" },
+    swarmtraffic = { pastebinID = "", githubPath = "swarm_traffic.lua", fileName = "swarm_traffic.lua" },
+    swarmworker = { pastebinID = "", githubPath = "swarm_worker.lua", fileName = "swarm_worker.lua" },
     remote = { pastebinID = "", githubPath = "remote.lua", fileName = "remote.lua" },
     monitor = { pastebinID = "", githubPath = "remote_monitor.lua", fileName = "remote_monitor.lua" },
     startupturtle = { pastebinID = "", githubPath = "startup_turtle.lua", fileName = "startup.lua" },
@@ -140,25 +148,25 @@ local links = {
 local downloadOrder = {
     "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings", "request", "registry", "preview", "basedock", "setup",
     "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether", "farm", "chain", "chaineditor",
-    "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+    "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmcoordinator", "swarmworker", "remote", "main", "startupturtle", "downloader",
 }
 
 local componentGroups = {
     main = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
-        "nether", "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "remote", "main",
+        "nether", "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmworker", "remote", "main",
     },
-    branch = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "branch" },
+    branch = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "swarmgeometry", "swarmsafety", "swarmsession", "branch" },
     excavator = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
     nether = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "nether" },
     coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "request", "coordinatetask" },
     turtleinstall = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-        "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "remote", "main", "startupturtle", "downloader",
+        "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmworker", "remote", "main", "startupturtle", "downloader",
     },
-    monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "monitor", "startupmonitor", "downloader" },
+    monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "swarmgeometry", "swarmprotocol", "swarmtraffic", "swarmcoordinator", "monitor", "startupmonitor", "downloader" },
 }
 
 local function delTerm()

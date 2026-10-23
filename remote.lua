@@ -4,6 +4,9 @@ local Protocol = require("remote_protocol")
 local StateStore = require("state_store")
 local WorkEstimator = require("work_estimator")
 local WorkRegistry = require("work_registry")
+local SwarmProtocol = require("swarm_protocol")
+local SwarmSession = require("swarm_session")
+local SwarmGeometry = require("swarm_geometry")
 
 local remote = {}
 local opened = {}
@@ -182,6 +185,24 @@ function remote.snapshot()
         message.remainingActions, message.remainingMs = remainingEstimate(entry.kind, state)
     end
     if owner and owner.lastError then message.lastError = owner.lastError end
+    local swarm = SwarmSession.load()
+    if swarm and swarm.active then
+        message.swarm = {
+            role = swarm.role, jobId = swarm.jobId, slot = swarm.slot,
+            leaderId = swarm.leaderId, coordinatorId = swarm.coordinatorId,
+            epoch = swarm.epoch, status = swarm.status,
+            assignedBranch = swarm.assignedBranch,
+            coordinatorOnline = swarm.lastHeartbeatAt
+                and nowMs() - swarm.lastHeartbeatAt <= 6000 or false,
+        }
+        if swarm.role == "worker" and swarm.assignedBranch then
+            message.task = "Kozos oldalagat"
+            message.activity = swarm.status
+            message.position = swarm.pose
+            message.progressCurrent = swarm.branchProgress or 0
+            message.progressTotal = swarm.branchLength or 0
+        end
+    end
     local chain = StateStore.read("task_chain_state.txt")
     if registry and registry.task == "chain"
         and registry.status ~= "released"
@@ -202,6 +223,254 @@ function remote.publish(recipient)
     if recipient then return rednet.send(recipient, message, Protocol.STATUS) end
     rednet.broadcast(message, Protocol.STATUS)
     return true
+end
+
+local function publishSwarmOffer()
+    local session = SwarmSession.load()
+    if not session or not session.active then return end
+    if openModems() == 0 then return end
+    if session.role == "worker" and session.status == "join_pending" then
+        rednet.send(session.coordinatorId, SwarmProtocol.message("join_request", {
+            jobId = session.jobId, leaderId = session.leaderId,
+            coordinatorId = session.coordinatorId, epoch = session.epoch,
+            workerId = os.getComputerID(), slot = session.slot,
+            physicalConfirmed = true,
+        }), SwarmProtocol.CHANNEL)
+        return
+    end
+    if session.role == "worker" and session.status == "leave_pending" then
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("leave_request", {
+                jobId = session.jobId, epoch = session.epoch,
+                coordinatorId = session.coordinatorId,
+                workerId = os.getComputerID(),
+                requestId = session.leaveRequestId,
+            }), SwarmProtocol.CHANNEL)
+        return
+    end
+    if session.role == "worker" and session.status == "needs_reconcile" then
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("pose_correction", {
+                jobId = session.jobId, coordinatorId = session.coordinatorId,
+                epoch = session.epoch, workerId = os.getComputerID(),
+                pose = session.pose,
+            }), SwarmProtocol.CHANNEL)
+        return
+    end
+    if session.role == "worker" and session.status == "needs_attention" then
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("worker_attention", {
+                jobId = session.jobId, coordinatorId = session.coordinatorId,
+                epoch = session.epoch, workerId = os.getComputerID(),
+                reason = session.lastError,
+            }), SwarmProtocol.CHANNEL)
+        return
+    end
+    if session.role ~= "leader" then return end
+    if session.status == "close_pending" then
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("leader_close_request", {
+                jobId = session.jobId, epoch = session.epoch,
+                coordinatorId = session.coordinatorId,
+                leaderId = os.getComputerID(),
+                requestId = session.closeRequestId,
+            }), SwarmProtocol.CHANNEL)
+        return
+    end
+    rednet.broadcast(SwarmProtocol.message("job_offer", {
+        jobId = session.jobId, leaderId = session.leaderId,
+        coordinatorId = session.coordinatorId, epoch = session.epoch,
+        mainLength = session.mainLength,
+        branchLength = session.branchLength,
+        branchSpacing = session.branchSpacing,
+        tunnelMode = session.tunnelMode,
+    }), SwarmProtocol.CHANNEL)
+    if not session.coordinatorId then return end
+    local mined = StateStore.read("branch_miner_state.txt")
+    if type(mined) ~= "table" or mined.active ~= false
+        or mined.activity ~= "kesz" or type(mined.config) ~= "table"
+        or mined.config.swarmTrunkOnly ~= true
+        or mined.config.swarmJobId ~= session.jobId
+        or not mined.position or mined.position.x ~= -1
+        or mined.position.y ~= 0 or mined.position.z ~= 0
+        or (mined.mainCompleted or 0) < session.mainLength then return end
+    local z = session.publishZ or session.branchSpacing
+    if z > session.mainLength then return end
+    local side = session.publishSide or "left"
+    rednet.send(session.coordinatorId,
+        SwarmProtocol.message("branch_ready", {
+            jobId = session.jobId, leaderId = session.leaderId,
+            coordinatorId = session.coordinatorId, epoch = session.epoch,
+            z = z, side = side, mainCompleted = mined.mainCompleted,
+            leaderPose = { x = -1, y = 0, z = 0, heading = 0 },
+        }), SwarmProtocol.CHANNEL)
+end
+
+function remote.handleSwarm(sender, message)
+    if not SwarmProtocol.valid(message) then return end
+    if message.type == "job_offer" and sender ~= os.getComputerID()
+        and message.leaderId == sender then
+        SwarmSession.observeOffer(message)
+    elseif message.type == "coordinator_claim"
+        and message.leaderId == os.getComputerID() then
+        local ok, reason, state = SwarmSession.claimCoordinator(
+            message.jobId, sender)
+        rednet.send(sender, SwarmProtocol.message("coordinator_ack", {
+            jobId = message.jobId, leaderId = os.getComputerID(),
+            coordinatorId = sender, requestId = message.requestId,
+            accepted = ok, reason = reason,
+            epoch = state and state.epoch,
+            mainLength = state and state.mainLength,
+            branchLength = state and state.branchLength,
+            branchSpacing = state and state.branchSpacing,
+            tunnelMode = state and state.tunnelMode,
+        }), SwarmProtocol.CHANNEL)
+    elseif message.type == "join_ack"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        if state and state.role == "worker" and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and message.coordinatorId == sender
+            and state.epoch == message.epoch
+            and state.status == "join_pending" then
+            state.status = message.accepted and "registered_no_motion" or "join_rejected"
+            state.lastError = message.reason
+            SwarmSession.update(state)
+        end
+    elseif message.type == "coordinator_heartbeat" then
+        local state = SwarmSession.load()
+        if state and state.active and state.jobId == message.jobId
+            and state.leaderId == message.leaderId
+            and state.coordinatorId == sender
+            and message.coordinatorId == sender
+            and state.epoch == message.epoch then
+            local now = nowMs()
+            if now - (state.lastHeartbeatAt or 0) >= 2000 then
+                state.lastHeartbeatAt = now
+                SwarmSession.update(state)
+            end
+        end
+    elseif message.type == "swarm_stop" then
+        local state = SwarmSession.load()
+        if state and state.active and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and message.coordinatorId == sender
+            and state.epoch == message.epoch then
+            state.status = "emergency_stop"
+            state.lastError = "Kozos munka tavoli veszleallitas."
+            SwarmSession.update(state)
+        end
+    elseif message.type == "pose_reconcile_ack"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        if state and state.role == "worker" and state.active
+            and state.status == "needs_reconcile"
+            and state.jobId == message.jobId
+            and state.coordinatorId == sender and state.epoch == message.epoch
+            and message.accepted == true then
+            state.status = message.status == "at_branch" and "at_branch"
+                or message.status == "assigned_no_motion"
+                    and "assigned_no_motion"
+                or message.status == "registered_no_motion"
+                    and "registered_no_motion" or "needs_attention"
+            if state.status ~= "needs_attention" then state.transit = nil end
+            state.navigation = {
+                pose = state.pose, path = {}, pending = nil, anchors = {},
+            }
+            state.lastError = nil
+            SwarmSession.update(state)
+        end
+    elseif message.type == "branch_ready_ack" then
+        local state = SwarmSession.load()
+        if state and state.active and state.role == "leader"
+            and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and message.coordinatorId == sender
+            and state.epoch == message.epoch
+            and message.accepted == true then
+            local z = state.publishZ or state.branchSpacing
+            local side = state.publishSide or "left"
+            if message.branchKey == SwarmGeometry.branchKey(state.jobId, z, side) then
+                if side == "left" then state.publishSide = "right"
+                else
+                    state.publishZ = z + state.branchSpacing
+                    state.publishSide = "left"
+                end
+                SwarmSession.update(state)
+            end
+        end
+    elseif message.type == "task_offer"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        local accepted, reason = false, "Nincs fogadhato segedmunkamenet."
+        if state and state.active and state.role == "worker"
+            and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and message.coordinatorId == sender
+            and state.epoch == message.epoch
+            and (state.status == "registered_no_motion"
+                or state.status == "assigned_no_motion")
+            and type(message.z) == "number"
+            and type(state.mainLength) == "number"
+            and type(state.branchSpacing) == "number"
+            and state.branchSpacing > 0
+            and message.z >= 1 and message.z <= state.mainLength
+            and message.z % state.branchSpacing == 0
+            and message.branchKey == SwarmGeometry.branchKey(
+                state.jobId, message.z, message.side)
+            and (not state.assignedBranch
+                or state.assignedBranch == message.branchKey) then
+            state.assignedBranch = message.branchKey
+            state.assignmentZ, state.assignmentSide = message.z, message.side
+            state.status = "assigned_no_motion"
+            accepted, reason = SwarmSession.update(state)
+        end
+        rednet.send(sender, SwarmProtocol.message("task_ack", {
+            jobId = message.jobId, epoch = message.epoch,
+            coordinatorId = sender, workerId = os.getComputerID(),
+            branchKey = message.branchKey, accepted = accepted,
+            reason = reason,
+        }), SwarmProtocol.CHANNEL)
+    elseif message.type == "leave_ack"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        if state and state.active and state.role == "worker"
+            and state.status == "leave_pending"
+            and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and state.epoch == message.epoch
+            and state.leaveRequestId == message.requestId
+            and message.accepted == true then
+            state.active, state.status = false, "left"
+            SwarmSession.update(state)
+        end
+    elseif message.type == "leader_close_ack"
+        and message.leaderId == os.getComputerID() then
+        local state = SwarmSession.load()
+        if state and state.active and state.role == "leader"
+            and state.status == "close_pending"
+            and state.jobId == message.jobId
+            and state.coordinatorId == sender
+            and state.epoch == message.epoch
+            and state.closeRequestId == message.requestId
+            and message.accepted == true then
+            state.active, state.status = false, "closed"
+            SwarmSession.update(state)
+            rednet.broadcast(SwarmProtocol.message("job_closed", {
+                jobId = state.jobId, leaderId = os.getComputerID(),
+                epoch = state.epoch,
+            }), SwarmProtocol.CHANNEL)
+        end
+    elseif message.type == "job_closed" and message.leaderId == sender then
+        SwarmSession.forgetOffer(message.jobId)
+        local state = SwarmSession.load()
+        if state and state.active and state.role == "worker"
+            and state.status == "join_pending"
+            and state.jobId == message.jobId and state.leaderId == sender then
+            state.active, state.status = false, "closed_before_join"
+            SwarmSession.update(state)
+        end
+    end
 end
 
 local function acknowledge(recipient, command, requestId, accepted, reason)
@@ -254,6 +523,7 @@ function remote.run()
         local event, p1, message, messageProtocol = os.pullEventRaw()
         if event == "timer" and p1 == timer then
             remote.publish()
+            publishSwarmOffer()
             timer = os.startTimer(Protocol.HEARTBEAT_INTERVAL)
         elseif event == "rednet_message" and messageProtocol == Protocol.CONTROL
             and Protocol.valid(message, "discover") then
@@ -261,6 +531,8 @@ function remote.run()
         elseif event == "rednet_message" and messageProtocol == Protocol.CONTROL
             and Protocol.valid(message, "command") then
             remote.handleCommand(p1, message)
+        elseif event == "rednet_message" and messageProtocol == SwarmProtocol.CHANNEL then
+            remote.handleSwarm(p1, message)
         elseif event == "peripheral" or event == "peripheral_detach" then
             openModems()
         end
