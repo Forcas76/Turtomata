@@ -20,6 +20,7 @@ for name in (
     "swarm_coordinator_test.lua",
     "swarm_traffic_test.lua",
     "swarm_worker_test.lua",
+    "swarm_menu_test.lua",
     "localization_test.lua",
     "base_dock_test.lua",
     "base_dock_modded_test.lua",

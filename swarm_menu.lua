@@ -6,6 +6,12 @@ local Store = require("state_store")
 local Stations = require("station_registry")
 local menu = {}
 
+-- A hianyzo allapotmezo Lua-ban nil, amit az ui.menu alapbol engedelyezettnek
+-- tekint. A felteteles menupontoknak mindig valodi boolean erteket adjunk.
+local function available(value)
+    return value and true or false
+end
+
 local function notice(lines, kind)
     ui.message("KOZOS MUNKA - KISERLETI", lines, kind)
     ui.waitForEnter()
@@ -166,47 +172,47 @@ function menu.run()
             { label = "Csatlakozas (seged)", value = "join",
                 enabled = (not state or not state.active) and #offers > 0 },
             { label = "Foag asasa / folytatasa", value = "trunk",
-                enabled = state and state.active and state.role == "leader"
+                enabled = available(state and state.active and state.role == "leader"
                     and not state.stationCheckPending
                     and state.coordinatorId and linkAlive
                     and ((not savedTrunk and not activeSoloJob())
-                        or (savedTrunk and branch.active)) },
+                        or (savedTrunk and branch.active))) },
             { label = "Kiosztott oldalagat asasa", value = "worker",
-                enabled = state and state.active and state.role == "worker"
+                enabled = available(state and state.active and state.role == "worker"
                     and not state.stationCheckPending
                     and state.assignedBranch and not state.transit
                     and linkAlive
                     and (state.status == "assigned_no_motion"
-                        or state.status == "at_branch") },
+                        or state.status == "at_branch")) },
             { label = "Allapot", value = "status" },
             { label = "Sajat leadolada regisztralasa", value = "station",
-                enabled = state and state.active and not state.transit
+                enabled = available(state and state.active and not state.transit
                     and not state.stationCheckPending
                     and not state.stationRegistration
                     and (state.role == "worker"
                         and state.status == "registered_no_motion"
                         and not state.assignedBranch
-                        or state.role == "leader" and not savedTrunk) },
+                        or state.role == "leader" and not savedTrunk)) },
             { label = "Ladaellenorzes iranyanak tisztazasa", value = "station_fix",
-                enabled = state and state.active and state.stationCheckPending },
+                enabled = available(state and state.active and state.stationCheckPending) },
             { label = "Pozicio javitasa", value = "correct",
-                enabled = state and state.active and state.role == "worker"
-                    and state.status ~= "join_pending" },
+                enabled = available(state and state.active and state.role == "worker"
+                    and state.status ~= "join_pending") },
             { label = "Seged kilepese", value = "leave",
-                enabled = state and state.active and state.role == "worker"
+                enabled = available(state and state.active and state.role == "worker"
                     and state.status == "registered_no_motion"
                     and not state.assignedBranch and not state.transit
-                    and linkAlive },
+                    and linkAlive) },
             { label = "Jelentkezes visszavonasa", value = "cancel_join",
-                enabled = state and state.active and state.role == "worker"
-                    and state.status == "join_pending" and linkAlive },
+                enabled = available(state and state.active and state.role == "worker"
+                    and state.status == "join_pending" and linkAlive) },
             { label = "Elutasitott jelentkezes torlese", value = "reject_clear",
-                enabled = state and state.active and state.role == "worker"
-                    and state.status == "join_rejected" },
+                enabled = available(state and state.active and state.role == "worker"
+                    and state.status == "join_rejected") },
             { label = "Hirdetes lezarasa", value = "close",
-                enabled = state and state.active and state.role == "leader"
+                enabled = available(state and state.active and state.role == "leader"
                     and state.status ~= "close_pending"
-                    and not (savedTrunk and branch.active) },
+                    and not (savedTrunk and branch.active)) },
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return
@@ -231,7 +237,9 @@ function menu.run()
                 return { action = "start_trunk", session = state }
             end
         elseif choice == "worker" then
-            if ui.confirm("SEGED OLDALAG - KISERLETI", {
+            if not state or not state.assignedBranch then
+                notice("Meg nincs kiosztott oldalagad. Varj a kezelo kiosztasara.")
+            elseif ui.confirm("SEGED OLDALAG - KISERLETI", {
                 "Ag: " .. state.assignedBranch,
                 "Csak 1x2/1x3; nincs erc/faklya.",
                 "Folyoso es dokk: kezelo foglalja.",
