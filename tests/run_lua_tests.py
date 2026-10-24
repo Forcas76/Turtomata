@@ -31,6 +31,7 @@ for name in (
     "job_setup_test.lua",
     "remote_test.lua",
     "remote_offer_test.lua",
+    "developer_reset_test.lua",
     "ui_secret_test.lua",
     "downloader_update_test.lua",
 ):

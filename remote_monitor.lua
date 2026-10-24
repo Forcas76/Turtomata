@@ -7,6 +7,7 @@ local SwarmEstimator = require("swarm_estimator")
 local StateStore = require("state_store")
 local Version = require("version")
 local Settings = require("settings")
+local DeveloperReset = require("developer_reset")
 local Localization = require("localization")
 local monitorSettings = Settings.load()
 Localization.setLanguage(monitorSettings.general.language)
@@ -27,6 +28,8 @@ local pageIndex = 1
 local page = pages[pageIndex]
 local commandSelected = 1
 local settingsSelected = monitorSettings.general.language == "en" and 2 or 1
+local settingsDeveloper = false
+local resetArmed = false
 local swarmSelected = 1
 local armedReconcile = nil
 local armedCommand = nil
@@ -118,6 +121,7 @@ local function swarmHeartbeat()
     rednet.broadcast(SwarmProtocol.message("coordinator_heartbeat", {
         jobId = state.jobId, leaderId = state.leaderId,
         coordinatorId = os.getComputerID(), epoch = state.epoch,
+        recoveryReview = state.recoveryReview == true,
     }), SwarmProtocol.CHANNEL)
 end
 
@@ -183,6 +187,7 @@ local commands = {
     { label = "Adatok frissitese", command = "status", confirm = false },
     { label = "Kozos munka kezelese (kiserleti)", command = "swarm_claim", confirm = true },
     { label = "Kozos munka veszleallas", command = "swarm_stop", confirm = true },
+    { label = "Kozos munka ujracsatlakoztatasa", command = "swarm_resume", confirm = true },
     { label = "Regi kozos mentes eldobasa", command = "swarm_legacy_clear", confirm = true },
     { label = "Lepakolas es folytatas", command = "service", confirm = true },
     { label = "Agvizsgalat kihagyasa (kiserleti)",
@@ -262,6 +267,11 @@ local function activateCommand()
     if item.command == "swarm_stop" then
         local ok, reason = SwarmCoordinator.emergencyStop()
         feedback = ok and "Veszleallas mentve; a turtle-k helyben megallnak."
+            or tostring(reason)
+        if ok then swarmHeartbeat() end
+    elseif item.command == "swarm_resume" then
+        local ok, reason = SwarmCoordinator.resumeStopped()
+        feedback = ok and "Ujra csatlakoztatva; minden segednel pozicioegyeztetes kell."
             or tostring(reason)
         if ok then swarmHeartbeat() end
     elseif item.command == "swarm_legacy_clear" then
@@ -687,12 +697,30 @@ local function renderSettingsBody()
     print(clip("TURTOMATA " .. Version.label .. " | " .. tr("BEALLITASOK"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
-    print(tr("Nyelv / Language"))
+    print(tr(settingsDeveloper and "Fejlesztoi eszkozok"
+        or "Nyelv / Language"))
     print("")
-    local languages = Localization.languages()
-    for index, value in ipairs(languages) do
-        term.setTextColor(index == settingsSelected and colors.yellow or colors.white)
-        print(clip((index == settingsSelected and "> " or "  ") .. tr(value.label), width))
+    if settingsDeveloper then
+        term.setTextColor(colors.yellow)
+        print(clip("> " .. tr("Teljes helyi adatreset"), width))
+        print("")
+        term.setTextColor(colors.red)
+        print(clip(resetArmed and "ENTER ujra = VEGLEGES TORLES"
+            or "Beallitasok es munkamentesek torlodnek.", width))
+        print(clip("Programfajlok es startup megmaradnak.", width))
+        print(clip("Backspace = vissza", width))
+        if feedback ~= "" then print(clip(feedback, width)) end
+    else
+        local languages = Localization.languages()
+        for index, value in ipairs(languages) do
+            term.setTextColor(index == settingsSelected and colors.yellow or colors.white)
+            print(clip((index == settingsSelected and "> " or "  ")
+                .. tr(value.label), width))
+        end
+        print("")
+        term.setTextColor(settingsSelected == 3 and colors.yellow or colors.white)
+        print(clip((settingsSelected == 3 and "> " or "  ")
+            .. tr("Fejlesztoi eszkozok"), width))
     end
     term.setTextColor(colors.lightGray)
     term.setCursorPos(1, height)
@@ -1030,6 +1058,7 @@ while true do
     elseif event == "key" then
         if p1 == keys.q then break
         elseif p1 == keys.left then
+            settingsDeveloper, resetArmed = false, false
             statusDetail = false
             statusInventoryView = false
             statusErrorView = false
@@ -1037,6 +1066,7 @@ while true do
             page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.right then
+            settingsDeveloper, resetArmed = false, false
             statusDetail = false
             statusInventoryView = false
             statusErrorView = false
@@ -1052,7 +1082,9 @@ while true do
                 commandSelected = math.max(1, commandSelected - 1)
                 armedCommand = nil
             elseif page == "settings" then
-                settingsSelected = math.max(1, settingsSelected - 1)
+                if not settingsDeveloper then
+                    settingsSelected = math.max(1, settingsSelected - 1)
+                end
             elseif page == "swarm" then
                 swarmSelected = math.max(1, swarmSelected - 1)
                 armedReconcile = nil
@@ -1066,7 +1098,9 @@ while true do
                 commandSelected = math.min(#commands, commandSelected + 1)
                 armedCommand = nil
             elseif page == "settings" then
-                settingsSelected = math.min(#Localization.languages(), settingsSelected + 1)
+                if not settingsDeveloper then
+                    settingsSelected = math.min(3, settingsSelected + 1)
+                end
             elseif page == "swarm" then
                 swarmSelected = math.min(#orderedSwarmWorkers(SwarmCoordinator.load()),
                     swarmSelected + 1)
@@ -1099,10 +1133,26 @@ while true do
                 statusInventoryView = false
             end
         elseif p1 == keys.enter and page == "settings" then
-            local selectedLanguage = Localization.languages()[settingsSelected]
-            monitorSettings.general.language = selectedLanguage.code
-            Settings.save(monitorSettings)
-            Localization.setLanguage(selectedLanguage.code)
+            if settingsDeveloper then
+                if resetArmed then
+                    local ok, reason = DeveloperReset.run()
+                    if ok then os.reboot()
+                    else feedback = tostring(reason) end
+                    resetArmed = false
+                else resetArmed = true end
+            elseif settingsSelected == 3 then
+                settingsDeveloper = true
+                resetArmed = false
+                feedback = ""
+            else
+                local selectedLanguage = Localization.languages()[settingsSelected]
+                monitorSettings.general.language = selectedLanguage.code
+                Settings.save(monitorSettings)
+                Localization.setLanguage(selectedLanguage.code)
+            end
+        elseif (p1 == keys.backspace or p1 == keys.escape)
+            and page == "settings" then
+            settingsDeveloper, resetArmed = false, false
         elseif p1 == keys.enter and page == "swarm" then
             approveSelectedPose()
         end
@@ -1117,12 +1167,25 @@ while true do
             end
         elseif page == "settings" then
             local languageIndex = p3 - 4
-            local selectedLanguage = Localization.languages()[languageIndex]
+            local selectedLanguage = not settingsDeveloper
+                and Localization.languages()[languageIndex]
             if selectedLanguage then
                 settingsSelected = languageIndex
                 monitorSettings.general.language = selectedLanguage.code
                 Settings.save(monitorSettings)
                 Localization.setLanguage(selectedLanguage.code)
+            elseif not settingsDeveloper and p3 == 8 then
+                settingsSelected = 3
+                settingsDeveloper = true
+                resetArmed = false
+                feedback = ""
+            elseif settingsDeveloper and p3 == 5 then
+                if resetArmed then
+                    local ok, reason = DeveloperReset.run()
+                    if ok then os.reboot()
+                    else feedback = tostring(reason) end
+                    resetArmed = false
+                else resetArmed = true end
             end
         elseif page == "status" and statusDetail then
             if statusErrorView then

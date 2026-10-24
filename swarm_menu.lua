@@ -194,13 +194,18 @@ function menu.run()
             and os.epoch and os.epoch("utc") - state.lastHeartbeatAt <= 6000
         local choice = ui.menu("KOZOS MUNKA - KISERLETI", {
             { label = "Csatlakozas (seged)", value = "join",
-                enabled = (not state or not state.active) and #offers > 0 },
+                enabled = available(not state or not state.active) },
             { label = "Foag asasa / folytatasa", value = "trunk",
                 enabled = available(state and state.active and state.role == "leader"
                     and not state.stationCheckPending
                     and state.coordinatorId and linkAlive
                     and ((not savedTrunk and not activeSoloJob())
                         or (savedTrunk and branch.active))) },
+            { label = "Vezeto poziciojanak igazolasa", value = "leader_reconcile",
+                enabled = available(state and state.active
+                    and state.role == "leader" and not state.assignedBranch
+                    and state.status == "needs_reconcile"
+                    and linkAlive) },
             { label = "Allapot", value = "status" },
             { label = "Sajat leadolada regisztralasa", value = "station",
                 enabled = available(state and state.active and not state.transit
@@ -217,11 +222,20 @@ function menu.run()
                     and (state.role == "worker" or state.role == "leader"
                         and state.assignedBranch)
                     and state.status ~= "join_pending") },
+            { label = "Seged folytatasa / egyeztetese", value = "worker_resume",
+                enabled = available(state and state.active
+                    and state.role == "worker" and linkAlive
+                    and (state.status == "needs_attention"
+                        or state.status == "needs_reconcile"
+                        or state.status == "emergency_stop")) },
             { label = "Seged kilepese", value = "leave",
                 enabled = available(state and state.active and state.role == "worker"
                     and state.status == "registered_no_motion"
                     and not state.assignedBranch and not state.transit
                     and linkAlive) },
+            { label = "Kilepes allapota", value = "leave_status",
+                enabled = available(state and state.active and state.role == "worker"
+                    and state.status == "leave_pending") },
             { label = "Jelentkezes visszavonasa", value = "cancel_join",
                 enabled = available(state and state.active and state.role == "worker"
                     and state.status == "join_pending" and linkAlive) },
@@ -254,6 +268,26 @@ function menu.run()
             }, "ENTER = foag inditasa") then
                 return { action = "start_trunk", session = state }
             end
+        elseif choice == "leader_reconcile" then
+            local pose = branch and branch.position or { x = 0, y = 0, z = 0 }
+            local lines = {
+                string.format("Mentett hely: %s,%s,%s h%s",
+                    tostring(pose.x), tostring(pose.y), tostring(pose.z),
+                    tostring(branch and branch.heading or 0)),
+                "Ellenorizd a valos helyet es iranyt.",
+                "Az igazolas nem mozgatja a turtle-t.",
+            }
+            if branch and branch.navigation and branch.navigation.pending then
+                lines[#lines + 1] = "Fuggo fizikai lepes: kulonosen ellenorizd!"
+            end
+            if ui.confirm("FOAG HELYZET IGAZOLASA", lines,
+                "ENTER = hely egyezik a mentessel") then
+                state.status = "coordinated"
+                state.lastError = nil
+                local ok, reason = Session.update(state)
+                notice(ok and "Hely igazolva; a foag folytathato."
+                    or tostring(reason), ok and nil or "error")
+            end
         elseif choice == "station" then registerLocalStation(state)
         elseif choice == "station_fix" then
             if ui.confirm("IRANY HELYSZINI ELLENORZESE", {
@@ -267,6 +301,20 @@ function menu.run()
                     or tostring(reason), ok and nil or "error")
             end
         elseif choice == "correct" then correctPose(state)
+        elseif choice == "worker_resume" then
+            notice({
+                "A folytatashoz igazold a valos poziciot.",
+                "A kezelo eszkozon ezt kulon jovahagyjak.",
+                "Addig a turtle nem indul el.",
+            })
+            correctPose(state)
+        elseif choice == "leave_status" then
+            notice({
+                "Kilepesi keres ujrakuldese automatikus.",
+                "Kezelo: " .. tostring(state.coordinatorId),
+                "Kapcsolat: " .. (linkAlive and "elerheto" or "nem elerheto"),
+                "ACK utan a seged ujra csatlakozhat.",
+            })
         elseif choice == "leave" or choice == "cancel_join" then
             if ui.confirm("SEGED KILEP", {
                 "Csak sajat sorhelyen, mozgas nelkul.",
@@ -309,6 +357,7 @@ function menu.run()
                 "Ag: " .. tostring(state.assignedBranch or "nincs"),
                 "Lada: " .. (state.stationRegistered and "regisztralva"
                     or state.stationRegistration and "ACK-ra var" or "nincs"),
+                "Hiba: " .. tostring(state.lastError or "nincs"),
             } or { "Nincs helyi szinkronmunka.",
                 "Lathato ajanlatok: " .. #offers })
         end

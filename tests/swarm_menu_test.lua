@@ -34,6 +34,7 @@ end
 
 menu.run()
 assert(enabled("worker") == nil)
+assert(enabled("join") == true)
 assert(enabled("trunk") == false)
 assert(enabled("station") == false)
 

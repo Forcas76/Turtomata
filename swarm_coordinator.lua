@@ -22,6 +22,25 @@ function coordinator.emergencyStop()
     return Store.write(FILE, value)
 end
 
+function coordinator.resumeStopped()
+    local value = coordinator.load()
+    if not confirmedThisRun or not value or not value.active
+        or not value.stopped then
+        return false, "Nincs visszaigazolt, leallitott kozos munka."
+    end
+    -- Megszakitas utan a regi pozicio es folyosofoglalas nem bizonyitek.
+    for id, worker in pairs(value.workers or {}) do
+        worker.status = "uncertain"
+        worker.lastError = "Ujrainditas utan helyszini pozicioegyeztetes kell."
+        Traffic.markUncertain(value, tonumber(id))
+    end
+    Scheduler.pruneQueue(value)
+    value.stopped = false
+    value.recoveryReview = true
+    value.status = "registration_only"
+    return Store.write(FILE, value)
+end
+
 function coordinator.load()
     local value = Store.read(FILE)
     return type(value) == "table" and value.version == 2 and value or nil
@@ -63,9 +82,11 @@ function coordinator.claimAcknowledged(message, ownId)
         or (os.epoch and os.epoch("utc") or 0)
     value.leaderTravel = value.leaderTravel or "forward"
     Stations.ensure(value)
-    local reserved, reserveReason = Traffic.reserveCell(value,
-        { x = 0, y = 0, z = 0 }, message.leaderId)
-    if not reserved then return false, reserveReason end
+    if not (current and current.active) then
+        local reserved, reserveReason = Traffic.reserveCell(value,
+            { x = 0, y = 0, z = 0 }, message.leaderId)
+        if not reserved then return false, reserveReason end
+    end
     local ok, reason = Store.write(FILE, value)
     if ok then confirmedThisRun = true end
     return ok, reason
@@ -124,8 +145,14 @@ function coordinator.registerWorker(message, sender)
         or message.leaderId ~= value.leaderId or message.workerId ~= sender then
         return false, "Idegen vagy regi munkamenet."
     end
-    if value.leftWorkers and value.leftWorkers[tostring(sender)] then
-        return false, "Ez a turtle mar visszavonta a jelentkezest."
+    local oldDeparture = value.leftWorkers and value.leftWorkers[tostring(sender)]
+    if oldDeparture then
+        local oldJoin = type(oldDeparture) == "table"
+            and oldDeparture.joinRequestId or nil
+        if type(message.joinRequestId) ~= "string"
+            or message.joinRequestId == oldJoin then
+            return false, "Regi jelentkezes; indits uj csatlakozast a turtle-n."
+        end
     end
     local slot = message.slot
     if type(slot) ~= "number" or slot <= 1 or slot ~= math.floor(slot)
@@ -148,6 +175,8 @@ function coordinator.registerWorker(message, sender)
         slot = slot, status = "registered_no_motion",
         registeredAt = os.epoch and os.epoch("utc") or 0,
     }
+    value.workers[tostring(sender)].joinRequestId = message.joinRequestId
+    if value.leftWorkers then value.leftWorkers[tostring(sender)] = nil end
     local ok, reason = Store.write(FILE, value)
     return ok, reason, value
 end
@@ -827,14 +856,20 @@ function coordinator.leaveWorker(message, sender)
         return false, "Idegen kilepesi keres."
     end
     local id = tostring(sender)
-    if value.leftWorkers and value.leftWorkers[id] == message.requestId then
+    if value.leftWorkers and
+        (value.leftWorkers[id] == message.requestId
+            or type(value.leftWorkers[id]) == "table"
+                and value.leftWorkers[id].requestId == message.requestId) then
         return true
     end
     local worker = value.workers and value.workers[id]
     if not worker then
         -- A join ACK elveszhetett: a kesobbi join uzeneteket is tiltsuk.
         value.leftWorkers = value.leftWorkers or {}
-        value.leftWorkers[id] = message.requestId
+        value.leftWorkers[id] = {
+            requestId = message.requestId,
+            joinRequestId = message.joinRequestId,
+        }
         return Store.write(FILE, value)
     end
     if worker.status ~= "registered_no_motion"
@@ -848,10 +883,21 @@ function coordinator.leaveWorker(message, sender)
         or pose.heading ~= 0 then
         return false, "A seged nincs a sajat sorhelyen."
     end
+    local station = value.stations and value.stations[Stations.id(worker.slot)]
+    if station and station.lease then
+        return false, "A seged ladajat meg masik turtle hasznalja."
+    end
+    if station then
+        station.verified, station.status = false, "unknown"
+        station.lastError = "A tulajdonos kilepett; uj helyszini ellenorzes kell."
+    end
     value.cells[Geometry.cellKey(slotPose)] = nil
     value.workers[id] = nil
     value.leftWorkers = value.leftWorkers or {}
-    value.leftWorkers[id] = message.requestId
+    value.leftWorkers[id] = {
+        requestId = message.requestId,
+        joinRequestId = worker.joinRequestId,
+    }
     return Store.write(FILE, value)
 end
 

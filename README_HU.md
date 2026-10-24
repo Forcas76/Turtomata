@@ -2,6 +2,22 @@
 
 [English documentation](README.md)
 
+**v1.5.3 – közös munka helyreállítása:** vészleállítás után a kezelő eszközön ismét
+fel kell venni a vezetőt, ha a kezelő újraindult, majd a Parancsok oldalon a
+`Közös munka újracsatlakoztatása` parancsot kell választani. A segédek a
+`Félbehagyott munka → Közös munka folytatása → Segéd folytatása / egyeztetése`
+menüben igazolják a valós pozíciójukat; a kezelőn ezt külön jóvá kell hagyni.
+A vezető a főág mentését az `Állapot / folytatás` menüből indíthatja újra, ha a
+kezelő élő jele visszatért. Szabad, saját sorhelyén álló segéd kilépésekor a
+kezelő visszaigazolását meg kell várni; utána újra jelentkezhet ugyanabba a
+munkába. Elutasított kilépésnél a pontos ok megjelenik a segéd állapotában.
+
+A `Beállítások → Fejlesztői eszközök → Teljes helyi adatreset` törli a helyi
+beállításokat, érclistát, munkamentéseket, közös munkamenetet, koordinátor
+állapotát, downloader tokent/beállítást és az indítási naplót. Az eszköz
+újraindul; a programfájlok és a startup megmaradnak. Új közös munka előtt
+ellenőrizni kell a turtle-k tényleges helyét.
+
 ## Közös branch mining – kísérleti
 
 Indítás: `Branch mining → Branch 1×2/1×3 → Közös → Új munka (vezető) → feladatlap → Áttekintés / indítás`. A közös mód ugyanazon a feladatlapon állítja a főágat, oldalágat, fáklyázást, érckeresést, inventoryt és lepakolást. Az 1-es turtle a leadóláda előtt, a főág felé néz; a segédek tőle jobbra, azonos irányba nézve sorakoznak. Az 1-es meghirdeti a munkát; a kiválasztott computer/tablet `Parancsok` oldalán a `Közös munka kezelése` parancsot kétszer kiválasztva elfogadod a koordinátori szerepet. A főág ásása az élő jel után automatikusan indul. Segéd csatlakoztatása: `Branch mining → azonos 1×2/1×3 mód → Közös → Csatlakozás (segéd)`, majd a tényleges sorhely sorszámának helyi megerősítése. A sorszám nem GPS-mérés.
@@ -70,7 +86,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.5.2**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.5.3**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 

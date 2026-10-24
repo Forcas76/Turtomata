@@ -2,7 +2,11 @@
 
 Modular [CC:Tweaked](https://tweaked.cc/) software for mining, route building, farming, and live monitoring with Minecraft turtles. The central turtle program is `main.lua`; a Pocket Computer or regular Computer can run `remote_monitor.lua` to watch turtles and issue commands over Rednet.
 
-**Current version:** v1.5.2 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
+**Current version:** v1.5.3 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
+
+After an emergency stop, reclaim the leader on the coordinator if it restarted, then choose **Reconnect shared job** on the Commands page. Each helper verifies its real position in **Saved job → Shared job → Resume / reconcile helper**; approve it on the coordinator before movement resumes. The leader resumes its saved trunk from **Status / resume** once the coordinator heartbeat returns. A helper can leave only while idle at its own starting slot. After the coordinator acknowledges the departure, it can join the same job again. A rejected leave request now shows its reason.
+
+**Settings → Developer tools → Full local data reset** removes local settings, ore targets, saved jobs, shared sessions, coordinator state, downloader token/auth mode, update receipt, and the action log, then reboots. Program and startup files remain installed. Verify the physical turtle positions before creating another shared job.
 
 The saved-job menu is always openable. It includes an active shared job and explains when no valid resumable save exists. The monitor's status page shows a compact one-word activity per turtle; Enter opens the selected turtle's detail page, while an attached monitor keeps showing the list. Torch refills request only the missing count in slot 2. After a successful update, the downloader saves its version and UTC time in `.turtomata_update.txt` and waits for Enter acknowledgement.
 

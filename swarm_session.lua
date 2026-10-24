@@ -5,6 +5,7 @@ local session = {}
 
 local STATE_FILE = "swarm_session.txt"
 local OFFERS_FILE = "swarm_offers.txt"
+local joinSequence = 0
 local function copyConfig(value)
     return Store.clone and Store.clone(value) or value
 end
@@ -137,11 +138,15 @@ function session.join(offer, slot)
     if type(offer.workConfig) ~= "table" then
         return false, "Az ajanlatbol hianyzik a kozos munkabeallitas; frissitsd a resztvevoket."
     end
+    joinSequence = joinSequence + 1
     local value = {
         version = 2, active = true, role = "worker",
         jobId = offer.jobId, leaderId = offer.leaderId,
         coordinatorId = offer.coordinatorId, epoch = offer.epoch,
         slot = slot, pose = pose, status = "join_pending",
+        joinRequestId = tostring(os.getComputerID()) .. "-join-"
+            .. tostring(os.epoch and os.epoch("utc") or os.clock())
+            .. "-" .. tostring(joinSequence),
         mainLength = offer.mainLength,
         branchLength = offer.branchLength,
         branchSpacing = offer.branchSpacing,

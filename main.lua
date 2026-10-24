@@ -14,6 +14,7 @@ local ChainEditor = require("chain_editor")
 local Navigation = require("navigation")
 local SwarmSession = require("swarm_session")
 local SwarmMenu = require("swarm_menu")
+local DeveloperReset = require("developer_reset")
 
 local currentSettings = Settings.load()
 Localization.setLanguage(currentSettings.general.language)
@@ -254,6 +255,7 @@ local function settingsMenu()
             { label = "Faklyazas", value = "torches" },
             { label = "Erckereses", value = "ores" },
             { label = "Alapertekek visszaallitasa", value = "reset" },
+            { label = "Fejlesztoi eszkozok", value = "developer" },
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return end
@@ -277,6 +279,24 @@ local function settingsMenu()
                     currentSettings = value
                     Localization.setLanguage(currentSettings.general.language)
                 else ui.message("Hiba", reason, "error") ui.waitForEnter() end
+            end
+        elseif choice == "developer" then
+            local selected = ui.menu("FEJLESZTOI ESZKOZOK", {
+                { label = "Teljes helyi adatreset", value = "wipe" },
+                { label = "Vissza", value = "back" },
+            })
+            if selected == "wipe" and ui.confirm("TELJES ADATRESET", {
+                "Minden helyi beallitas, lista es mentes torlodik.",
+                "A kozos munka parositasa is elveszik.",
+                "A turtle fizikai helyet utana ellenorizni kell.",
+                "Programfajlok es startup megmaradnak.",
+            }, "ENTER = vegleges torles") then
+                local ok, reason = DeveloperReset.run()
+                ui.message(ok and "RESET KESZ" or "RESET HIBA",
+                    ok and "Ujrainditas az alapbeallitasokkal..."
+                        or tostring(reason), ok and nil or "error")
+                ui.waitForEnter()
+                if ok then os.reboot() end
             end
         end
     end

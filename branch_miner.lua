@@ -74,6 +74,8 @@ local function swarmLinkAlive()
         and not session.stationCheckPending
         and session.jobId == config.swarmJobId
         and session.status ~= "emergency_stop"
+        and session.status ~= "needs_reconcile"
+        and not session.stoppedByCoordinator
         and session.coordinatorId and session.lastHeartbeatAt
         and now - session.lastHeartbeatAt <= 6000
 end
@@ -1632,7 +1634,12 @@ end
 
 local function runMining()
     if config.swarmTrunkOnly and not swarmLinkAlive() then
-        printError("Nincs aktiv kezelojel; nem indulok el.")
+        runtime.lastError = "Nincs aktiv kezelojel; nem indulok el."
+        -- A korabbi aktiv mentes hibajat is pontosan meg kell orizni.
+        runtime.active = true
+        persistenceEnabled = true
+        saveState()
+        printError(runtime.lastError)
         return
     end
     persistenceEnabled = true
@@ -1891,7 +1898,13 @@ end
 
 local configured, configureError = pcall(configure)
 if not configured then
-    printError("Beallitasi hiba: " .. tostring(configureError))
+    runtime.lastError = "Beallitasi hiba: " .. tostring(configureError)
+    local saved = stateStore.read(STATE_FILE)
+    if type(saved) == "table" and saved.active then
+        saved.lastError = runtime.lastError
+        pcall(stateStore.write, STATE_FILE, saved)
+    end
+    printError(runtime.lastError)
 elseif config.launchExperimental then
     clearScreen()
     print("Terulet asas inditasa...")

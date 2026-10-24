@@ -126,6 +126,12 @@ Remote.handleSwarm(25, SwarmProtocol.message("swarm_stop", {
     jobId = leader.jobId, coordinatorId = 25, epoch = 1,
 }))
 assert(Session.load().status == "emergency_stop")
+assert(Session.load().stoppedByCoordinator == true)
+Remote.handleSwarm(25, SwarmProtocol.message("coordinator_heartbeat", {
+    jobId = leader.jobId, leaderId = 42, coordinatorId = 25, epoch = 1,
+    recoveryReview = true,
+}))
+assert(Session.load().status == "needs_reconcile")
 
 swarmSaved = {
     version = 2, active = true, role = "worker", jobId = "10-12345",
@@ -133,6 +139,14 @@ swarmSaved = {
     status = "registered_no_motion", mainLength = 12,
     branchLength = 4, branchSpacing = 3, tunnelMode = 1,
 }
+swarmSaved.status = "emergency_stop"
+swarmSaved.stoppedByCoordinator = true
+Remote.handleSwarm(25, SwarmProtocol.message("coordinator_heartbeat", {
+    jobId = swarmSaved.jobId, leaderId = 10,
+    coordinatorId = 25, epoch = 1, recoveryReview = true,
+}))
+assert(swarmSaved.status == "needs_reconcile")
+swarmSaved.status = "registered_no_motion"
 Remote.handleSwarm(25, SwarmProtocol.message("task_offer", {
     jobId = "10-12345", coordinatorId = 25, epoch = 1,
     workerId = 42, branchKey = "10-12345:3:left", z = 3, side = "left",
@@ -154,6 +168,14 @@ assert(swarmSaved.stationRegistered == "D02"
     and swarmSaved.stationRegistration == nil)
 swarmSaved.status = "leave_pending"
 swarmSaved.leaveRequestId = "leave-42"
+Remote.handleSwarm(25, SwarmProtocol.message("leave_ack", {
+    jobId = swarmSaved.jobId, coordinatorId = 25, epoch = 1,
+    workerId = 42, requestId = "leave-42", accepted = false,
+    reason = "A seged nincs a sorhelyen.",
+}))
+assert(Session.load().active and Session.load().status == "needs_attention")
+assert(Session.load().lastError == "A seged nincs a sorhelyen.")
+swarmSaved.status = "leave_pending"
 Remote.handleSwarm(25, SwarmProtocol.message("leave_ack", {
     jobId = swarmSaved.jobId, coordinatorId = 25, epoch = 1,
     workerId = 42, requestId = "leave-42", accepted = true,

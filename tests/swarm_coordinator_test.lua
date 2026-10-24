@@ -35,12 +35,31 @@ assert(not Coordinator.registerStation(stationRequest, 32))
 local cancelled = {
     jobId = request.jobId, coordinatorId = 25, epoch = 1,
     workerId = 35, requestId = "cancel-before-ack",
+    joinRequestId = "join-old",
 }
 assert(Coordinator.leaveWorker(cancelled, 35))
 assert(Coordinator.leaveWorker(cancelled, 35))
 assert(not Coordinator.registerWorker({
     jobId = request.jobId, leaderId = 10, coordinatorId = 25,
     epoch = 1, workerId = 35, slot = 5, physicalConfirmed = true,
+    joinRequestId = "join-old",
+}, 35))
+local freshJoin = {
+    jobId = request.jobId, leaderId = 10, coordinatorId = 25,
+    epoch = 1, workerId = 35, slot = 5, physicalConfirmed = true,
+    joinRequestId = "join-new",
+}
+assert(Coordinator.registerWorker(freshJoin, 35))
+assert(Coordinator.leaveWorker({
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 35, requestId = "leave-new",
+}, 35))
+assert(not Coordinator.registerWorker(freshJoin, 35))
+freshJoin.joinRequestId = "join-again"
+assert(Coordinator.registerWorker(freshJoin, 35))
+assert(Coordinator.leaveWorker({
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 35, requestId = "leave-again",
 }, 35))
 local conflict = {
     jobId = request.jobId, leaderId = 10, coordinatorId = 25,
@@ -213,6 +232,11 @@ assert(not Coordinator.closeLeader({
 }, 10))
 assert(Coordinator.emergencyStop())
 assert(Coordinator.load().stopped == true)
+assert(Coordinator.resumeStopped())
+assert(Coordinator.load().stopped == false)
+assert(Coordinator.load().recoveryReview == true)
+assert(Coordinator.load().workers["31"].status == "uncertain")
+assert(Coordinator.emergencyStop())
 assert(not Coordinator.requestTransit(transit, 32))
 assert(not Coordinator.noteBranchReady(ready, 10))
 

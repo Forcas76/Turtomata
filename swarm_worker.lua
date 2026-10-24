@@ -73,6 +73,8 @@ local function alive()
     return latest and latest.active and latest.jobId == state.jobId
         and latest.status ~= "emergency_stop"
         and latest.status ~= "needs_attention"
+        and latest.status ~= "needs_reconcile"
+        and not latest.stoppedByCoordinator
         and latest.coordinatorId == state.coordinatorId
         and latest.epoch == state.epoch
         and latest.lastHeartbeatAt

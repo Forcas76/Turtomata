@@ -276,7 +276,7 @@ local function publishSwarmOffer()
             jobId = session.jobId, leaderId = session.leaderId,
             coordinatorId = session.coordinatorId, epoch = session.epoch,
             workerId = os.getComputerID(), slot = session.slot,
-            physicalConfirmed = true,
+            physicalConfirmed = true, joinRequestId = session.joinRequestId,
         }), SwarmProtocol.CHANNEL)
         return
     end
@@ -287,6 +287,7 @@ local function publishSwarmOffer()
                 coordinatorId = session.coordinatorId,
                 workerId = os.getComputerID(),
                 requestId = session.leaveRequestId,
+                joinRequestId = session.joinRequestId,
             }), SwarmProtocol.CHANNEL)
         return
     end
@@ -426,6 +427,12 @@ function remote.handleSwarm(sender, message)
             and state.coordinatorId == sender
             and message.coordinatorId == sender
             and state.epoch == message.epoch then
+            if message.recoveryReview and state.stoppedByCoordinator then
+                state.stoppedByCoordinator = nil
+                state.status = "needs_reconcile"
+                state.lastError = "Ujrainditas utan a poziciot igazolni kell."
+                SwarmSession.update(state)
+            end
             local now = nowMs()
             if now - (state.lastHeartbeatAt or 0) >= 2000 then
                 state.lastHeartbeatAt = now
@@ -439,6 +446,7 @@ function remote.handleSwarm(sender, message)
             and message.coordinatorId == sender
             and state.epoch == message.epoch then
             state.status = "emergency_stop"
+            state.stoppedByCoordinator = true
             state.lastError = "Kozos munka tavoli veszleallitas."
             SwarmSession.update(state)
         end
@@ -555,9 +563,14 @@ function remote.handleSwarm(sender, message)
             and state.jobId == message.jobId
             and state.coordinatorId == sender
             and state.epoch == message.epoch
-            and state.leaveRequestId == message.requestId
-            and message.accepted == true then
-            state.active, state.status = false, "left"
+            and state.leaveRequestId == message.requestId then
+            if message.accepted == true then
+                state.active, state.status = false, "left"
+                state.lastError = nil
+            else
+                state.status = "needs_attention"
+                state.lastError = message.reason or "A kilepest a kezelo elutasitotta."
+            end
             SwarmSession.update(state)
         end
     elseif message.type == "leader_close_ack"
