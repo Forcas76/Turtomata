@@ -2,6 +2,8 @@
 local Store = require("state_store")
 local Traffic = require("swarm_traffic")
 local Geometry = require("swarm_geometry")
+local Stations = require("station_registry")
+local Scheduler = require("service_scheduler")
 local coordinator = {}
 local FILE = "swarm_coordinator.txt"
 local confirmedThisRun = false
@@ -56,12 +58,54 @@ function coordinator.claimAcknowledged(message, ownId)
         return false, "A kezelo allapota elter az uj visszaigazolastol."
     end
     value.status = value.stopped and "emergency_stop" or "registration_only"
+    Stations.ensure(value)
     local reserved, reserveReason = Traffic.reserveCell(value,
         { x = 0, y = 0, z = 0 }, message.leaderId)
     if not reserved then return false, reserveReason end
     local ok, reason = Store.write(FILE, value)
     if ok then confirmedThisRun = true end
     return ok, reason
+end
+
+function coordinator.registerStation(message, sender)
+    local value = coordinator.load()
+    if not confirmedThisRun or not value or not value.active
+        or value.stopped or value.closing
+        or message.jobId ~= value.jobId or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId
+        or message.workerId ~= sender
+        or type(message.requestId) ~= "string" then
+        return false, "Idegen vagy nem egyeztetett allomasjelentes."
+    end
+    local ok, reason, station = Stations.register(value, message.slot,
+        sender, message.chestName, message.physicalConfirmed)
+    -- Tipusvaltozasnal a regi allomast letiltva is tartosan elmentjuk.
+    local saved, saveReason = Store.write(FILE, value)
+    if not saved then return false, saveReason end
+    return ok, reason, station
+end
+
+function coordinator.reportStationIssue(message, sender)
+    local value = coordinator.load()
+    local worker = value and value.workers and value.workers[tostring(sender)]
+    local transit = worker and worker.transit
+    local station = value and value.stations and value.stations[message.stationId]
+    if not confirmedThisRun or not value or not value.active
+        or message.jobId ~= value.jobId or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId
+        or message.workerId ~= sender
+        or message.issue ~= "full" and message.issue ~= "blocked"
+        or not transit or transit.phase ~= "inbound"
+        or transit.requestId ~= message.requestId
+        or transit.stationId ~= message.stationId
+        or not station or not station.lease
+        or station.lease.workerId ~= sender
+        or station.lease.leaseId ~= message.leaseId then
+        return false, "Ervenytelen allomashiba-jelentes."
+    end
+    station.status = message.issue
+    station.lastError = message.reason
+    return Store.write(FILE, value)
 end
 
 function coordinator.registerWorker(message, sender)
@@ -116,6 +160,7 @@ function coordinator.markWorkerUncertain(workerId, reason)
     worker.status = "uncertain"
     worker.lastError = reason or "Kapcsolatvesztes vagy bizonytalan pozicio."
     Traffic.markUncertain(value, workerId)
+    Scheduler.pruneQueue(value)
     return Store.write(FILE, value)
 end
 
@@ -159,6 +204,7 @@ function coordinator.recordPoseCorrection(message, sender)
     }
     worker.status = "needs_reconcile"
     Traffic.markUncertain(value, sender)
+    Scheduler.pruneQueue(value)
     local ok, reason = Store.write(FILE, value)
     return ok, reason, ok and "pending" or nil
 end
@@ -185,8 +231,10 @@ function coordinator.approvePose(workerId)
     worker.pose, worker.correctedPose = pose, nil
     worker.lastApprovedPose = pose
     local slotPose = Geometry.startForSlot(worker.slot)
-    local z, side = worker.assignedBranch
-        and worker.assignedBranch:match(":(%d+):([^:]+)$")
+    local z, side
+    if worker.assignedBranch then
+        z, side = worker.assignedBranch:match(":(%d+):([^:]+)$")
+    end
     local branchX = side == "left" and -1 or side == "right" and 1
     if pose.x == slotPose.x and pose.y == 0 and pose.z == 0
         and pose.heading == 0 then
@@ -207,11 +255,26 @@ function coordinator.approvePose(workerId)
             local trunk = value.corridors and value.corridors.trunk
             if not entry or entry.owner ~= id or not trunk
                 or trunk.owner ~= id or worker.transit.phase == "inbound"
+                    and worker.transit.stationId == "D01"
                     and value.dockOwner ~= id then
                 return false, "Az utvonaljog allapota elter; nincs feloldas."
             end
             value.corridors.entry, value.corridors.trunk = nil, nil
-            if worker.transit.phase == "inbound" then value.dockOwner = nil end
+            if worker.transit.phase == "inbound" then
+                if worker.transit.stationId == "D01" then value.dockOwner = nil
+                else
+                    local station = value.stations
+                        and value.stations[worker.transit.stationId]
+                    if station and station.status == "reserved" then
+                        station.status = "unknown"
+                        station.lastError = "Kezi helyzetegyeztetes utan ladaellenorzes kell."
+                    end
+                    local released, reason = Stations.release(value,
+                        worker.transit.stationId, workerId,
+                        worker.transit.leaseId, true)
+                    if not released then return false, reason end
+                end
+            end
             worker.transit = nil
         end
         if value.uncertain then value.uncertain[id] = nil end
@@ -350,6 +413,24 @@ function coordinator.requestTransit(message, sender)
         or (message.phase == "inbound" and worker.status ~= "at_branch") then
         return false, "A turtle nem a vart induloponton van."
     end
+    local stationId = "D01"
+    if message.phase == "inbound" then
+        stationId = Scheduler.queuedForWorker(value, sender)
+            and "D01" or Scheduler.choose(value, sender, message)
+    end
+    local head = Scheduler.primaryHead(value)
+    if message.phase == "inbound" and stationId == "D01" then
+        local queued, queueReason, index = Scheduler.enqueuePrimary(
+            value, sender, message.requestId, message.needsRefuel)
+        if not queued then return false, queueReason end
+        local saved, saveReason = Store.write(FILE, value)
+        if not saved then return false, saveReason end
+        if index ~= 1 then
+            return false, "A bazisdokk foglalt; szervizvarolista."
+        end
+    elseif head then
+        return false, "A bazisdokk foglalt; a szervizsor kovetkezik."
+    end
     -- A teljes szuk folyosot egyben foglaljuk; nem engedunk szembeforgalmat.
     local ok, reason = Traffic.reserveCorridor(value, "entry", sender,
         message.phase == "outbound" and "out" or "home")
@@ -357,16 +438,28 @@ function coordinator.requestTransit(message, sender)
     ok, reason = Traffic.reserveCorridor(value, "trunk", sender,
         message.phase == "outbound" and "out" or "home")
     if not ok then return false, reason end
+    local stationLease
     if message.phase == "inbound" then
-        ok, reason = Traffic.reserveDock(value, sender)
+        if stationId == "D01" then
+            ok, reason = Traffic.reserveDock(value, sender)
+        else
+            ok, reason, stationLease = Stations.reserve(value, stationId,
+                sender, message.requestId)
+        end
         if not ok then return false, reason end
     end
     worker.transit = {
         requestId = message.requestId, phase = message.phase,
         branchKey = message.branchKey,
+        stationId = message.phase == "inbound" and stationId or nil,
+        leaseId = stationLease and stationLease.leaseId or nil,
+        chestName = stationLease and value.stations[stationId].chestName or nil,
     }
     worker.status = message.phase == "outbound"
         and "transit_out" or "transit_home"
+    if stationId == "D01" and message.phase == "inbound" then
+        Scheduler.removePrimary(value, sender, message.requestId)
+    end
     local saved, saveReason = Store.write(FILE, value)
     return saved, saveReason, saved and worker.transit or nil
 end
@@ -417,14 +510,21 @@ function coordinator.confirmTransitArrival(message, sender)
         or value.corridors.entry.owner ~= tostring(sender)
         or not value.corridors.trunk
         or value.corridors.trunk.owner ~= tostring(sender)
-        or transit.phase == "inbound"
+        or transit.phase == "inbound" and transit.stationId == "D01"
             and value.dockOwner ~= tostring(sender) then
         return false, "A folyosofoglalas nem egyezik."
     end
     -- A koordinatori ACK csak a tartos mentest kovetoen mehet ki.
     value.corridors["entry"] = nil
     value.corridors["trunk"] = nil
-    if transit.phase == "inbound" then value.dockOwner = nil end
+    if transit.phase == "inbound" then
+        if transit.stationId == "D01" then value.dockOwner = nil
+        else
+            local released, releaseReason = Stations.release(value,
+                transit.stationId, sender, transit.leaseId, true)
+            if not released then return false, releaseReason end
+        end
+    end
     worker.pose = pose
     worker.transit = nil
     worker.lastArrivalRequest = message.requestId

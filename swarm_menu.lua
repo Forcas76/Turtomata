@@ -3,6 +3,7 @@ local ui = require("ui")
 local Session = require("swarm_session")
 local WorkRegistry = require("work_registry")
 local Store = require("state_store")
+local Stations = require("station_registry")
 local menu = {}
 
 local function notice(lines, kind)
@@ -101,6 +102,54 @@ local function correctPose(state)
         ok and nil or "error")
 end
 
+local function registerLocalStation(state)
+    local slot = state.role == "leader" and 1 or state.slot
+    local id = Stations.id(slot)
+    if not ui.confirm("LEADOLADA ELLENORZESE", {
+        "A turtle a sajat indulocellajan alljon.",
+        "A lada kozvetlenul mogotte legyen.",
+        id .. (slot == 1 and ": foallomas + ellatas"
+            or ": csak lepakolas"),
+        "A turtle helyben megfordul es megnezi.",
+    }, "ENTER = lada ellenorzese") then return end
+    state.stationCheckPending = true
+    local saved, saveReason = Session.update(state)
+    if not saved then
+        notice("Nem mentheto az iranyellenorzes: " .. tostring(saveReason), "error")
+        return
+    end
+    if not turtle.turnRight() or not turtle.turnRight() then
+        notice("A fordulas nem sikerult; iranyt kezzel ellenorizd.", "error")
+        return
+    end
+    local found, block = turtle.inspect()
+    if not turtle.turnRight() or not turtle.turnRight() then
+        notice("A visszafordulas nem sikerult; iranyt kezzel ellenorizd.", "error")
+        return
+    end
+    state.stationCheckPending = false
+    local restored, restoreReason = Session.update(state)
+    if not restored then
+        notice("Az irany visszaallitasa nem mentheto: "
+            .. tostring(restoreReason), "error")
+        return
+    end
+    if not found or not block or not Stations.isChest(block.name) then
+        notice("Nem talalok ladat a sajat indulocella mogott.", "error")
+        return
+    end
+    state.stationRegistration = {
+        slot = slot, chestName = block.name,
+        requestId = tostring(os.getComputerID()) .. "-station-"
+            .. tostring(os.epoch("utc")),
+    }
+    state.stationRegistered = nil
+    state.stationChestName = nil
+    local ok, reason = Session.update(state)
+    notice(ok and (id .. " ellenorizve; koordinatori ACK-ra var.")
+        or tostring(reason), ok and nil or "error")
+end
+
 function menu.run()
     while true do
         local state = Session.load()
@@ -118,16 +167,28 @@ function menu.run()
                 enabled = (not state or not state.active) and #offers > 0 },
             { label = "Foag asasa / folytatasa", value = "trunk",
                 enabled = state and state.active and state.role == "leader"
+                    and not state.stationCheckPending
                     and state.coordinatorId and linkAlive
                     and ((not savedTrunk and not activeSoloJob())
                         or (savedTrunk and branch.active)) },
             { label = "Kiosztott oldalagat asasa", value = "worker",
                 enabled = state and state.active and state.role == "worker"
+                    and not state.stationCheckPending
                     and state.assignedBranch and not state.transit
                     and linkAlive
                     and (state.status == "assigned_no_motion"
                         or state.status == "at_branch") },
             { label = "Allapot", value = "status" },
+            { label = "Sajat leadolada regisztralasa", value = "station",
+                enabled = state and state.active and not state.transit
+                    and not state.stationCheckPending
+                    and not state.stationRegistration
+                    and (state.role == "worker"
+                        and state.status == "registered_no_motion"
+                        and not state.assignedBranch
+                        or state.role == "leader" and not savedTrunk) },
+            { label = "Ladaellenorzes iranyanak tisztazasa", value = "station_fix",
+                enabled = state and state.active and state.stationCheckPending },
             { label = "Pozicio javitasa", value = "correct",
                 enabled = state and state.active and state.role == "worker"
                     and state.status ~= "join_pending" },
@@ -178,6 +239,18 @@ function menu.run()
             }, "ENTER = seged inditasa") then
                 return { action = "start_worker" }
             end
+        elseif choice == "station" then registerLocalStation(state)
+        elseif choice == "station_fix" then
+            if ui.confirm("IRANY HELYSZINI ELLENORZESE", {
+                "Ellenorizd: a turtle a sajat indulocellan all.",
+                "Ugyanabba a +Z iranyba nez, mint a vezeto indulaskor.",
+                "Nem kovetkeztetunk automatikusan a mentett iranybol.",
+            }, "ENTER = fizikai hely es irany igazolt") then
+                state.stationCheckPending = false
+                local ok, reason = Session.update(state)
+                notice(ok and "Irany igazolva; a lada ujra ellenorizheto."
+                    or tostring(reason), ok and nil or "error")
+            end
         elseif choice == "correct" then correctPose(state)
         elseif choice == "leave" or choice == "cancel_join" then
             if ui.confirm("SEGED KILEP", {
@@ -219,7 +292,8 @@ function menu.run()
                 "Allapot: " .. state.status,
                 "Kezelo: " .. tostring(state.coordinatorId or "nincs"),
                 "Ag: " .. tostring(state.assignedBranch or "nincs"),
-                "Meg nincs kozos banyaszat/mozgasi jog.",
+                "Lada: " .. (state.stationRegistered and "regisztralva"
+                    or state.stationRegistration and "ACK-ra var" or "nincs"),
             } or { "Nincs helyi szinkronmunka.",
                 "Lathato ajanlatok: " .. #offers })
         end

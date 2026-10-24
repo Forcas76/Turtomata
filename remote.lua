@@ -180,6 +180,14 @@ function remote.snapshot()
     })
     if state then
         message.position = poseOf(entry.kind, state)
+        if type(state.collected) == "table" then
+            message.collected = state.collected
+        end
+        if type(state.skippedOreScans) == "table" then
+            local skipped = 0
+            for _ in pairs(state.skippedOreScans) do skipped = skipped + 1 end
+            message.skippedOreScans = skipped
+        end
         message.progressCurrent, message.progressTotal = progressOf(entry.kind, state)
         message.elapsedMs = state.telemetry and state.telemetry.activeMs or 0
         message.remainingActions, message.remainingMs = remainingEstimate(entry.kind, state)
@@ -192,6 +200,11 @@ function remote.snapshot()
             leaderId = swarm.leaderId, coordinatorId = swarm.coordinatorId,
             epoch = swarm.epoch, status = swarm.status,
             assignedBranch = swarm.assignedBranch,
+            stationId = swarm.transit and swarm.transit.stationId,
+            stationIssue = swarm.stationIncident
+                and swarm.stationIncident.reason,
+            serviceRequired = swarm.transit and swarm.transit.stationId == "D01"
+                and "primary" or swarm.transit and "unload" or nil,
             coordinatorOnline = swarm.lastHeartbeatAt
                 and nowMs() - swarm.lastHeartbeatAt <= 6000 or false,
         }
@@ -201,6 +214,9 @@ function remote.snapshot()
             message.position = swarm.pose
             message.progressCurrent = swarm.branchProgress or 0
             message.progressTotal = swarm.branchLength or 0
+        end
+        if swarm.role == "worker" and type(swarm.collected) == "table" then
+            message.collected = swarm.collected
         end
     end
     local chain = StateStore.read("task_chain_state.txt")
@@ -229,6 +245,32 @@ local function publishSwarmOffer()
     local session = SwarmSession.load()
     if not session or not session.active then return end
     if openModems() == 0 then return end
+    if session.stationRegistration and session.coordinatorId then
+        local registration = session.stationRegistration
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("station_register_request", {
+                jobId = session.jobId, epoch = session.epoch,
+                coordinatorId = session.coordinatorId,
+                workerId = os.getComputerID(),
+                slot = registration.slot,
+                chestName = registration.chestName,
+                physicalConfirmed = true,
+                requestId = registration.requestId,
+            }), SwarmProtocol.CHANNEL)
+    end
+    if session.stationIncident and session.coordinatorId then
+        local incident = session.stationIncident
+        rednet.send(session.coordinatorId,
+            SwarmProtocol.message("station_issue", {
+                jobId = session.jobId, epoch = session.epoch,
+                coordinatorId = session.coordinatorId,
+                workerId = os.getComputerID(),
+                stationId = incident.stationId,
+                leaseId = incident.leaseId,
+                requestId = incident.requestId,
+                issue = incident.issue, reason = incident.reason,
+            }), SwarmProtocol.CHANNEL)
+    end
     if session.role == "worker" and session.status == "join_pending" then
         rednet.send(session.coordinatorId, SwarmProtocol.message("join_request", {
             jobId = session.jobId, leaderId = session.leaderId,
@@ -308,7 +350,38 @@ end
 
 function remote.handleSwarm(sender, message)
     if not SwarmProtocol.valid(message) then return end
-    if message.type == "job_offer" and sender ~= os.getComputerID()
+    if message.type == "station_issue_ack"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        local incident = state and state.stationIncident
+        if state and incident and state.jobId == message.jobId
+            and state.epoch == message.epoch
+            and state.coordinatorId == sender
+            and incident.requestId == message.requestId
+            and incident.stationId == message.stationId
+            and message.accepted then
+            state.stationIncident = nil
+            SwarmSession.update(state)
+        end
+    elseif message.type == "station_register_ack"
+        and message.workerId == os.getComputerID() then
+        local state = SwarmSession.load()
+        local registration = state and state.stationRegistration
+        if state and state.active and registration
+            and state.jobId == message.jobId
+            and state.epoch == message.epoch
+            and state.coordinatorId == sender
+            and registration.requestId == message.requestId
+            and registration.slot == message.slot then
+            state.stationRegistration = nil
+            state.stationRegistered = message.accepted
+                and message.stationId or nil
+            state.stationChestName = message.accepted
+                and registration.chestName or nil
+            state.stationError = message.accepted and nil or message.reason
+            SwarmSession.update(state)
+        end
+    elseif message.type == "job_offer" and sender ~= os.getComputerID()
         and message.leaderId == sender then
         SwarmSession.observeOffer(message)
     elseif message.type == "coordinator_claim"
@@ -373,7 +446,12 @@ function remote.handleSwarm(sender, message)
                     and "assigned_no_motion"
                 or message.status == "registered_no_motion"
                     and "registered_no_motion" or "needs_attention"
-            if state.status ~= "needs_attention" then state.transit = nil end
+            if state.status ~= "needs_attention" then
+                state.transit = nil
+                -- A koordinatortol visszaigazolt kezi egyeztetes mar
+                -- lezarta a regi lease-t; az allomas unknown marad.
+                state.stationIncident = nil
+            end
             state.navigation = {
                 pose = state.pose, path = {}, pending = nil, anchors = {},
             }
@@ -510,6 +588,19 @@ function remote.handleCommand(sender, message)
             acknowledge(sender, message.command, message.requestId, true,
                 "Lepakolas, feltoltes es folytatas kerese fogadva.")
             os.queueEvent("turtomata_remote_command", "service", sender, message.requestId)
+        end
+    elseif message.command == "skip_ore_scan" then
+        local entry, state = activeState()
+        if not entry or entry.kind ~= "branch"
+            or not state or not state.oreScan
+            or not state.oreScan.returnScan then
+            acknowledge(sender, message.command, message.requestId, false,
+                "Nincs aktiv visszauti agvizsgalat ezen a turtle-n.")
+        else
+            acknowledge(sender, message.command, message.requestId, true,
+                "A kihagyas a kovetkezo agcella-hataron lep eletbe.")
+            os.queueEvent("turtomata_remote_command", "skip_ore_scan",
+                sender, message.requestId)
         end
     else
         acknowledge(sender, message.command, message.requestId, false, "Ismeretlen parancs.")

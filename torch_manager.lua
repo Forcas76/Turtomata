@@ -34,7 +34,8 @@ function manager.refillFromChest()
         return false, "A 2-es slotban nem faklya van."
     end
 
-    if turtle.getItemSpace(2) > 0 then turtle.suck(64) end
+    local missing = turtle.getItemSpace(2)
+    if missing > 0 then turtle.suck(missing) end
     if turtle.getItemCount(2) == 0 then
         turtle.select(selected)
         return false, "A faklyas lada ures, vagy nincs a fuel lada folott."

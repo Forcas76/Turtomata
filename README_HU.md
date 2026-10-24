@@ -8,6 +8,26 @@ Az 1-es turtle a leadóláda előtt, a főág felé néz; a segédek tőle jobbr
 
 Az első változat csak **1×2/1×3 oldalágat** kezel; közös módban érckeresés és fáklyázás még nincs. A segédeknek az első ládás kiszolgálásig elegendő kezdő fuel kell (vagy éghető tárgy az 1-es slotban). Kapcsolatvesztés, bizonytalan lépés vagy helyi leállítás esetén a foglalások megmaradnak, nincs vak hazatérés: a valós pozíciót a turtle-n kell javítani és a koordinátoron jóváhagyni. A függő jelentkezés csak koordinátori visszaigazolással vonható vissza; a szabad segéd a saját sorhelyéről kiléphet, majd az 1-es turtle lezárhatja a munkát, ha minden segéd kilépett. A kezelő Parancsok oldalán a megerősített közös vészleállítás minden résztvevőt helyben állít meg, nem indít közös hazatérést. **Játékon belül még nem ellenőrzött, kísérleti rendszer:** először két turtle-lel, veszteségmentesen tesztelhető területen próbáld. A koordinátor újraindítása után új vezetői visszaigazolás kell a további engedélyekhez.
 
+Az opcionális segédládát a szabad segéd saját „Közös munka” menüjében lehet
+regisztrálni; a láda közvetlenül a sorhelye mögött álljon. A turtle helyben
+megfordul, ellenőrzi, majd koordinátori ACK-ra vár. A visszatérő segéd másik
+segéd ellenőrzött, szabad ládájába is pakolhat, ha annak tulajdonosa igazoltan
+az ágnál dolgozik, az út rövidebb a D01-nél, és marad elég fuel. Különben a
+D01 főállomáson pakol és tankol. A segédláda nem fuel- vagy fáklyaellátó.
+A D01-kérések tartós, érkezési sorrendű szervizsorba kerülnek, amely a kezelőn
+is látható. A szűk folyosó forgalma továbbra is sorosított; a párhuzamos
+dokkolás, a sorhoz kötött időbecslés és a telített láda automatikus kerülése
+még nincs bekapcsolva.
+Ha a D01 leadóláda megtelt, a turtle a fuel-töltést még megpróbálja,
+a le nem adott tárgyakat megtartja, majd helyszíni egyeztetésig megáll.
+A ládaellenőrzés közbeni újraindulás után az irányt helyben kell igazolni.
+
+Az önálló branch munka visszaúti ércvizsgálata a megfigyelő Parancsok oldalán
+kijelölt turtle-nél kísérleti módon kihagyható. A kérés a következő ágcella
+határán lép életbe; a turtle továbbra is visszajárja az ágat és kezeli a
+fáklyapontokat. A kihagyott vizsgálat nem számít ércmentesnek. Közös segédágban
+még nincs ércvizsgálat, így ott ez a parancs nem használható.
+
 ## V2 kiserleti funkciok
 
 A `main` menuben a feladatlapok szerkeszthetok: a nyilakkal/kattintassal
@@ -40,9 +60,22 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.3.0**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.4.1**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
+
+A „Félbehagyott munka” menü mindig megnyitható: az aktív közös munkát is
+felajánlja, hiányzó vagy érvénytelen mentésnél pedig kiírja az okot. A megfigyelő
+listájában turtle-nként rövid tevékenység látszik; Enterrel külön részletes lap
+nyílik, a csatlakoztatott monitoron továbbra is a lista marad. A 2-es slot
+fáklyatöltése csak a hiányzó darabszámot kéri. Sikeres frissítés után a downloader
+a verziót és az UTC-időpontot `.turtomata_update.txt` fájlba menti, és Enterre vár.
+
+Aktív branch, területásó vagy útvonalkészítő munkánál az ásással ténylegesen
+felvett tárgyakat itemazonosító szerint összesíti. A megfigyelő részletes
+nézetében `I`-vel vagy kattintással megnyitható a görgethető tárgylista.
+Lepakolás után is látszik a munkánkénti teljes darabszám; a munka
+befejezésekor vagy a mentés törlésekor az összesítés eltűnik.
 
 A közös `localization.lua` magyar (`hu`) és angol (`en`) feliratokat tartalmaz.
 Új telepítésnél az alapértelmezett nyelv angol; a korábban mentett magyar

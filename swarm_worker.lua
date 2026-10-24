@@ -4,9 +4,11 @@ local Protocol = require("swarm_protocol")
 local Navigation = require("navigation")
 local Safety = require("swarm_safety")
 local BaseDock = require("base_dock")
+local PickupLedger = require("pickup_ledger")
 
 local state = Session.load()
 if not state or not state.active or state.role ~= "worker"
+    or state.stationCheckPending
     or not state.assignedBranch
     or (state.status ~= "assigned_no_motion" and state.status ~= "at_branch") then
     error("Nincs indithato segedfeladat; a kezelo kiosztasara varj.", 0)
@@ -92,7 +94,12 @@ local function dig(direction)
             or data.name:find("lava", 1, true)) then
         error("Folyadek a kozos utvonalon; helyszini ellenorzes kell.", 0)
     end
-    if has and not action() then error("A blokk nem banyaszhato.", 0) end
+    if has then
+        local before = PickupLedger.snapshot()
+        if not action() then error("A blokk nem banyaszhato.", 0) end
+        persist({ collected = PickupLedger.record(state.collected, before,
+            PickupLedger.snapshot()) })
+    end
 end
 
 local function step(kind, heading, allowDig)
@@ -177,19 +184,26 @@ local function request(kind, payload, response)
     end
 end
 
-local function transit(phase)
+local function transit(phase, service)
     local id = tostring(os.getComputerID()) .. "-"
         .. tostring(os.epoch("utc")) .. "-" .. phase
     local info = { phase = phase, requestId = id }
     persist({ transit = info })
-    request("transit_request", {
+    local grant = request("transit_request", {
         jobId = state.jobId, epoch = state.epoch,
         coordinatorId = state.coordinatorId,
         workerId = os.getComputerID(),
         branchKey = state.assignedBranch,
         phase = phase, requestId = id,
+        preferredStationId = service and service.preferredStationId,
+        needsRefuel = service and service.needsRefuel,
+        fuelAvailable = service and service.fuelAvailable,
+        nextBudget = service and service.nextBudget,
     }, "transit_grant")
     info.granted = true
+    info.stationId = grant.stationId
+    info.leaseId = grant.leaseId
+    info.chestName = grant.chestName
     persist({ transit = info })
     return info
 end
@@ -272,13 +286,14 @@ local function unloadAndRefuel()
     face(2)
     local learned, reason = BaseDock.learnAtBase(nav)
     if not learned then error(reason, 0) end
+    local unloadError = false
     for slot = 1, 16 do
         ensureLink()
         turtle.select(slot)
         if turtle.getItemCount(slot) > 0 then
             if slot == 1 and turtle.refuel(0) then turtle.refuel()
-            elseif not turtle.drop() then
-                error("A leado lada megtelt vagy nem erheto el.", 0)
+            elseif not turtle.drop() or turtle.getItemCount(slot) > 0 then
+                unloadError = true
             end
         end
     end
@@ -302,21 +317,81 @@ local function unloadAndRefuel()
     end
     step("d", nil, false)
     turtle.select(2)
+    if unloadError then
+        error("A D01 leado lada megtelt; a maradek inventoryban van. Fuel toltes megkiserelve.", 0)
+    end
     if fuelLevel() < needed then
         error("A fuel lada nem tudta feltolteni a kovetkezo uthoz.", 0)
     end
 end
 
+local function unloadAtStation()
+    face(2)
+    local found, block = turtle.inspect()
+    if not found or not block or block.name ~= state.transit.chestName then
+        persist({ stationIncident = {
+            stationId = state.transit.stationId,
+            leaseId = state.transit.leaseId,
+            requestId = state.transit.requestId,
+            issue = "blocked", reason = "A lada eltunt vagy megvaltozott.",
+        } })
+        error("A seged leado ladaja eltunt vagy megvaltozott.", 0)
+    end
+    for slot = 2, 16 do
+        ensureLink()
+        turtle.select(slot)
+        if turtle.getItemCount(slot) > 0 then
+            if not turtle.drop() or turtle.getItemCount(slot) > 0 then
+                persist({ stationIncident = {
+                    stationId = state.transit.stationId,
+                    leaseId = state.transit.leaseId,
+                    requestId = state.transit.requestId,
+                    issue = "full", reason = "Reszleges vagy sikertelen lepakolas.",
+                } })
+                error("A seged ladaja megtelt; a maradek az inventoryban van.", 0)
+            end
+        end
+    end
+    turtle.select(2)
+    face(0)
+end
+
 local function inbound()
     returnToBranchEntry()
-    local info = transit("inbound")
+    local nextBudget = 2 * (slotX + state.assignmentZ + state.branchLength)
+        + 20
+    local needsRefuel = fuelLevel() < nextBudget
+    local info = transit("inbound", {
+        preferredStationId = state.stationRegistered,
+        needsRefuel = needsRefuel,
+        fuelAvailable = turtle.getFuelLevel(),
+        nextBudget = nextBudget,
+    })
     step("h", sideHeading == 1 and 3 or 1, false)
-    moveZ(0, false)
-    unloadAndRefuel()
-    step("h", 0, false)
-    moveX(slotX, false)
-    step("h", 2, false)
-    face(0)
+    if info.stationId and info.stationId ~= "D01" then
+        local stationX = tonumber(info.stationId:match("^D(%d+)$"))
+        if not stationX or not info.chestName then
+            error("Hibas segedallomas-jog; nincs mozgas.", 0)
+        end
+        stationX = stationX - 1
+        moveZ(1, false)
+        moveX(stationX, false)
+        step("h", 2, false)
+        unloadAtStation()
+        if stationX ~= slotX then
+            step("h", 0, false)
+            moveX(slotX, false)
+            step("h", 2, false)
+            face(0)
+        end
+    else
+        moveZ(0, false)
+        unloadAndRefuel()
+        step("h", 0, false)
+        moveX(slotX, false)
+        step("h", 2, false)
+        face(0)
+    end
     arrived(info, "assigned_no_motion")
 end
 

@@ -143,6 +143,7 @@ function session.join(offer, slot)
 end
 
 function session.update(value)
+    if not value.active then value.collected = nil end
     return Store.write(STATE_FILE, value)
 end
 

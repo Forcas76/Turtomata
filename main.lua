@@ -636,14 +636,39 @@ end
 local function resumeMenu()
     local jobs = JobPreview.list()
     local items = {}
-    for _, job in ipairs(jobs) do
+    local swarm = SwarmSession.load()
+    if swarm and swarm.active then
         items[#items + 1] = {
-            label = job.label, suffix = job.progress, value = job,
+            label = "Kozos munka folytatasa", suffix = swarm.status,
+            value = "swarm",
         }
     end
+    for _, job in ipairs(jobs) do
+        local sharedTrunk = swarm and swarm.active
+            and swarm.role == "leader" and job.task == "branch_miner"
+            and job.saved.config.swarmJobId == swarm.jobId
+        if not sharedTrunk then
+            items[#items + 1] = {
+                label = job.label, suffix = job.progress, value = job,
+                enabled = not (swarm and swarm.active),
+            }
+        end
+    end
     items[#items + 1] = { label = "Vissza", value = "back" }
+    if #jobs == 0 and not (swarm and swarm.active) then
+        local owner = WorkRegistry.load()
+        ui.message("FOLYTATHATO MUNKAK", {
+            "Nincs aktiv, ervenyes munkamentes.",
+            owner and ("Nyilvantartas: " .. owner.task .. " / "
+                .. tostring(owner.status)) or "Nyilvantartas: nincs",
+            "A Munka kezelese menuben nezd meg a mentest.",
+        })
+        ui.waitForEnter()
+        return
+    end
     local selected = ui.menu("FOLYTATHATO MUNKAK", items)
     if not selected or selected == "back" then return end
+    if selected == "swarm" then return "swarm" end
     local action = ui.menu("MENTETT MUNKA", {
         { label = "Attekintes es folytatas", value = "resume" },
         { label = "Folytatas beallitasai", value = "edit",
@@ -655,6 +680,33 @@ local function resumeMenu()
     local lines = JobPreview.describe(selected, selected.saved)
     if not ui.confirm("MENTETT MUNKA", lines, "ENTER = folytatas") then return end
     launch(selected.task, selected.program, "resume", {}, lines, { confirmed = true })
+end
+
+local function runSwarmMenu()
+    local requested = SwarmMenu.run()
+    if requested and requested.action == "start_trunk" then
+        local session = requested.session
+        launch("branch_miner", "branch_miner", "new", {
+            swarmTrunkOnly = true, swarmJobId = session.jobId,
+            tunnelMode = session.tunnelMode,
+            mainLength = session.mainLength,
+            branchLength = 0, branchSpacing = session.branchSpacing,
+            startMode = 1, startOffset = 0,
+            torchEnabled = false, oreScanEnabled = false,
+            experimentalInventory = false, fuelReserve = 5,
+        }, {}, { confirmed = true, swarmLeader = true })
+    elseif requested and requested.action == "resume_trunk" then
+        launch("branch_miner", "branch_miner", "resume", {}, {},
+            { confirmed = true, swarmLeader = true })
+    elseif requested and requested.action == "start_worker" then
+        if programExists("swarm_worker") then
+            shell.run("swarm_worker")
+            ui.waitForEnter("ENTER = vissza a fomenube")
+        else
+            ui.message("Hianyzo program", "swarm_worker.lua", "error")
+            ui.waitForEnter()
+        end
+    end
 end
 
 local function workControl()
@@ -833,7 +885,6 @@ local function menuLoop()
         end
     end
     while true do
-        local hasResume = #JobPreview.list() > 0
         local choice = ui.menu("TURTOMATA " .. Version.label, {
             { label = "Branch mining", value = "branch" },
             { label = "Kozos munka", suffix = "KISERLETI PAROSITAS", value = "swarm" },
@@ -842,7 +893,7 @@ local function menuLoop()
             { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
             { label = "Farm karbantartas", suffix = "KISERLETI", value = "farm" },
             { label = "Feladatlanc", suffix = "KISERLETI", value = "chain" },
-            { label = "Felbehagyott munka", enabled = hasResume, value = "resume" },
+            { label = "Felbehagyott munka", value = "resume" },
             { label = "Munka kezelese", value = "work" },
             { label = "Beallitasok", value = "settings" },
             { label = "Diagnosztika", value = "diagnostics" },
@@ -859,31 +910,7 @@ local function menuLoop()
             local config, summary = JobSetup.branch(currentSettings)
             if config then launch("branch_miner", "branch_miner", "new",
                 config, summary, { confirmed = true }) end
-        elseif choice == "swarm" then
-            local requested = SwarmMenu.run()
-            if requested and requested.action == "start_trunk" then
-                local session = requested.session
-                launch("branch_miner", "branch_miner", "new", {
-                    swarmTrunkOnly = true, swarmJobId = session.jobId,
-                    tunnelMode = session.tunnelMode,
-                    mainLength = session.mainLength,
-                    branchLength = 0, branchSpacing = session.branchSpacing,
-                    startMode = 1, startOffset = 0,
-                    torchEnabled = false, oreScanEnabled = false,
-                    experimentalInventory = false, fuelReserve = 5,
-                }, {}, { confirmed = true, swarmLeader = true })
-            elseif requested and requested.action == "resume_trunk" then
-                launch("branch_miner", "branch_miner", "resume", {}, {},
-                    { confirmed = true, swarmLeader = true })
-            elseif requested and requested.action == "start_worker" then
-                if programExists("swarm_worker") then
-                    shell.run("swarm_worker")
-                    ui.waitForEnter("ENTER = vissza a fomenube")
-                else
-                    ui.message("Hianyzo program", "swarm_worker.lua", "error")
-                    ui.waitForEnter()
-                end
-            end
+        elseif choice == "swarm" then runSwarmMenu()
         elseif choice == "excavator" then
             local config, summary = JobSetup.excavator(currentSettings)
             if config then launch("excavator", "excavator", "new",
@@ -904,7 +931,8 @@ local function menuLoop()
             local config, summary = ChainEditor.open(currentSettings)
             if config then launch("chain", "task_chain", "new",
                 config, summary, { confirmed = true }) end
-        elseif choice == "resume" then resumeMenu()
+        elseif choice == "resume" then
+            if resumeMenu() == "swarm" then runSwarmMenu() end
         elseif choice == "work" then workControl()
         elseif choice == "settings" then settingsMenu()
         elseif choice == "diagnostics" then diagnostics()

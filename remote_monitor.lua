@@ -11,6 +11,11 @@ Localization.setLanguage(monitorSettings.general.language)
 local function tr(value) return Localization.text(value) end
 local turtles = {}
 local selected = 1
+local statusDetail = false
+local statusInventoryView = false
+local inventoryScroll = 1
+local statusListStart = 1
+local statusListCount = 0
 local opened = {}
 local pages = { "status", "commands", "swarm", "settings" }
 local pageIndex = 1
@@ -172,6 +177,8 @@ local commands = {
     { label = "Kozos munka kezelese (kiserleti)", command = "swarm_claim", confirm = true },
     { label = "Kozos munka veszleallas", command = "swarm_stop", confirm = true },
     { label = "Lepakolas es folytatas", command = "service", confirm = true },
+    { label = "Agvizsgalat kihagyasa (kiserleti)",
+        command = "skip_ore_scan", confirm = true },
     { label = "Munka leallitasa, haza", command = "return_home", confirm = true },
     { label = "Megfigyelo frissitese", command = "local_update", confirm = true },
 }
@@ -358,6 +365,33 @@ local function readableActivity(value)
     return value:sub(1, 1):upper() .. value:sub(2)
 end
 
+local function shortActivity(value)
+    value = tostring(value or ""):lower()
+    if value:find("erc", 1, true) or value:find("ore", 1, true) then
+        return tr("ERC")
+    elseif value:find("fakly", 1, true) or value:find("torch", 1, true) then
+        return tr("FAKLYA")
+    elseif value:find("tank", 1, true) or value:find("refuel", 1, true) then
+        return tr("FUEL")
+    elseif value:find("lepak", 1, true) or value:find("urites", 1, true)
+        or value:find("unload", 1, true) then
+        return tr("LERAK")
+    elseif value:find("hazater", 1, true) or value:find("return", 1, true)
+        or value:find("transit_home", 1, true) then
+        return tr("HAZA")
+    elseif value:find("transit", 1, true) or value:find("navig", 1, true) then
+        return tr("UTON")
+    elseif value:find("ag", 1, true) or value:find("min", 1, true)
+        or value:find("kitores", 1, true) then
+        return tr("ASAS")
+    elseif value:find("wait", 1, true) or value:find("pending", 1, true)
+        or value:find("registered", 1, true) or value:find("assigned", 1, true)
+        or value:find("varako", 1, true) then
+        return tr("VAR")
+    end
+    return tr("ALLAPOT")
+end
+
 local function readableTask(value)
     return tr(taskNames[value] or tostring(value or "Ismeretlen"))
 end
@@ -378,7 +412,100 @@ local function printWrapped(value, width, maximumLines)
     if lineText ~= "" and printed < maximumLines then print(clip(lineText, width)) end
 end
 
-local function renderStatusBody()
+local function orderedDrops(item)
+    local drops = {}
+    for name, count in pairs(item and item.collected or {}) do
+        if type(name) == "string" and type(count) == "number"
+            and count > 0 then
+            drops[#drops + 1] = { name = name, count = count }
+        end
+    end
+    table.sort(drops, function(a, b)
+        if a.count ~= b.count then return a.count > b.count end
+        return a.name < b.name
+    end)
+    return drops
+end
+
+local function renderInventoryDetail()
+    local width, height = term.getSize()
+    local item = ordered()[selected]
+    local drops = orderedDrops(item)
+    clear()
+    term.setTextColor(colors.cyan)
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("TARGYAK"), width))
+    term.setTextColor(colors.lightGray)
+    print(string.rep("-", math.min(width, 39)))
+    if item then
+        line("Teknos", "#" .. item.turtleId .. " " .. (item.label or ""), width)
+    end
+    line("Gyujtott targyak", #drops .. " tipus", width)
+    local visible = math.max(1, height - 6)
+    inventoryScroll = math.max(1, math.min(inventoryScroll,
+        math.max(1, #drops - visible + 1)))
+    for index = inventoryScroll,
+        math.min(#drops, inventoryScroll + visible - 1) do
+        line(drops[index].name, drops[index].count, width)
+    end
+    term.setCursorPos(1, height)
+    write(clip(tr("Fel/le: lista | I/katt: reszletek | Enter: vissza"), width))
+end
+
+local function renderSelectedDetail()
+    if statusInventoryView then return renderInventoryDetail() end
+    local width, height = term.getSize()
+    local item = ordered()[selected]
+    clear()
+    term.setTextColor(colors.cyan)
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("RESZLETEK"), width))
+    term.setTextColor(colors.lightGray)
+    print(string.rep("-", math.min(width, 39)))
+    if not item then
+        print(tr("Nincs kivalasztott turtle."))
+    else
+        line("Teknos", "#" .. item.turtleId .. " " .. (item.label or ""), width)
+        line("Kapcsolat", tr(online(item) and "ELERHETO" or "NEM ELERHETO"), width)
+        line("Feladat", readableTask(item.task), width)
+        line("Muvelet", readableActivity(item.activity), width)
+        line("Haladas", percent(item), width)
+        line("Uzemanyag", item.fuel == -1 and "vegtelen" or item.fuel, width)
+        line("Tarhely", tostring(item.inventoryUsed or "-") .. "/16", width)
+        if item.skippedOreScans and item.skippedOreScans > 0 then
+            line("Kihagyott agvizsgalat", item.skippedOreScans, width)
+        end
+        line("Ido", duration(item.elapsedMs) .. " / " .. duration(item.remainingMs), width)
+        if item.position then
+            line("Pozicio", string.format("%d,%d,%d h=%s", item.position.x,
+                item.position.y, item.position.z,
+                tostring(item.position.heading or "-")), width)
+        end
+        if item.swarm then
+            line("Kozos munka", item.swarm.role .. " / " .. item.swarm.status, width)
+            line("Ag", item.swarm.assignedBranch or "-", width)
+            if item.swarm.stationId then
+                line("Celallomas", item.swarm.stationId, width)
+                line("Szerviz", item.swarm.serviceRequired or "-", width)
+            end
+            if item.swarm.stationIssue then
+                line("Ladahiba", item.swarm.stationIssue, width)
+            end
+        end
+        if type(item.collected) == "table" then
+            local drops = orderedDrops(item)
+            if #drops > 0 then
+                line("Gyujtott targyak", #drops .. " tipus", width)
+                print(clip(tr("I/katt: targylista"), width))
+            end
+        end
+        if item.lastError then line("Hiba", item.lastError, width) end
+    end
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(1, height)
+    write(clip(tr("Enter/Backspace: lista | Bal/jobb: oldal"), width))
+end
+
+local function renderStatusBody(forceList)
+    if statusDetail and not forceList then return renderSelectedDetail() end
     local width, height = term.getSize()
     local list = ordered()
     if selected > #list then selected = math.max(1, #list) end
@@ -395,69 +522,24 @@ local function renderStatusBody()
         term.setTextColor(colors.orange)
         print(tr("Turtle keresese..."))
         print(tr("Bekapcsolas utan automatikusan megjelenik."))
-    elseif width < 35 or height < 16 then
-        local item = list[selected]
-        term.setTextColor(online(item) and colors.lime or colors.red)
-        print(clip((item.label or ("Teknos #" .. item.turtleId))
-            .. " " .. tr(online(item) and "ELERHETO" or "NEM ELERHETO"), width))
-        term.setTextColor(colors.white)
-        line("Feladat", readableTask(item.task)
-            .. (item.chainCurrent and (" [" .. item.chainCurrent .. "/"
-                .. tostring(item.chainTotal) .. "]") or ""), width)
-        line("Muvelet", readableActivity(item.activity), width)
-        if item.swarm then
-            line("Kozos munka", item.swarm.role .. " / " .. item.swarm.status
-                .. " / #" .. tostring(item.swarm.coordinatorId or "-")
-                .. (item.swarm.coordinatorOnline and " +" or " !"), width)
-        end
-        if item.lastError then line("Hiba", item.lastError, width) end
-        line("Haladas", percent(item), width)
-        line("Uzemanyag", item.fuel == -1 and "vegtelen" or item.fuel, width)
-        line("Tarhely", item.inventoryUsed and (item.inventoryUsed .. "/16 hely") or "-", width)
-        line("Eltelt", duration(item.elapsedMs), width)
-        line("Hatra", duration(item.remainingMs), width)
-        if item.position then
-            line("Pozicio", string.format("%d,%d,%d", item.position.x, item.position.y, item.position.z), width)
-        end
-        term.setCursorPos(1, height)
-        write(clip(tr("Bal/jobb: oldal | Fel/le: teki | Q"), width))
     else
-        print(string.format("%-4s %-16s %-12s %s", "ID", tr("Teknos"), tr("Kapcsolat"), tr("Kesz")))
-        local maximum = math.max(1, height - 13)
-        for index = 1, math.min(#list, maximum) do
+        print(clip(tr("Turtle | allapot | haladas"), width))
+        local maximum = math.max(1, height - 6)
+        statusListStart = math.max(1, math.min(selected,
+            math.max(1, #list - maximum + 1)))
+        statusListCount = math.min(maximum, #list - statusListStart + 1)
+        for index = statusListStart, statusListStart + statusListCount - 1 do
             local item = list[index]
             term.setTextColor(index == selected and colors.yellow
                 or (online(item) and colors.white or colors.red))
-            print(clip(string.format("%-4d %-16s %-12s %s",
-                item.turtleId, item.label or tr("Teknos"), tr(online(item) and "ELERHETO" or "NINCS JEL"),
-                percent(item)), width))
-        end
-        local item = list[selected]
-        term.setTextColor(colors.lightGray)
-        print(string.rep("-", math.min(width, 39)))
-        term.setTextColor(colors.white)
-        line("Feladat", readableTask(item.task), width)
-        if item.chainCurrent then
-            line("Lanc", tostring(item.chainCurrent) .. "/"
-                .. tostring(item.chainTotal) .. " "
-                .. tostring(item.chainTask or "-"), width)
-        end
-        line("Muvelet", readableActivity(item.activity), width)
-        if item.swarm then
-            line("Kozos munka", item.swarm.role .. " / " .. item.swarm.status
-                .. " / #" .. tostring(item.swarm.coordinatorId or "-")
-                .. (item.swarm.coordinatorOnline and " +" or " !"), width)
-        end
-        if item.lastError then line("Hiba", item.lastError, width) end
-        line("Uzemanyag / tarhely", tostring(item.fuel == -1 and "vegtelen" or item.fuel)
-            .. " / " .. tostring(item.inventoryUsed or "-") .. "/16", width)
-        line("Ido", "eltelt " .. duration(item.elapsedMs) .. " / hatra " .. duration(item.remainingMs), width)
-        if item.position then
-            line("Pozicio", string.format("%d,%d,%d h=%s", item.position.x,
-                item.position.y, item.position.z, tostring(item.position.heading or "-")), width)
+            local label = width < 35 and ("#" .. item.turtleId)
+                or ("#" .. item.turtleId .. " " .. (item.label or ""))
+            print(clip((index == selected and "> " or "  ") .. label
+                .. " | " .. (online(item) and shortActivity(item.activity)
+                    or tr("OFFLINE")) .. " | " .. percent(item), width))
         end
         term.setCursorPos(1, height)
-        write(clip(tr("Bal/jobb: oldal | Fel/le/katt: teki | Q"), width))
+        write(clip(tr("Fel/le: turtle | Enter: reszletek | Bal/jobb: oldal"), width))
     end
 end
 
@@ -534,6 +616,25 @@ local function renderSwarmBody()
             elseif branch.status == "claimed" then claimed = claimed + 1 end
         end
         line("Agak", "szabad " .. ready .. " / foglalt " .. claimed, width)
+        local stationLabels = {}
+        for id, station in pairs(state.stations or {}) do
+            stationLabels[#stationLabels + 1] = id .. "="
+                .. (station.verified and station.status or "unknown")
+        end
+        table.sort(stationLabels)
+        line("Allomasok", #stationLabels > 0
+            and table.concat(stationLabels, " ") or "D01=unknown", width)
+        local queue = state.serviceQueue or {}
+        if #queue > 0 then
+            local labels = {}
+            for index = 1, math.min(#queue, 4) do
+                local pending = queue[index]
+                labels[#labels + 1] = "#" .. pending.workerId
+                    .. (pending.needsRefuel and ":fuel" or ":unload")
+            end
+            line("Szervizsor", #queue .. " / "
+                .. table.concat(labels, " "), width)
+        end
         print(tr("Resztvevok (kiserleti kozos munka):"))
         print(clip("  #" .. state.leaderId .. " / 1 / leader", width))
         local list = orderedSwarmWorkers(state)
@@ -549,6 +650,16 @@ local function renderSwarmBody()
         term.setTextColor(colors.orange)
         print(clip(tr("Ag kiosztas: automatikus; inditas: turtle menuben."), width))
         local worker = list[swarmSelected]
+        if worker and state.workers then
+            local detail = state.workers[tostring(worker.id)]
+            if detail and detail.transit then
+                print(clip("Cel: " .. (detail.transit.stationId or "ag")
+                    .. " / " .. detail.transit.phase, width))
+            end
+            if detail and detail.lastError then
+                print(clip("Hiba: " .. detail.lastError, width))
+            end
+        end
         if worker and worker.correctedPose then
             local pose = worker.correctedPose
             print(clip(string.format("Javitas: %d,%d,%d h%d",
@@ -576,7 +687,7 @@ local function render()
     end
     if displayName and display ~= nativeTerm then
         local previous = term.redirect(display)
-        local ok, reason = pcall(renderStatusBody)
+        local ok, reason = pcall(renderStatusBody, true)
         term.redirect(previous)
         if not ok then error(reason, 0) end
     end
@@ -629,6 +740,27 @@ while true do
             feedback = accepted and ("Segedturtle #" .. p1 .. " regisztralva, sorszam: "
                 .. tostring(p2.slot)) or tostring(reason)
             render()
+        elseif p2.type == "station_register_request" then
+            local accepted, reason, station = SwarmCoordinator.registerStation(p2, p1)
+            rednet.send(p1, SwarmProtocol.message("station_register_ack", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(), workerId = p1,
+                requestId = p2.requestId, slot = p2.slot,
+                stationId = station and station.id,
+                accepted = accepted, reason = reason,
+            }), SwarmProtocol.CHANNEL)
+            feedback = accepted and (station.id .. " ellenorizve; meg nincs automatikus dokkolas.")
+                or tostring(reason)
+            render()
+        elseif p2.type == "station_issue" then
+            local accepted, reason = SwarmCoordinator.reportStationIssue(p2, p1)
+            rednet.send(p1, SwarmProtocol.message("station_issue_ack", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(), workerId = p1,
+                requestId = p2.requestId, stationId = p2.stationId,
+                accepted = accepted, reason = reason,
+            }), SwarmProtocol.CHANNEL)
+            if accepted then render() end
         elseif p2.type == "branch_ready" then
             local accepted, reason, key = SwarmCoordinator.noteBranchReady(p2, p1)
             rednet.send(p1, SwarmProtocol.message("branch_ready_ack", {
@@ -657,16 +789,19 @@ while true do
         elseif p2.type == "transit_request" then
             local state = SwarmCoordinator.load()
             local leader = state and turtles[state.leaderId]
-            local ok, reason
+            local ok, reason, transit
             if not leader or not online(leader) then
                 ok, reason = false, "A vezeto turtle nem elerheto."
             else
-                ok, reason = SwarmCoordinator.requestTransit(p2, p1)
+                ok, reason, transit = SwarmCoordinator.requestTransit(p2, p1)
             end
             rednet.send(p1, SwarmProtocol.message("transit_grant", {
                 jobId = p2.jobId, epoch = p2.epoch,
                 coordinatorId = os.getComputerID(), workerId = p1,
                 requestId = p2.requestId, phase = p2.phase,
+                stationId = transit and transit.stationId,
+                leaseId = transit and transit.leaseId,
+                chestName = transit and transit.chestName,
                 accepted = ok, reason = reason,
             }), SwarmProtocol.CHANNEL)
             if ok then render() end
@@ -731,15 +866,21 @@ while true do
     elseif event == "key" then
         if p1 == keys.q then break
         elseif p1 == keys.left then
+            statusDetail = false
+            statusInventoryView = false
             pageIndex = pageIndex == 1 and #pages or pageIndex - 1
             page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.right then
+            statusDetail = false
+            statusInventoryView = false
             pageIndex = pageIndex == #pages and 1 or pageIndex + 1
             page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.up then
-            if page == "commands" then
+            if page == "status" and statusDetail and statusInventoryView then
+                inventoryScroll = math.max(1, inventoryScroll - 1)
+            elseif page == "commands" then
                 commandSelected = math.max(1, commandSelected - 1)
                 armedCommand = nil
             elseif page == "settings" then
@@ -749,7 +890,9 @@ while true do
                 armedReconcile = nil
             else selected = math.max(1, selected - 1) end
         elseif p1 == keys.down then
-            if page == "commands" then
+            if page == "status" and statusDetail and statusInventoryView then
+                inventoryScroll = inventoryScroll + 1
+            elseif page == "commands" then
                 commandSelected = math.min(#commands, commandSelected + 1)
                 armedCommand = nil
             elseif page == "settings" then
@@ -761,6 +904,16 @@ while true do
             else selected = math.min(#ordered(), selected + 1) end
         elseif p1 == keys.enter and page == "commands" then
             activateCommand()
+        elseif p1 == keys.enter and page == "status" then
+            statusDetail = not statusDetail
+            statusInventoryView = false
+        elseif p1 == keys.i and page == "status" and statusDetail then
+            statusInventoryView = not statusInventoryView
+            inventoryScroll = 1
+        elseif (p1 == keys.backspace or p1 == keys.escape)
+            and page == "status" then
+            statusDetail = false
+            statusInventoryView = false
         elseif p1 == keys.enter and page == "settings" then
             local selectedLanguage = Localization.languages()[settingsSelected]
             monitorSettings.general.language = selectedLanguage.code
@@ -787,8 +940,17 @@ while true do
                 Settings.save(monitorSettings)
                 Localization.setLanguage(selectedLanguage.code)
             end
-        elseif p3 >= 4 and p3 < height - 7 then
-            selected = math.min(#ordered(), math.max(1, p3 - 3))
+        elseif page == "status" and statusDetail then
+            statusInventoryView = not statusInventoryView
+            inventoryScroll = 1
+        elseif page == "status" and p3 >= 4
+            and p3 < 4 + math.max(1, height - 6) then
+            local count = math.max(1, height - 6)
+            local start = math.max(1, math.min(selected,
+                math.max(1, #ordered() - count + 1)))
+            local clicked = start + p3 - 4
+            if selected == clicked then statusDetail = true
+            else selected = math.min(#ordered(), clicked) end
         end
         render()
     elseif event == "monitor_touch" and p1 == displayName then
@@ -797,8 +959,11 @@ while true do
         if width < 35 or height < 16 then
             if p2 <= math.floor(width / 2) then selected = math.max(1, selected - 1)
             else selected = math.min(#list, selected + 1) end
-        elseif p3 >= 4 and p3 < height - 7 then
-            selected = math.min(#list, math.max(1, p3 - 3))
+        elseif p3 >= 4 and p3 < 4 + math.max(1, height - 6) then
+            local count = math.max(1, height - 6)
+            local start = math.max(1, math.min(selected,
+                math.max(1, #list - count + 1)))
+            selected = math.min(#list, math.max(1, start + p3 - 4))
         end
         render()
     end

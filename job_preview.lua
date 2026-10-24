@@ -4,7 +4,7 @@ local Store = require("state_store")
 
 local jobs = {
     { task = "branch_miner", program = "branch_miner",
-        file = "branch_miner_state.txt", label = "Branch mining" },
+        file = "branch_miner_state.txt", label = "Branch mining", version = 2 },
     { task = "excavator", program = "excavator",
         file = "excavator_state.txt", label = "Terulet asas" },
     { task = "nether_builder", program = "nether_builder",
@@ -127,7 +127,7 @@ function preview.list()
     local result = {}
     for _, job in ipairs(jobs) do
         local saved = Store.read(job.file)
-        if type(saved) == "table" and saved.version == 1
+        if type(saved) == "table" and saved.version == (job.version or 1)
             and saved.active == true and type(saved.config) == "table" then
             local entry = Store.clone(job)
             entry.saved = saved

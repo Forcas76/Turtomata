@@ -1003,9 +1003,19 @@ function scanner.scanReturnBranch(side, branchLength, mode, api, resumed)
         if api.shouldStop() then return false, "Felhasznaloi leallitas." end
         session.branchStep = step
         api.checkpoint(session)
-        local scanned, reason = scanBranchCell(
-            session, api, branchHeading, mode, step == branchLength
-        )
+        if api.shouldSkipScan and api.shouldSkipScan() then
+            session.skipRemaining = true
+            api.checkpoint(session)
+        end
+        if session.skipRemaining and api.markSkipped then
+            api.markSkipped(side, step)
+        end
+        local scanned, reason = true, nil
+        if not session.skipRemaining then
+            scanned, reason = scanBranchCell(
+                session, api, branchHeading, mode, step == branchLength
+            )
+        end
         if not scanned then return false, reason end
         if api.placeBranchTorch then
             local placed, torchReason = api.placeBranchTorch(side, step)

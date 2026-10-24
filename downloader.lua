@@ -1,7 +1,8 @@
 -- CC:Tweaked programfrissito Pastebin es GitHub tamogatassal.
 
 local DEBUG = true
-local INSTALLER_VERSION = "v1.3.0"
+local INSTALLER_VERSION = "v1.4.1"
+local UPDATE_RECEIPT = ".turtomata_update.txt"
 local localizationOk, Localization = pcall(require, "localization")
 -- A friss telepitesnel a lokalizacios modul meg nincs jelen.
 local bootstrapEnglish = {
@@ -23,6 +24,8 @@ local bootstrapEnglish = {
     ["Tokenfajl hianyzik vagy ures."] = "Token file missing or empty.",
     ["Fel/le + Enter"] = "Up/down + Enter",
     ["Frissites indul..."] = "Starting update...",
+    ["Frissitve"] = "Updated",
+    ["ENTER = lattamozas"] = "ENTER = acknowledge",
 }
 local function tr(value)
     return localizationOk and Localization.text(value)
@@ -132,6 +135,9 @@ local links = {
     localization = { pastebinID = "", githubPath = "localization.lua", fileName = "localization.lua" },
     remoteprotocol = { pastebinID = "", githubPath = "remote_protocol.lua", fileName = "remote_protocol.lua" },
     swarmgeometry = { pastebinID = "", githubPath = "swarm_geometry.lua", fileName = "swarm_geometry.lua" },
+    stationregistry = { pastebinID = "", githubPath = "station_registry.lua", fileName = "station_registry.lua" },
+    servicescheduler = { pastebinID = "", githubPath = "service_scheduler.lua", fileName = "service_scheduler.lua" },
+    pickupledger = { pastebinID = "", githubPath = "pickup_ledger.lua", fileName = "pickup_ledger.lua" },
     swarmsafety = { pastebinID = "", githubPath = "swarm_safety.lua", fileName = "swarm_safety.lua" },
     swarmprotocol = { pastebinID = "", githubPath = "swarm_protocol.lua", fileName = "swarm_protocol.lua" },
     swarmsession = { pastebinID = "", githubPath = "swarm_session.lua", fileName = "swarm_session.lua" },
@@ -148,25 +154,25 @@ local links = {
 local downloadOrder = {
     "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings", "request", "registry", "preview", "basedock", "setup",
     "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether", "farm", "chain", "chaineditor",
-    "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmcoordinator", "swarmworker", "remote", "main", "startupturtle", "downloader",
+    "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "stationregistry", "servicescheduler", "pickupledger", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmcoordinator", "swarmworker", "remote", "main", "startupturtle", "downloader",
 }
 
 local componentGroups = {
     main = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator",
-        "nether", "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmworker", "remote", "main",
+        "nether", "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "stationregistry", "servicescheduler", "pickupledger", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmcoordinator", "swarmworker", "remote", "main",
     },
-    branch = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "swarmgeometry", "swarmsafety", "swarmsession", "branch" },
-    excavator = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "excavator" },
-    nether = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "nether" },
+    branch = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "ore", "swarmgeometry", "swarmsafety", "swarmsession", "pickupledger", "branch" },
+    excavator = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "inventory", "pickupledger", "excavator" },
+    nether = { "state", "navigation", "basedock", "situations", "telemetry", "estimator", "localization", "ui", "request", "torch", "actionlog", "pickupledger", "nether" },
     coordinate = { "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "request", "coordinatetask" },
     turtleinstall = {
         "state", "navigation", "coordinate", "situations", "telemetry", "estimator", "localization", "ui", "settings",
         "request", "registry", "preview", "basedock", "setup", "torch", "actionlog", "inventory", "ore", "branch", "excavator", "nether",
-        "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmworker", "remote", "main", "startupturtle", "downloader",
+        "farm", "chain", "chaineditor", "coordinatetask", "version", "remoteprotocol", "swarmgeometry", "stationregistry", "servicescheduler", "pickupledger", "swarmsafety", "swarmprotocol", "swarmsession", "swarmmenu", "swarmtraffic", "swarmcoordinator", "swarmworker", "remote", "main", "startupturtle", "downloader",
     },
-    monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "swarmgeometry", "swarmprotocol", "swarmtraffic", "swarmcoordinator", "monitor", "startupmonitor", "downloader" },
+    monitorinstall = { "state", "settings", "localization", "version", "remoteprotocol", "swarmgeometry", "stationregistry", "servicescheduler", "swarmprotocol", "swarmtraffic", "swarmcoordinator", "monitor", "startupmonitor", "downloader" },
 }
 
 local function delTerm()
@@ -543,6 +549,13 @@ local function installMenu()
         print("TURTOMATA " .. INSTALLER_VERSION .. " " .. tr("TELEPITO"))
         print(tr("Forras") .. ": " .. DOWNLOAD_SOURCE
             .. " / " .. (GITHUB.tokenFile and "TOKEN" or "PUBLIC"))
+        if fs.exists(UPDATE_RECEIPT) then
+            local receipt = fs.open(UPDATE_RECEIPT, "r")
+            if receipt then
+                print((receipt.readAll() or ""):gsub("\n", " | "))
+                receipt.close()
+            end
+        end
         print("")
         for index, item in ipairs(items) do
             print((index == selected and "> " or "  ") .. item.label)
@@ -620,3 +633,27 @@ else
     successful = downloadThat(requested)
 end
 if not successful then error("A komponenscsomag frissitese nem teljes.", 0) end
+local installedVersion = INSTALLER_VERSION
+if fs.exists("version.lua") and loadfile then
+    local versionChunk = loadfile("version.lua")
+    if versionChunk then
+        local ok, value = pcall(versionChunk)
+        if ok and type(value) == "table" and type(value.label) == "string" then
+            installedVersion = value.label
+        end
+    end
+end
+local epoch = os.epoch and os.epoch("utc") or os.time() * 1000
+local timestamp = os.date("!%Y-%m-%d %H:%M:%S", math.floor(epoch / 1000)) .. " UTC"
+local receipt = fs.open(UPDATE_RECEIPT, "w")
+if receipt then
+    receipt.write("Turtomata " .. installedVersion .. "\n"
+        .. "Downloader " .. INSTALLER_VERSION .. "\n"
+        .. timestamp .. "\n" .. tostring(requested))
+    receipt.close()
+end
+print("")
+print("Turtomata " .. installedVersion .. " | Downloader " .. INSTALLER_VERSION)
+print(tr("Frissitve") .. ": " .. timestamp)
+print(tr("ENTER = lattamozas"))
+if type(read) == "function" then read() end

@@ -7,6 +7,7 @@ os.getComputerLabel = function() return "Banyasz" end
 os.epoch = function() return 123456 end
 
 local swarmSaved
+local scanActive = false
 package.loaded["state_store"] = {
     read = function(path)
         if path == "swarm_session.txt" then return swarmSaved end
@@ -16,6 +17,9 @@ package.loaded["state_store"] = {
         if path == "branch_miner_state.txt" then
             return {
                 active = true, activity = "bal_ag_erckereses", mainCompleted = 5,
+                collected = { ["minecraft:coal"] = 17 },
+                oreScan = scanActive and { active = true,
+                    returnScan = true } or nil,
                 position = { x = 1, y = 0, z = 5 }, heading = 1,
                 telemetry = { activeMs = 8000 },
                 config = {
@@ -65,6 +69,7 @@ assert(snapshot.activity == "bal_ag_erckereses")
 assert(snapshot.progressCurrent == 5 and snapshot.progressTotal == 10)
 assert(snapshot.position.x == 1 and snapshot.position.z == 5)
 assert(snapshot.fuel == 900 and snapshot.inventoryUsed == 3)
+assert(snapshot.collected["minecraft:coal"] == 17)
 assert(snapshot.remainingActions and snapshot.remainingMs)
 
 Remote.handleCommand(7, {
@@ -136,6 +141,17 @@ assert(Session.load().assignedBranch == "10-12345:3:left")
 assert(Session.load().status == "assigned_no_motion")
 assert(sentMessages[5].message.type == "task_ack")
 assert(sentMessages[5].message.accepted == true)
+swarmSaved.stationRegistration = {
+    slot = 2, chestName = "minecraft:chest", requestId = "station-42",
+}
+Remote.handleSwarm(25, SwarmProtocol.message("station_register_ack", {
+    jobId = swarmSaved.jobId, coordinatorId = 25, epoch = 1,
+    workerId = 42, slot = 2, requestId = "station-42",
+    stationId = "D02", accepted = true,
+}))
+assert(swarmSaved.stationRegistered == "D02"
+    and swarmSaved.stationChestName == "minecraft:chest"
+    and swarmSaved.stationRegistration == nil)
 swarmSaved.status = "leave_pending"
 swarmSaved.leaveRequestId = "leave-42"
 Remote.handleSwarm(25, SwarmProtocol.message("leave_ack", {
@@ -143,6 +159,20 @@ Remote.handleSwarm(25, SwarmProtocol.message("leave_ack", {
     workerId = 42, requestId = "leave-42", accepted = true,
 }))
 assert(Session.load().active == false and Session.load().status == "left")
+
+Remote.handleCommand(7, {
+    type = "command", version = Protocol.VERSION, targetId = 42,
+    command = "skip_ore_scan", requestId = "skip-off",
+})
+assert(sentMessages[#sentMessages].message.accepted == false)
+scanActive = true
+Remote.handleCommand(7, {
+    type = "command", version = Protocol.VERSION, targetId = 42,
+    command = "skip_ore_scan", requestId = "skip-on",
+})
+assert(sentMessages[#sentMessages].message.accepted == true)
+assert(queued[#queued][1] == "turtomata_remote_command"
+    and queued[#queued][2] == "skip_ore_scan")
 
 os.getComputerID, os.getComputerLabel, os.epoch = oldId, oldLabel, oldEpoch
 os.queueEvent = oldQueueEvent

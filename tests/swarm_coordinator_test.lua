@@ -22,6 +22,16 @@ local hello = {
 assert(Coordinator.registerWorker(hello, 31))
 assert(Coordinator.registerWorker(hello, 31)) -- duplicate is idempotent
 assert(Coordinator.load().workers["31"].slot == 2)
+local stationRequest = {
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 31, slot = 2, chestName = "minecraft:chest",
+    physicalConfirmed = true, requestId = "station-31",
+}
+local stationOk, stationReason, station = Coordinator.registerStation(
+    stationRequest, 31)
+assert(stationOk, stationReason)
+assert(station.id == "D02" and Coordinator.load().stations.D02.verified)
+assert(not Coordinator.registerStation(stationRequest, 32))
 local cancelled = {
     jobId = request.jobId, coordinatorId = 25, epoch = 1,
     workerId = 35, requestId = "cancel-before-ack",
@@ -102,6 +112,11 @@ local helper3 = { jobId = request.jobId, leaderId = 10,
     coordinatorId = 25, epoch = 1, workerId = 33,
     slot = 4, physicalConfirmed = true }
 assert(Coordinator.registerWorker(helper3, 33))
+assert(Coordinator.registerStation({
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 33, slot = 4, chestName = "minecraft:chest",
+    physicalConfirmed = true, requestId = "station-33",
+}, 33))
 ready.z, ready.side, ready.mainCompleted = 6, "left", 6
 assert(Coordinator.noteBranchReady(ready, 10))
 local claimed3, reason3, key3 = Coordinator.claimNextBranch(33)
@@ -136,6 +151,31 @@ assert(Coordinator.load().dockOwner == "32")
 transit.pose = { x = 2, y = 0, z = 0, heading = 0 }
 assert(Coordinator.confirmTransitArrival(transit, 32))
 assert(Coordinator.load().dockOwner == nil)
+transit3.phase, transit3.requestId = "inbound", "transit-33-home"
+transit3.preferredStationId = "D04"
+transit3.needsRefuel = false
+transit3.fuelAvailable = 1000
+transit3.nextBudget = 100
+local ownOk, ownReason, ownTransit = Coordinator.requestTransit(transit3, 33)
+assert(ownOk, ownReason)
+assert(ownTransit.stationId == "D04" and ownTransit.leaseId)
+assert(Coordinator.load().dockOwner == nil)
+assert(Coordinator.load().stations.D04.lease.workerId == 33)
+assert(Coordinator.reportStationIssue({
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 33, stationId = "D04", leaseId = ownTransit.leaseId,
+    requestId = transit3.requestId, issue = "full",
+    reason = "A lada megtelt.",
+}, 33))
+assert(Coordinator.load().stations.D04.status == "full")
+assert(Coordinator.markWorkerUncertain(33, "partial unload"))
+assert(Coordinator.recordPoseCorrection({
+    jobId = request.jobId, epoch = 1, coordinatorId = 25,
+    workerId = 33, pose = { x = 3, y = 0, z = 0, heading = 0 },
+}, 33))
+assert(Coordinator.approvePose(33))
+assert(Coordinator.load().stations.D04.lease == nil)
+assert(Coordinator.load().stations.D04.status == "full")
 transit.phase, transit.requestId = "outbound", "transit-3"
 assert(Coordinator.requestTransit(transit, 32))
 assert(Coordinator.markWorkerUncertain(32, "unload"))

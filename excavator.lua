@@ -11,6 +11,7 @@ local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
 local WorkEstimator = require("work_estimator")
+local PickupLedger = require("pickup_ledger")
 local centralRequest, centralRequestError = jobRequest.consume("excavator", programArgs)
 
 local config = {}
@@ -35,6 +36,7 @@ local runtime = {
     activity = "menu",
     baseCompleted = 0,
     torchSteps = 0,
+    collected = {},
 }
 local sharedNav = nil
 local navigationState = nil
@@ -60,6 +62,7 @@ local function saveState()
         activity = runtime.activity,
         baseCompleted = runtime.baseCompleted,
         torchSteps = runtime.torchSteps,
+        collected = runtime.active and runtime.collected or nil,
         visited = visited,
         position = { x = pose.x, y = pose.y, z = pose.z },
         heading = pose.heading,
@@ -70,6 +73,19 @@ local function saveState()
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
     if not ok then error(reason or "Nem irhato az allapotfajl.", 0) end
+end
+
+local function trackedDig(action)
+    local before = PickupLedger.snapshot()
+    local dug
+    if sharedTelemetry then dug = sharedTelemetry:measure("dig", action)
+    else dug = action() end
+    if dug then
+        runtime.collected = PickupLedger.record(runtime.collected, before,
+            PickupLedger.snapshot())
+        saveState()
+    end
+    return dug
 end
 
 local function setActivity(activity)
@@ -141,6 +157,7 @@ local function configure()
             runtime.activity = saved.activity or "ismeretlen"
             runtime.baseCompleted = saved.baseCompleted or 0
             runtime.torchSteps = saved.torchSteps or 0
+            runtime.collected = saved.collected or {}
             navigationState = saved.navigation
             telemetryState = saved.telemetry
             runtime.remote = saved.remote
@@ -184,6 +201,7 @@ local function configure()
         runtime.activity = saved.activity or "ismeretlen"
         runtime.baseCompleted = saved.baseCompleted or 0
         runtime.torchSteps = saved.torchSteps or 0
+        runtime.collected = saved.collected or {}
         navigationState = saved.navigation
         telemetryState = saved.telemetry
         runtime.remote = saved.remote
@@ -423,13 +441,13 @@ local function managedDig(direction)
     if not hasBlock then return true end
     if sharedSituations and sharedSituations:fluidKind(direction) then
         local cleared = sharedSituations:clearFluidSource(direction, selectSealBlock, function()
-            return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            return trackedDig(dig)
         end)
         if cleared.kind == "handled" then return true end
         return false, cleared.reason or "A folyadek nem zarhato le."
     end
     if not config.experimentalInventory or not inventoryManager or returningHome then
-        local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+        local dug = trackedDig(dig)
         if dug then return true end
         return false, "A blokk nem ashato."
     end
@@ -444,7 +462,7 @@ local function managedDig(direction)
             hasBlock, blockData = inspect()
             if not hasBlock then return true end
         else
-            local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            local dug = trackedDig(dig)
             if not dug then return false, "A blokk nem ashato." end
             local recorded, recordReason = inventoryManager.afterDig(
                 config, blockData, beforeOrReason
@@ -707,7 +725,7 @@ local function remoteMoveOptions()
                     return { result = { ok = false, code = "blocked",
                         reason = "Folyadek van a koordinatas utvonalon." } }
                 end
-                if dig() then return { action = "retry" } end
+                if trackedDig(dig) then return { action = "retry" } end
             elseif attack() then
                 return { action = "retry" }
             end

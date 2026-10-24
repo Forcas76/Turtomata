@@ -11,6 +11,7 @@ local UI = require("ui")
 local Telemetry = require("telemetry")
 local Situations = require("situation_manager")
 local WorkEstimator = require("work_estimator")
+local PickupLedger = require("pickup_ledger")
 local centralRequest, centralRequestError = jobRequest.consume("nether_builder", programArgs)
 
 local config = {}
@@ -50,6 +51,7 @@ local runtime = {
     floodEncounters = {},
     floodShell = false,
     dockCorrected = false,
+    collected = {},
 }
 local sharedNav = nil
 local sharedTelemetry = nil
@@ -72,6 +74,7 @@ local function saveState()
         blockDrops = runtime.blockDrops,
         floodEncounters = runtime.floodEncounters,
         floodShell = runtime.floodShell,
+        collected = runtime.active and runtime.collected or nil,
         telemetry = sharedTelemetry and sharedTelemetry:snapshot() or telemetryState,
         position = { x = pose.x, y = pose.y, z = pose.z },
         heading = pose.heading,
@@ -79,6 +82,19 @@ local function saveState()
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
     if not ok then error(reason or "Nem irhato az utvonal allapotfajl.", 0) end
+end
+
+local function trackedDig(action)
+    local before = PickupLedger.snapshot()
+    local dug
+    if sharedTelemetry then dug = sharedTelemetry:measure("dig", action)
+    else dug = action() end
+    if dug then
+        runtime.collected = PickupLedger.record(runtime.collected, before,
+            PickupLedger.snapshot())
+        saveState()
+    end
+    return dug
 end
 
 local function setActivity(value)
@@ -168,6 +184,7 @@ local function configure()
             runtime.pending = saved.pending
             runtime.serviceLevel = saved.serviceLevel or 0
             runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+            runtime.collected = saved.collected or {}
             runtime.floodEncounters = type(saved.floodEncounters) == "table" and saved.floodEncounters or {}
             runtime.floodShell = saved.floodShell == true
             telemetryState = saved.telemetry
@@ -211,6 +228,7 @@ local function configure()
         runtime.pending = saved.pending
         runtime.serviceLevel = saved.serviceLevel or 0
         runtime.blockDrops = type(saved.blockDrops) == "table" and saved.blockDrops or {}
+        runtime.collected = saved.collected or {}
         runtime.floodEncounters = type(saved.floodEncounters) == "table" and saved.floodEncounters or {}
         runtime.floodShell = saved.floodShell == true
         telemetryState = saved.telemetry
@@ -738,7 +756,7 @@ local function managedDig(direction)
                 if selectBuilder() then return true end
                 return false, "Nem talalom a tomitoblokkot."
             end, function()
-                return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+                return trackedDig(dig)
             end)
             if cleared.kind ~= "handled" then
                 return false, cleared.reason or "A folyadek nem zarhato le."
@@ -753,7 +771,7 @@ local function managedDig(direction)
             if not serviced then return false, reason end
         else
             local before = inventoryTotals()
-            local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            local dug = trackedDig(dig)
             if not dug then return false, "A blokk nem banyaszhato." end
             learnDrop(blockData, before)
             sleep(0.15)

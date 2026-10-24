@@ -2,8 +2,8 @@
 
 return {
     major = 1,
-    minor = 3,
-    patch = 0,
-    number = "1.3.0",
-    label = "v1.3.0",
+    minor = 4,
+    patch = 1,
+    number = "1.4.1",
+    label = "v1.4.1",
 }

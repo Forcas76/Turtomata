@@ -134,4 +134,20 @@ assert((inspectedAt["2,0,0"] or 0) == inspectedAtTip)
 assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
 assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1")
 
+-- Kihagyas csak cellahataron lep eletbe; a visszaut es a faklyak megmaradnak.
+pose = { x = 2, y = 0, z = 0, heading = 1 }
+world, inspectedAt, torchSteps = {}, {}, {}
+local skipped = {}
+api.shouldSkipScan = function() return true end
+api.markSkipped = function(side, step)
+    skipped[#skipped + 1] = side .. ":" .. step
+end
+scanned, scanReason = Scanner.scanReturnBranch("right", 2, 1, api)
+assert(scanned, scanReason)
+assert((inspectedAt["2,0,0"] or 0) == 0)
+assert((inspectedAt["1,0,0"] or 0) == 0)
+assert(skipped[1] == "right:2" and skipped[2] == "right:1")
+assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1")
+assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
+
 return true

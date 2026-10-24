@@ -12,6 +12,7 @@ local Situations = require("situation_manager")
 local WorkEstimator = require("work_estimator")
 local SwarmSafety = require("swarm_safety")
 local SwarmSession = require("swarm_session")
+local PickupLedger = require("pickup_ledger")
 local centralRequest, centralRequestError = jobRequest.consume("branch_miner", programArgs)
 
 local position = { x = 0, y = 0, z = 0 }
@@ -50,8 +51,11 @@ local runtime = {
     torchOutcomes = {},
     oreScan = nil,
     oreAheadVisited = nil,
+    skippedOreScans = {},
+    skipOrePending = false,
     fluidRisk = false,
     needsSealSupply = false,
+    collected = {},
 }
 local sharedNav = nil
 local navigationState = nil
@@ -65,6 +69,7 @@ local function swarmLinkAlive()
     local session = SwarmSession.load()
     local now = os.epoch and os.epoch("utc") or 0
     return session and session.active and session.role == "leader"
+        and not session.stationCheckPending
         and session.jobId == config.swarmJobId
         and session.status ~= "emergency_stop"
         and session.coordinatorId and session.lastHeartbeatAt
@@ -86,8 +91,11 @@ local function saveState()
         torchOutcomes = runtime.torchOutcomes,
         oreScan = runtime.oreScan,
         oreAheadVisited = runtime.oreAheadVisited,
+        skippedOreScans = runtime.active and runtime.skippedOreScans or nil,
+        skipOrePending = runtime.active and runtime.skipOrePending or nil,
         fluidRisk = runtime.fluidRisk,
         needsSealSupply = runtime.needsSealSupply,
+        collected = runtime.active and runtime.collected or nil,
         position = { x = pose.x, y = pose.y, z = pose.z },
         heading = pose.heading,
         navigation = sharedNav and sharedNav:snapshot() or navigationState,
@@ -96,6 +104,22 @@ local function saveState()
     }
     local ok, reason = stateStore.write(STATE_FILE, payload)
     if not ok then error(reason or "Nem irhato az allapotfajl.", 0) end
+end
+
+local function trackedDig(action)
+    local before = PickupLedger.snapshot()
+    local dug
+    if sharedTelemetry then
+        dug = sharedTelemetry:measure("dig", action)
+    else
+        dug = action()
+    end
+    if dug then
+        runtime.collected = PickupLedger.record(runtime.collected, before,
+            PickupLedger.snapshot())
+        saveState()
+    end
+    return dug
 end
 
 local function setActivity(activity)
@@ -172,8 +196,11 @@ local function configure()
             runtime.torchOutcomes = saved.torchOutcomes or {}
             runtime.oreScan = saved.oreScan
             runtime.oreAheadVisited = saved.oreAheadVisited
+            runtime.skippedOreScans = saved.skippedOreScans or {}
+            runtime.skipOrePending = saved.skipOrePending == true
             runtime.fluidRisk = saved.fluidRisk == true
             runtime.needsSealSupply = saved.needsSealSupply == true
+            runtime.collected = saved.collected or {}
             navigationState = saved.navigation
             telemetryState = saved.telemetry
         else
@@ -238,8 +265,11 @@ local function configure()
         runtime.torchOutcomes = saved.torchOutcomes or {}
         runtime.oreScan = saved.oreScan
         runtime.oreAheadVisited = saved.oreAheadVisited
+        runtime.skippedOreScans = saved.skippedOreScans or {}
+        runtime.skipOrePending = saved.skipOrePending == true
         runtime.fluidRisk = saved.fluidRisk == true
         runtime.needsSealSupply = saved.needsSealSupply == true
+        runtime.collected = saved.collected or {}
         navigationState = saved.navigation
         telemetryState = saved.telemetry
     else
@@ -588,13 +618,13 @@ local function managedDig(direction)
         runtime.fluidRisk = true
         saveState()
         local cleared = sharedSituations:clearFluidSource(direction, selectSealBlock, function()
-            return sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            return trackedDig(dig)
         end)
         if cleared.kind == "handled" then return true end
         return false, cleared.reason or "A folyadek nem zarhato le."
     end
     if not config.experimentalInventory or not inventoryManager or returningHome then
-        local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+        local dug = trackedDig(dig)
         if dug then return true end
         return false, "A blokk nem ashato."
     end
@@ -609,7 +639,7 @@ local function managedDig(direction)
             hasBlock, blockData = inspect()
             if not hasBlock then return true end
         else
-            local dug = sharedTelemetry and sharedTelemetry:measure("dig", dig) or dig()
+            local dug = trackedDig(dig)
             if not dug then return false, "A blokk nem ashato." end
             local recorded, recordReason = inventoryManager.afterDig(
                 config, blockData, beforeOrReason
@@ -1262,7 +1292,7 @@ local function oreInspectAndDig(move, _, discoveryId)
         if inventoryFull() then
             return false, "service", "Az inventory megtelt az erc elott."
         end
-        if not dig() then return false, "blocked", "A kijelolt erc nem banyaszhato." end
+        if not trackedDig(dig) then return false, "blocked", "A kijelolt erc nem banyaszhato." end
         return true
     end
 
@@ -1270,7 +1300,7 @@ local function oreInspectAndDig(move, _, discoveryId)
     if not ready then
         return false, "service", "KISERLETI inventory: " .. tostring(beforeOrReason)
     end
-    if not dig() then return false, "blocked", "A kijelolt erc nem banyaszhato." end
+    if not trackedDig(dig) then return false, "blocked", "A kijelolt erc nem banyaszhato." end
     local recorded, recordReason = inventoryManager.afterDig(
         config, blockData, beforeOrReason
     )
@@ -1291,6 +1321,16 @@ buildOreApi = function()
         digOre = oreInspectAndDig,
         ensureFuel = refuelFromInventory,
         shouldStop = function() return stopRequested end,
+        shouldSkipScan = function() return runtime.skipOrePending end,
+        markSkipped = function(side, step)
+            local key = tostring(config.startOffset + runtime.mainCompleted)
+                .. ":" .. side
+            if not runtime.skippedOreScans[key] then
+                runtime.skippedOreScans[key] = { fromStep = step }
+            end
+            runtime.skipOrePending = false
+            saveState()
+        end,
         checkpoint = function(oreState)
             runtime.oreScan = oreState
             saveState()
@@ -1642,6 +1682,8 @@ local function runMining()
         runtime.mainTorchHandledThrough = 0
         runtime.oreScan = nil
         runtime.oreAheadVisited = nil
+        runtime.skippedOreScans = {}
+        runtime.skipOrePending = false
         saveState()
 
         local serviced, serviceReason = serviceHome(tripFuelRequirement(0, config.startOffset))
@@ -1753,6 +1795,11 @@ local function stopListener()
         elseif event == "turtomata_remote_command" and key == "service" then
             serviceRequested = true
             print("Tavoli lepakolasi keres fogadva.")
+        elseif event == "turtomata_remote_command"
+            and key == "skip_ore_scan" then
+            runtime.skipOrePending = true
+            saveState()
+            print("Erckereses kihagyasa a kovetkezo biztonsagos ponttol.")
         end
     end
 end

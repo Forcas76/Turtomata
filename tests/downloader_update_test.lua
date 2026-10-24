@@ -83,6 +83,8 @@ assert(pcall(oldChunk, "turtle"))
 assert(requests[1] == "downloader.lua")
 assert(requests[2] == "new_feature.lua")
 assert(files["new_feature.lua"] == "return true")
+assert(files[".turtomata_update.txt"]
+    and files[".turtomata_update.txt"]:find("Downloader v1.4.1", 1, true))
 local selfFetches = 0
 for _, path in ipairs(requests) do
     if path == "downloader.lua" then selfFetches = selfFetches + 1 end
