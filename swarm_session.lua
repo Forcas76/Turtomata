@@ -5,10 +5,13 @@ local session = {}
 
 local STATE_FILE = "swarm_session.txt"
 local OFFERS_FILE = "swarm_offers.txt"
+local function copyConfig(value)
+    return Store.clone and Store.clone(value) or value
+end
 
 function session.load()
     local value = Store.read(STATE_FILE)
-    return type(value) == "table" and value.version == 1 and value or nil
+    return type(value) == "table" and value.version == 2 and value or nil
 end
 
 function session.openLeader(config)
@@ -26,11 +29,12 @@ function session.openLeader(config)
     local id = tostring(os.getComputerID()) .. "-"
         .. tostring(os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000))
     local value = {
-        version = 1, active = true, role = "leader", jobId = id,
+        version = 2, active = true, role = "leader", jobId = id,
         leaderId = os.getComputerID(), slot = 1,
         coordinatorId = nil, epoch = 0,
         mainLength = config.mainLength, branchLength = config.branchLength,
         branchSpacing = config.branchSpacing, tunnelMode = config.tunnelMode,
+        workConfig = copyConfig(config),
         status = "waiting_for_coordinator",
     }
     local ok, reason = Store.write(STATE_FILE, value)
@@ -84,6 +88,8 @@ function session.observeOffer(offer)
         branchLength = offer.branchLength,
         branchSpacing = offer.branchSpacing,
         tunnelMode = offer.tunnelMode,
+        workConfig = type(offer.workConfig) == "table"
+            and copyConfig(offer.workConfig) or nil,
         seenAt = now,
     }
     return Store.write(OFFERS_FILE, offers)
@@ -128,8 +134,11 @@ function session.join(offer, slot)
         or (offer.tunnelMode ~= 1 and offer.tunnelMode ~= 2) then
         return false, "Az ajanlatbol hianyzik a munkameret."
     end
+    if type(offer.workConfig) ~= "table" then
+        return false, "Az ajanlatbol hianyzik a kozos munkabeallitas; frissitsd a resztvevoket."
+    end
     local value = {
-        version = 1, active = true, role = "worker",
+        version = 2, active = true, role = "worker",
         jobId = offer.jobId, leaderId = offer.leaderId,
         coordinatorId = offer.coordinatorId, epoch = offer.epoch,
         slot = slot, pose = pose, status = "join_pending",
@@ -137,6 +146,8 @@ function session.join(offer, slot)
         branchLength = offer.branchLength,
         branchSpacing = offer.branchSpacing,
         tunnelMode = offer.tunnelMode,
+        workConfig = type(offer.workConfig) == "table"
+            and copyConfig(offer.workConfig) or nil,
     }
     local ok, saveReason = Store.write(STATE_FILE, value)
     return ok, saveReason, ok and value or nil

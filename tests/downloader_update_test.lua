@@ -4,6 +4,7 @@ local oldTerm, oldTextutils = term, textutils
 local oldPrint, oldPrintError = print, printError
 local oldLoadfile = loadfile
 local oldLocalization = package.loaded.localization
+assert(DOWNLOADER_SOURCE:find('githubPath = "swarm_estimator.lua"', 1, true))
 
 local latest = DOWNLOADER_SOURCE:gsub("    main = {", [[
     newfeature = {
@@ -84,7 +85,7 @@ assert(requests[1] == "downloader.lua")
 assert(requests[2] == "new_feature.lua")
 assert(files["new_feature.lua"] == "return true")
 assert(files[".turtomata_update.txt"]
-    and files[".turtomata_update.txt"]:find("Downloader v1.4.1", 1, true))
+    and files[".turtomata_update.txt"]:find("Downloader v1.5.1", 1, true))
 local selfFetches = 0
 for _, path in ipairs(requests) do
     if path == "downloader.lua" then selfFetches = selfFetches + 1 end

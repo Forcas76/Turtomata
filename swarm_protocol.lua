@@ -1,7 +1,7 @@
 -- Elkülönitett, verziozott csapatmunka-uzenetek.
 local protocol = {
-    VERSION = 1,
-    CHANNEL = "turtomata.swarm.v1",
+    VERSION = 2,
+    CHANNEL = "turtomata.swarm.v2",
 }
 
 function protocol.message(kind, fields)

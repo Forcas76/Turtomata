@@ -22,6 +22,7 @@ local groups = {
 }
 
 local selected = {}
+local workTargets = nil
 local custom = {}
 local customGroups = {}
 local groupOverrides = {}
@@ -480,13 +481,18 @@ end
 
 function scanner.matches(blockData)
     loadTargets()
+    local active = workTargets or selected
     return type(blockData) == "table"
         and type(blockData.name) == "string"
-        and selected[blockData.name] == true
+        and active[blockData.name] == true
+end
+
+function scanner.setWorkTargets(targets)
+    workTargets = type(targets) == "table" and targets or nil
 end
 
 local function knownId(id)
-    if selected[id] ~= nil then return true end
+    if (workTargets or selected)[id] ~= nil then return true end
     for _, group in ipairs(groups) do
         for _, name in ipairs(group.ids) do
             if name == id then return true end
@@ -1021,12 +1027,14 @@ function scanner.scanReturnBranch(side, branchLength, mode, api, resumed)
             local placed, torchReason = api.placeBranchTorch(side, step)
             if not placed then return false, torchReason end
         end
-        local moved, moveReason = leaveMove(session, api)
-        if not moved then return false, moveReason end
+        if not (api.stopBeforeAnchor and step == 1) then
+            local moved, moveReason = leaveMove(session, api)
+            if not moved then return false, moveReason end
+        end
         session.branchStep = step - 1
         api.checkpoint(session)
     end
-    api.face(mainHeading)
+    api.face(api.stopBeforeAnchor and branchHeading or mainHeading)
     api.checkpoint(nil)
     return true
 end

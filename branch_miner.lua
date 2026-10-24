@@ -12,6 +12,7 @@ local Situations = require("situation_manager")
 local WorkEstimator = require("work_estimator")
 local SwarmSafety = require("swarm_safety")
 local SwarmSession = require("swarm_session")
+local SwarmProtocol = require("swarm_protocol")
 local PickupLedger = require("pickup_ledger")
 local centralRequest, centralRequestError = jobRequest.consume("branch_miner", programArgs)
 
@@ -63,6 +64,7 @@ local sharedTelemetry = nil
 local telemetryState = nil
 local sharedSituations = nil
 local activeBranchContext = nil
+local leaderRouteHeld = false
 
 local function swarmLinkAlive()
     if not config.swarmTrunkOnly then return true end
@@ -74,6 +76,50 @@ local function swarmLinkAlive()
         and session.status ~= "emergency_stop"
         and session.coordinatorId and session.lastHeartbeatAt
         and now - session.lastHeartbeatAt <= 6000
+end
+
+local function leaderRoute(kind, phase)
+    if not config.swarmTrunkOnly then return true end
+    local requestId = tostring(os.getComputerID()) .. "-route-"
+        .. tostring(os.epoch("utc"))
+    local replyType = kind == "leader_route_request"
+        and "leader_route_ack" or "leader_route_release_ack"
+    while swarmLinkAlive() do
+        local session = SwarmSession.load()
+        rednet.send(session.coordinatorId, SwarmProtocol.message(kind, {
+            jobId = session.jobId, epoch = session.epoch,
+            coordinatorId = session.coordinatorId,
+            requestId = requestId, phase = phase,
+            pose = { x = position.x, y = position.y,
+                z = position.z, heading = heading },
+        }), SwarmProtocol.CHANNEL)
+        local sender, reply = rednet.receive(SwarmProtocol.CHANNEL, 2)
+        if sender == session.coordinatorId
+            and SwarmProtocol.valid(reply, replyType)
+            and reply.jobId == session.jobId and reply.epoch == session.epoch
+            and reply.requestId == requestId then
+            if reply.accepted then return true end
+            if not reply.reason or not reply.reason:find("hasznalja", 1, true) then
+                return false, reply.reason
+            end
+        end
+        sleep(0.5)
+    end
+    return false, "Kezeloi kapcsolat megszakadt; nincs utvonaljog."
+end
+
+local function acquireLeaderRoute()
+    if not config.swarmTrunkOnly or leaderRouteHeld then return true end
+    local ok, reason = leaderRoute("leader_route_request", "return")
+    if ok then leaderRouteHeld = true end
+    return ok, reason
+end
+
+local function releaseLeaderRoute(phase)
+    if not config.swarmTrunkOnly or not leaderRouteHeld then return true end
+    local ok, reason = leaderRoute("leader_route_release", phase)
+    if ok then leaderRouteHeld = false end
+    return ok, reason
 end
 
 local function saveState()
@@ -919,6 +965,10 @@ local function returnHome()
     if not swarmLinkAlive() then
         return false, "Kezeloi kapcsolat megszakadt; nincs vak hazateres."
     end
+    if config.swarmTrunkOnly and position.z > 0 then
+        local granted, grantReason = acquireLeaderRoute()
+        if not granted then return false, grantReason end
+    end
     returningHome = true
     setActivity("hazateres")
     status("Hazateres")
@@ -1114,6 +1164,8 @@ serviceAndResume = function(reasonText, extraFuel)
     if not levelOk then return false, levelReason end
     local resumed, resumeReason = navigateTo(savedX, savedZ, savedHeading)
     if not resumed then return false, resumeReason end
+    local released, releaseReason = releaseLeaderRoute("forward")
+    if not released then return false, releaseReason end
     setActivity(savedActivity)
     status("Munka folytatasa")
     return true
@@ -1553,6 +1605,8 @@ local function parkSwarmLeader()
     if position.x ~= 0 or position.y ~= 0 or position.z ~= 0 then
         return false, "A vezetot csak a bazisrol lehet felreallitani."
     end
+    local granted, grantReason = acquireLeaderRoute()
+    if not granted then return false, grantReason end
     face(3) -- A segedek jobbra sorakoznak; a vezeto balra all felre.
     local cleared, clearReason = digForwardUntilClear()
     if not cleared then return false, clearReason end
@@ -1561,6 +1615,17 @@ local function parkSwarmLeader()
     local clearTop, topReason = managedDig("up")
     if not clearTop then return false, topReason end
     face(0)
+    local released, releaseReason = releaseLeaderRoute("parked")
+    if not released then return false, releaseReason end
+    local session = SwarmSession.load()
+    if session and session.active and session.jobId == config.swarmJobId then
+        session.status = "registered_no_motion"
+        session.pose = { x = -1, y = 0, z = 0, heading = 0 }
+        session.navigation = { pose = session.pose, path = {},
+            pending = nil, anchors = {} }
+        local saved, saveReason = SwarmSession.update(session)
+        if not saved then return false, saveReason end
+    end
     return true
 end
 

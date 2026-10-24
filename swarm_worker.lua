@@ -5,9 +5,13 @@ local Navigation = require("navigation")
 local Safety = require("swarm_safety")
 local BaseDock = require("base_dock")
 local PickupLedger = require("pickup_ledger")
+local TorchManager = require("torch_manager")
+local OreScanner = require("ore_scanner")
+local InventoryManager = require("inventory_manager")
 
 local state = Session.load()
-if not state or not state.active or state.role ~= "worker"
+if not state or not state.active
+    or (state.role ~= "worker" and state.role ~= "leader")
     or state.stationCheckPending
     or not state.assignedBranch
     or (state.status ~= "assigned_no_motion" and state.status ~= "at_branch") then
@@ -24,9 +28,33 @@ end
 
 local stopped, finished = false, false
 local nav
+local face
 local sideHeading = state.assignmentSide == "left" and 3 or 1
 local sideSign = state.assignmentSide == "left" and -1 or 1
-local slotX = state.slot - 1
+local slotX = state.role == "leader" and -1 or state.slot - 1
+local config = state.workConfig or {}
+OreScanner.setWorkTargets(config.oreTargets)
+local miningSlot = config.torchEnabled and 3 or 2
+
+local function insideOwnOreRegion(pose)
+    if type(pose) ~= "table" then return false end
+    local distance = sideSign * pose.x
+    local band = math.floor(((state.branchSpacing or 1) - 1) / 2)
+    return distance >= 1
+        and distance <= state.branchLength + (config.oreScanMaxDepth or 4)
+        and math.abs(pose.z - state.assignmentZ) <= band
+end
+
+local function targetPose(pose, move)
+    local x, y, z = pose.x, pose.y, pose.z
+    if move.kind == "u" then y = y + 1
+    elseif move.kind == "d" then y = y - 1
+    elseif move.heading == 0 then z = z + 1
+    elseif move.heading == 1 then x = x + 1
+    elseif move.heading == 2 then z = z - 1
+    else x = x - 1 end
+    return { x = x, y = y, z = z }
+end
 
 local function persist(fields)
     local latest = Session.load()
@@ -76,8 +104,36 @@ end
 
 local function checkReturnFuel()
     local pose = nav:getPose()
-    local distance = math.abs(pose.x) + math.abs(pose.z) + slotX + 8
+    local distance = math.abs(pose.x) + math.abs(pose.z)
+        + math.abs(slotX) + 8
     return ensureFuel(distance)
+end
+
+local function requireTorches(count)
+    if not config.torchEnabled or (config.branchTorchInterval or 0) < 1
+        or state.branchLength < config.branchTorchInterval
+        or count < 1 then return true end
+    if TorchManager.hasTorch() and turtle.getItemCount(2) >= count then
+        if state.torchRequired then persist({ torchRequired = false }) end
+        return true
+    end
+    persist({ torchRequired = count })
+    return false
+end
+
+local function pendingTorchCount(firstStep)
+    if not config.torchEnabled or (config.branchTorchInterval or 0) < 1 then
+        return 0
+    end
+    local count = 0
+    for stepNumber = firstStep, state.branchLength do
+        if stepNumber % config.branchTorchInterval == 0
+            and not (state.torchOutcomes
+                and state.torchOutcomes[tostring(stepNumber)]) then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 local function dig(direction)
@@ -95,11 +151,57 @@ local function dig(direction)
         error("Folyadek a kozos utvonalon; helyszini ellenorzes kell.", 0)
     end
     if has then
+        local inventoryBefore
+        if config.experimentalInventory then
+            local ready, beforeOrReason = InventoryManager.prepareForDig(config, data)
+            if not ready then return false, "needs_service", beforeOrReason end
+            inventoryBefore = beforeOrReason
+        end
         local before = PickupLedger.snapshot()
         if not action() then error("A blokk nem banyaszhato.", 0) end
         persist({ collected = PickupLedger.record(state.collected, before,
             PickupLedger.snapshot()) })
+        if config.experimentalInventory then
+            local recorded, reason = InventoryManager.afterDig(
+                config, data, inventoryBefore)
+            if not recorded then error(reason, 0) end
+        end
     end
+    return true
+end
+
+local function placeBranchTorch(stepNumber)
+    if not config.torchEnabled or (config.branchTorchInterval or 0) < 1
+        or stepNumber % config.branchTorchInterval ~= 0 then return true end
+    local key = tostring(stepNumber)
+    if state.torchOutcomes and state.torchOutcomes[key] then return true end
+    local placed, reason = false, "Nincs faklya a 2-es slotban."
+    if TorchManager.hasTorch() then
+        local original = nav:getPose().heading
+        local function faceHeading(heading)
+            face(heading)
+        end
+        if config.torchPlacementMode == 2 then
+            placed, reason = TorchManager.placeAbove(
+                function() return nav:getPose().heading end, faceHeading)
+        else
+            placed, reason = TorchManager.placeInDirection(
+                (sideHeading + 1) % 4,
+                function() return nav:getPose().heading end,
+                faceHeading,
+                function(direction)
+                    local safe, safetyReason = Safety.mayDig(direction)
+                    if not safe then return false, safetyReason end
+                    local dug, _, digReason = dig(direction)
+                    return dug, digReason
+                end)
+        end
+        face(original)
+    end
+    local outcomes = state.torchOutcomes or {}
+    outcomes[key] = placed and "placed" or (reason or "skipped")
+    persist({ torchOutcomes = outcomes })
+    return true -- A sikertelen faklyalerakas nem allitja le az agat.
 end
 
 local function step(kind, heading, allowDig)
@@ -126,14 +228,23 @@ local function step(kind, heading, allowDig)
             local inspect = direction == "up" and turtle.inspectUp
                 or direction == "down" and turtle.inspectDown or turtle.inspect
             if not inspect() then return nil end
-            dig(direction)
+            local dug, code, reason = dig(direction)
+            if not dug then
+                return { result = { ok = false, code = code, reason = reason } }
+            end
             return { action = "retry" }
         end,
     })
-    if not result.ok then error(result.reason or result.code, 0) end
+    if not result.ok then
+        if result.code == "needs_service" then
+            return false, "needs_service"
+        end
+        error(result.reason or result.code, 0)
+    end
+    return true
 end
 
-local function face(heading)
+face = function(heading)
     ensureLink()
     local result = nav:face(heading)
     if not result.ok then error(result.reason, 0) end
@@ -142,21 +253,25 @@ end
 local function moveX(target, allowDig)
     while nav:getPose().x ~= target do
         local heading = nav:getPose().x < target and 1 or 3
-        step("h", heading, allowDig)
+        local moved = step("h", heading, allowDig)
+        if not moved then error("Nincs hely az utvonalon.", 0) end
     end
 end
 
 local function moveZ(target, allowDig)
     while nav:getPose().z ~= target do
         local heading = nav:getPose().z < target and 0 or 2
-        step("h", heading, allowDig)
+        local moved = step("h", heading, allowDig)
+        if not moved then error("Nincs hely az utvonalon.", 0) end
     end
 end
 
-local function request(kind, payload, response)
+local function request(kind, payload, response, maxAttempts)
     local requestId = payload.requestId
+    local attempts = 0
     while true do
         ensureLink()
+        attempts = attempts + 1
         rednet.send(state.coordinatorId, Protocol.message(kind, payload),
             Protocol.CHANNEL)
         local deadline = os.epoch("utc") + 2500
@@ -172,6 +287,10 @@ local function request(kind, payload, response)
                     -- Idegen vagy regi feladatra erkezo valasz.
                 else
                 if reply.accepted then return reply end
+                if response == "branch_transfer_grant" and reply.reason
+                    and reply.reason:find("ag mar foglalt", 1, true) then
+                    return reply -- Masik turtle nyerte a versenyt; uj ajanlat kell.
+                end
                 if reply.reason and (reply.reason:find("foglalt", 1, true)
                     or reply.reason:find("hasznalja", 1, true)) then
                     break -- Foglalt folyosonal ugyanazzal az ID-val varunk.
@@ -179,6 +298,9 @@ local function request(kind, payload, response)
                 error("Kezelo elutasitotta: " .. tostring(reply.reason), 0)
                 end
             end
+        end
+        if maxAttempts and attempts >= maxAttempts then
+            return { accepted = true } -- Olvasasi keresnel biztonsagos hazateres.
         end
         sleep(1)
     end
@@ -197,6 +319,7 @@ local function transit(phase, service)
         phase = phase, requestId = id,
         preferredStationId = service and service.preferredStationId,
         needsRefuel = service and service.needsRefuel,
+        needsTorch = service and service.needsTorch,
         fuelAvailable = service and service.fuelAvailable,
         nextBudget = service and service.nextBudget,
     }, "transit_grant")
@@ -226,15 +349,23 @@ local function arrived(info, status)
 end
 
 local function outbound()
-    local needed = 2 * (slotX + state.assignmentZ + state.branchLength)
+    local needed = 2 * (math.abs(slotX) + state.assignmentZ + state.branchLength)
         + 16
     local fuelOk, reason = ensureFuel(needed)
     if not fuelOk then error(reason .. " Tegyel uzemanyagot az 1-es slotba.", 0) end
     local info = transit("outbound")
-    step("h", 0, true) -- A sorhelyrol a kozos keresztfolyosora.
-    moveX(0, true)
+    if state.role == "leader" then
+        step("h", 1, false) -- Bal oldali varakozobol a D01 cellajara.
+        local moved = step("h", 0, true)
+        if not moved then error("Nincs hely az indulasi folyoson.", 0) end
+    else
+        local moved = step("h", 0, true)
+        if not moved then error("Nincs hely az indulasi folyoson.", 0) end
+        moveX(0, true)
+    end
     moveZ(state.assignmentZ, false) -- A kesz fotengelyen nincs bontas.
-    step("h", sideHeading, true)
+    local entered = step("h", sideHeading, true)
+    if not entered then error("Az oldalagelejen nincs hely.", 0) end
     face(sideHeading)
     arrived(info, "at_branch")
 end
@@ -242,37 +373,140 @@ end
 local inventoryFull
 local function carveCeiling()
     if inventoryFull() then return false end
-    dig("up")
+    if not dig("up") then return false end
     if inventoryFull() then return false end
     if state.tunnelMode == 2 then
-        dig("down")
+        if not dig("down") then return false end
     end
     return true
 end
 
 inventoryFull = function()
-    for slot = 2, 16 do
+    if config.experimentalInventory then
+        return InventoryManager.isCompletelyFull(config)
+    end
+    for slot = miningSlot, 16 do
         if turtle.getItemCount(slot) == 0 then return false end
     end
+    return true
+end
+
+local function buildOreApi(stopBeforeAnchor)
+    local function oreMove(move)
+        ensureLink()
+        local destination = targetPose(nav:getPose(), move)
+        if not insideOwnOreRegion(destination) then
+            return false, "Az erc-utvonal elhagyna a kiosztott ag teruletet."
+        end
+        if move.kind == "h" then face(move.heading) end
+        local result = nav:step(move)
+        return result.ok, result.reason
+    end
+    local function oreDig(move, _, discoveryId)
+        ensureLink()
+        local destination = targetPose(nav:getPose(), move)
+        if not insideOwnOreRegion(destination) then
+            return false, "changed", "Masik ag vagy kozos folyosocella."
+        end
+        local direction = move.kind == "u" and "up"
+            or move.kind == "d" and "down" or "forward"
+        if move.kind == "h" then face(move.heading) end
+        local inspect = direction == "up" and turtle.inspectUp
+            or direction == "down" and turtle.inspectDown or turtle.inspect
+        local has, block = inspect()
+        if not has or not block or not (OreScanner.matches(block)
+            or discoveryId and block.name == discoveryId) then
+            return false, "changed", "Az erc mar nincs ott."
+        end
+        local safe, reason = Safety.mayDig(direction)
+        if not safe then return false, "blocked", reason end
+        if inventoryFull() then
+            return false, "service", "Az inventory megtelt."
+        end
+        local dug, code, reason = dig(direction)
+        if not dug then return false, "service", reason end
+        return true
+    end
+    return {
+            maxDepth = config.oreScanMaxDepth or 4,
+            maxBlocks = config.oreScanMaxBlocks or 16,
+            fuelReserve = config.fuelReserve or 5,
+            stopBeforeAnchor = stopBeforeAnchor,
+            getPose = function() return nav:getPose() end,
+            face = face,
+            moveOpen = oreMove,
+            digOre = oreDig,
+            ensureFuel = ensureFuel,
+            shouldStop = function() return stopped end,
+            checkpoint = function(scan)
+                persist({ oreScan = scan or false })
+            end,
+            placeBranchTorch = function(_, stepNumber)
+                return placeBranchTorch(stepNumber)
+            end,
+            service = function()
+                return false, "Erc-vizsgalat kozben kiszolgalas kell; helyszini ellenorzes."
+            end,
+        }
+end
+
+local function scanOreAhead(stepNumber)
+    if not config.oreScanEnabled then return true end
+    local has, block = turtle.inspect()
+    if not has or not block or not (OreScanner.matches(block)
+        or OreScanner.discoveryId(block)) then return true end
+    local required = 2 * (math.abs(slotX) + state.assignmentZ
+        + state.branchLength) + 2 * (config.oreScanMaxBlocks or 16) + 20
+    if not ensureFuel(required) then return false end
+    local mined, reason = OreScanner.mineAhead(state.assignmentSide,
+        stepNumber, buildOreApi(false), block)
+    if not mined then error(reason or "Az elottem talalt ercteler elakadt.", 0) end
+    return true
+end
+
+local function scanOreOnReturn()
+    if not config.oreScanEnabled then return true end
+    if not requireTorches(pendingTorchCount(1)) then return false end
+    local required = 2 * (math.abs(slotX) + state.assignmentZ
+        + state.branchLength) + 2 * (config.oreScanMaxBlocks or 16) + 20
+    if not ensureFuel(required) then return false end
+    local scanned, reason = OreScanner.scanReturnBranch(
+        state.assignmentSide, state.branchLength, state.tunnelMode,
+        buildOreApi(true))
+    if not scanned then error(reason, 0) end
+    persist({ oreScanComplete = true })
     return true
 end
 
 local function mineBranch()
     local completed = state.branchProgress or 0
     if completed > 1 then moveX(sideSign * completed, false) end
+    if not config.oreScanEnabled
+        and pendingTorchCount(math.max(1, completed)) > 0
+        and not requireTorches(1) then return false end
     if completed == 0 then
         if inventoryFull() or not checkReturnFuel() then return false end
         if not carveCeiling() then return false end
         completed = 1
         persist({ branchProgress = completed })
+        if not config.oreScanEnabled then placeBranchTorch(completed) end
     end
     for index = completed + 1, state.branchLength do
         ensureLink()
+        if not config.oreScanEnabled and pendingTorchCount(index) > 0
+            and not requireTorches(1) then return false end
         if inventoryFull() then return false end
         if not checkReturnFuel() then return false end
-        step("h", sideHeading, true)
+        face(sideHeading)
+        if not scanOreAhead(index) then return false end
+        local stepped, stepReason = step("h", sideHeading, true)
+        if not stepped and stepReason == "needs_service" then return false end
         if not carveCeiling() then return false end
         persist({ branchProgress = index })
+        if not config.oreScanEnabled then placeBranchTorch(index) end
+    end
+    if config.oreScanEnabled and not state.oreScanComplete then
+        if not scanOreOnReturn() then return false end
     end
     return true
 end
@@ -290,7 +524,12 @@ local function unloadAndRefuel()
     for slot = 1, 16 do
         ensureLink()
         turtle.select(slot)
-        if turtle.getItemCount(slot) > 0 then
+        if slot == 2 and config.torchEnabled then
+            if turtle.getItemCount(2) > 0 and not TorchManager.isTorch(2)
+                and (not turtle.drop() or turtle.getItemCount(2) > 0) then
+                unloadError = true
+            end
+        elseif turtle.getItemCount(slot) > 0 then
             if slot == 1 and turtle.refuel(0) then turtle.refuel()
             elseif not turtle.drop() or turtle.getItemCount(slot) > 0 then
                 unloadError = true
@@ -300,7 +539,8 @@ local function unloadAndRefuel()
     face(2)
     step("u", nil, false)
     turtle.select(1)
-    local needed = 2 * (slotX + state.assignmentZ + state.branchLength) + 20
+    local needed = 2 * (math.abs(slotX) + state.assignmentZ
+        + state.branchLength) + 20
     local attempts = 0
     while fuelLevel() < needed and attempts < 16 do
         ensureLink()
@@ -312,16 +552,33 @@ local function unloadAndRefuel()
         end
         attempts = attempts + 1
     end
-    if fuelLevel() < slotX + 4 then
+    if config.torchEnabled then
+        step("u", nil, false)
+        local torchOk, torchReason = TorchManager.refillFromChest()
+        if not torchOk then persist({ torchSupplyWarning = torchReason }) end
+        step("d", nil, false)
+        local required = tonumber(state.torchRequired) or 0
+        if required > 0 and (not TorchManager.hasTorch()
+            or turtle.getItemCount(2) < required) then
+            error("A faklyalada nem tudta potolni a szukseges "
+                .. required .. " faklyat.", 0)
+        end
+    end
+    if fuelLevel() < math.abs(slotX) + 4 then
         error("Nincs fuel a sorhelyre visszaereshez.", 0)
     end
     step("d", nil, false)
-    turtle.select(2)
+    turtle.select(miningSlot)
     if unloadError then
         error("A D01 leado lada megtelt; a maradek inventoryban van. Fuel toltes megkiserelve.", 0)
     end
     if fuelLevel() < needed then
         error("A fuel lada nem tudta feltolteni a kovetkezo uthoz.", 0)
+    end
+    if config.experimentalInventory then
+        local refreshed, refreshReason = InventoryManager.refresh(
+            config, "kozos_bazis_indulas", true)
+        if not refreshed then error(refreshReason, 0) end
     end
 end
 
@@ -337,7 +594,7 @@ local function unloadAtStation()
         } })
         error("A seged leado ladaja eltunt vagy megvaltozott.", 0)
     end
-    for slot = 2, 16 do
+    for slot = miningSlot, 16 do
         ensureLink()
         turtle.select(slot)
         if turtle.getItemCount(slot) > 0 then
@@ -352,18 +609,25 @@ local function unloadAtStation()
             end
         end
     end
-    turtle.select(2)
+    turtle.select(miningSlot)
     face(0)
+    if config.experimentalInventory then
+        local refreshed, refreshReason = InventoryManager.refresh(
+            config, "kozos_sajat_lada", true)
+        if not refreshed then error(refreshReason, 0) end
+    end
 end
 
 local function inbound()
     returnToBranchEntry()
-    local nextBudget = 2 * (slotX + state.assignmentZ + state.branchLength)
+    local nextBudget = 2 * (math.abs(slotX) + state.assignmentZ
+        + state.branchLength)
         + 20
     local needsRefuel = fuelLevel() < nextBudget
     local info = transit("inbound", {
         preferredStationId = state.stationRegistered,
         needsRefuel = needsRefuel,
+        needsTorch = config.torchEnabled and not TorchManager.hasTorch(),
         fuelAvailable = turtle.getFuelLevel(),
         nextBudget = nextBudget,
     })
@@ -387,9 +651,13 @@ local function inbound()
     else
         moveZ(0, false)
         unloadAndRefuel()
-        step("h", 0, false)
-        moveX(slotX, false)
-        step("h", 2, false)
+        if state.role == "leader" then
+            step("h", 3, false)
+        else
+            step("h", 0, false)
+            moveX(slotX, false)
+            step("h", 2, false)
+        end
         face(0)
     end
     arrived(info, "assigned_no_motion")
@@ -406,14 +674,127 @@ local function complete()
     latest.assignmentZ = nil
     latest.assignmentSide = nil
     latest.branchProgress = nil
+    latest.oreScan = nil
+    latest.oreScanComplete = nil
+    latest.torchOutcomes = nil
+    latest.torchRequired = nil
     latest.status = "registered_no_motion"
     local ok, reason = Session.update(latest)
     if not ok then error(tostring(reason), 0) end
     state = latest
 end
 
+local function handoffFuelBudget(targetZ)
+    local pose = nav:getPose()
+    local length = state.branchLength
+    local moves = 2 + math.abs(targetZ - pose.z)
+        + 2 * math.max(0, length - 1)
+        + targetZ + math.abs(slotX) + 8
+    if config.oreScanEnabled then
+        moves = moves + length * (state.tunnelMode == 2 and 4 or 2)
+            + 2 * (config.oreScanMaxBlocks or 16)
+    end
+    return moves + (config.fuelReserve or 5)
+end
+
+local function enoughForAnotherBranch(targetZ)
+    if inventoryFull() then return false end
+    if config.torchEnabled and (config.branchTorchInterval or 0) > 0
+        and state.branchLength >= config.branchTorchInterval then
+        local required = config.oreScanEnabled
+            and math.floor(state.branchLength / config.branchTorchInterval)
+            or 1
+        if not TorchManager.hasTorch()
+            or turtle.getItemCount(2) < required then return false end
+    end
+    return ensureFuel(handoffFuelBudget(targetZ))
+end
+
+local function transferToBranch(targetKey, targetZ, targetSide, attempt)
+    local requestId = tostring(os.getComputerID()) .. "-transfer-"
+        .. tostring(os.epoch("utc")) .. "-" .. tostring(attempt)
+    local sourceKey = state.assignedBranch
+    local info = { phase = "transfer", requestId = requestId,
+        fromBranch = sourceKey, branchKey = targetKey }
+    persist({ transit = info })
+    local grant = request("branch_transfer_request", {
+        jobId = state.jobId, epoch = state.epoch,
+        coordinatorId = state.coordinatorId,
+        workerId = os.getComputerID(), requestId = requestId,
+        fromBranch = sourceKey, targetBranch = targetKey,
+        pose = nav:getPose(), pending = nav:snapshot().pending ~= nil,
+    }, "branch_transfer_grant")
+    if not grant.accepted then
+        persist({ transit = false })
+        return false -- Az ajanlatot kozben masik turtle kapta.
+    end
+    if grant.branchKey ~= targetKey then
+        error("Az agvaltas visszaigazolasa masik agra szol.", 0)
+    end
+    info.granted = true
+    persist({ transit = info })
+    local targetHeading = targetSide == "left" and 3 or 1
+    local backHeading = sideHeading == 1 and 3 or 1
+    local toTrunk = step("h", backHeading, false)
+    if not toTrunk then error("Nem erheto el a foag az agvaltaskor.", 0) end
+    moveZ(targetZ, false)
+    local entered = step("h", targetHeading, true)
+    if not entered then error("Az uj ag elso cellaja nem jarhato.", 0) end
+    face(targetHeading)
+    request("transit_arrival", {
+        jobId = state.jobId, epoch = state.epoch,
+        coordinatorId = state.coordinatorId,
+        workerId = os.getComputerID(), requestId = requestId,
+        phase = "transfer", pose = nav:getPose(),
+        pending = nav:snapshot().pending ~= nil,
+    }, "transit_arrival_ack")
+    persist({
+        transit = false, assignedBranch = targetKey,
+        assignmentZ = targetZ, assignmentSide = targetSide,
+        branchProgress = 0, oreScan = false, oreScanComplete = false,
+        torchOutcomes = {}, torchRequired = false,
+        status = "at_branch",
+    })
+    sideHeading = targetHeading
+    sideSign = targetSide == "left" and -1 or 1
+    return true
+end
+
+local function tryNextBranch()
+    returnToBranchEntry()
+    for attempt = 1, 3 do
+        local requestId = tostring(os.getComputerID()) .. "-next-"
+            .. tostring(os.epoch("utc")) .. "-" .. tostring(attempt)
+        local offer = request("branch_next_query", {
+            jobId = state.jobId, epoch = state.epoch,
+            coordinatorId = state.coordinatorId,
+            workerId = os.getComputerID(), requestId = requestId,
+            branchKey = state.assignedBranch,
+        }, "branch_next_offer", 3)
+        if not offer.branchKey then return false end
+        local targetZ, targetSide = offer.branchKey:match(":(%d+):([^:]+)$")
+        targetZ = tonumber(targetZ)
+        if not targetZ or (targetSide ~= "left" and targetSide ~= "right")
+            or targetZ < 1 or targetZ > state.mainLength then
+            error("A kovetkezo ag ajanlata hibas.", 0)
+        end
+        if not enoughForAnotherBranch(targetZ) then return false end
+        if transferToBranch(offer.branchKey, targetZ, targetSide, attempt) then
+            return true
+        end
+    end
+    return false
+end
+
 local function run()
     ensureLink()
+    if config.experimentalInventory then
+        local initialized, initReason = InventoryManager.initialize(config)
+        if not initialized then error(initReason, 0) end
+    end
+    if type(state.oreScan) == "table" and state.oreScan.active then
+        error("Felbeszakadt erckitero: helyszini pozicioellenorzes kell.", 0)
+    end
     local savedNav = state.navigation or {
         pose = state.pose, path = {}, pending = nil, anchors = {},
     }
@@ -432,8 +813,9 @@ local function run()
         if pose.x ~= slotX or pose.y ~= 0 or pose.z ~= 0 or pose.heading ~= 0 then
             error("A turtle nincs a mentett sorhelyen.", 0)
         end
-    elseif pose.x ~= sideSign or pose.y ~= 0
-        or pose.z ~= state.assignmentZ or pose.heading ~= sideHeading then
+    elseif pose.x ~= sideSign * math.max(1, state.branchProgress or 0)
+        or pose.y ~= 0 or pose.z ~= state.assignmentZ
+        or pose.heading ~= sideHeading then
         error("A turtle nincs az igazolt ag-varakozohelyen.", 0)
     end
     while true do
@@ -444,18 +826,22 @@ local function run()
         end
         if state.status == "assigned_no_motion" then outbound() end
         local done = mineBranch()
-        inbound()
-        if done then complete() break end
+        if not done or not tryNextBranch() then
+            inbound()
+            if done then complete() break end
+        end
     end
-    print("Az oldalagat kesz; a seged a sajat sorhelyen all.")
+    print("Az oldalagat kesz; a turtle a sajat varakozohelyen all.")
 end
 
 local function workerTask()
     local ok, reason = pcall(run)
+    OreScanner.setWorkTargets(nil)
     if not ok then
         printError("Kozos munka megallt: " .. tostring(reason))
         local latest = Session.load()
-        if latest and latest.active and latest.role == "worker" then
+        if latest and latest.active
+            and (latest.role == "worker" or latest.role == "leader") then
             latest.status = "needs_attention"
             latest.lastError = tostring(reason)
             Session.update(latest)

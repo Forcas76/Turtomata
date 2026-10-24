@@ -24,7 +24,7 @@ end
 
 function coordinator.load()
     local value = Store.read(FILE)
-    return type(value) == "table" and value.version == 1 and value or nil
+    return type(value) == "table" and value.version == 2 and value or nil
 end
 
 function coordinator.claimAcknowledged(message, ownId)
@@ -42,13 +42,14 @@ function coordinator.claimAcknowledged(message, ownId)
         return false, "Ezen az eszkozon mar van aktiv kozos munka."
     end
     local value = current and current.active and current or {
-        version = 1, active = true, workers = {},
+        version = 2, active = true, workers = {},
         jobId = message.jobId, leaderId = message.leaderId,
         coordinatorId = ownId, epoch = message.epoch,
         mainLength = message.mainLength,
         branchLength = message.branchLength,
         branchSpacing = message.branchSpacing,
         tunnelMode = message.tunnelMode,
+        workConfig = message.workConfig,
     }
     if value.leaderId ~= message.leaderId or value.epoch ~= message.epoch
         or value.mainLength ~= message.mainLength
@@ -58,6 +59,9 @@ function coordinator.claimAcknowledged(message, ownId)
         return false, "A kezelo allapota elter az uj visszaigazolastol."
     end
     value.status = value.stopped and "emergency_stop" or "registration_only"
+    value.startedAt = value.startedAt
+        or (os.epoch and os.epoch("utc") or 0)
+    value.leaderTravel = value.leaderTravel or "forward"
     Stations.ensure(value)
     local reserved, reserveReason = Traffic.reserveCell(value,
         { x = 0, y = 0, z = 0 }, message.leaderId)
@@ -223,6 +227,56 @@ function coordinator.approvePose(workerId)
     if value.cells and value.cells[newKey] and value.cells[newKey] ~= id then
         return false, "A javitott cella kozben foglaltta valt."
     end
+    local transfer = worker.transit
+        and worker.transit.phase == "transfer" and worker.transit
+    if transfer then
+        local function bayFor(branchKey)
+            local z, side = branchKey:match(":(%d+):([^:]+)$")
+            return { x = side == "left" and -1 or 1,
+                y = 0, z = tonumber(z),
+                heading = side == "left" and 3 or 1 }
+        end
+        local sourceBay = bayFor(transfer.fromBranch)
+        local targetBay = bayFor(transfer.branchKey)
+        local atSource = Geometry.cellKey(pose) == Geometry.cellKey(sourceBay)
+            and pose.heading == sourceBay.heading
+        local atTarget = Geometry.cellKey(pose) == Geometry.cellKey(targetBay)
+            and pose.heading == targetBay.heading
+        if not atSource and not atTarget then
+            return false, "Agvaltas utan csak a regi vagy uj ag bejarata igazolhato."
+        end
+        local entry = value.corridors and value.corridors.entry
+        local trunk = value.corridors and value.corridors.trunk
+        local source = value.branches and value.branches[transfer.fromBranch]
+        local target = value.branches and value.branches[transfer.branchKey]
+        if not entry or entry.owner ~= id or not trunk
+            or trunk.owner ~= id or not source or not target
+            or source.status ~= "claimed" or source.owner ~= id
+            or target.status ~= "claimed" or target.owner ~= id then
+            return false, "Az agvaltas foglalasa elter; nincs feloldas."
+        end
+        if atTarget then
+            source.status = "complete"
+            worker.lastCompletedBranch = transfer.fromBranch
+            worker.assignedBranch = transfer.branchKey
+            value.transferCount = (value.transferCount or 0) + 1
+            value.completedBranches = (value.completedBranches or 0) + 1
+        else
+            target.status, target.owner = "ready", nil
+        end
+        value.corridors.entry, value.corridors.trunk = nil, nil
+        value.cells = value.cells or {}
+        for key, owner in pairs(value.cells) do
+            if owner == id and key ~= newKey then value.cells[key] = nil end
+        end
+        value.cells[newKey] = id
+        worker.pose, worker.correctedPose = pose, nil
+        worker.lastApprovedPose = pose
+        worker.transit, worker.status, worker.lastError = nil, "at_branch", nil
+        if value.uncertain then value.uncertain[id] = nil end
+        local saved, reason = Store.write(FILE, value)
+        return saved, reason, saved and pose or nil
+    end
     value.cells = value.cells or {}
     for key, owner in pairs(value.cells) do
         if owner == id and key ~= newKey then value.cells[key] = nil end
@@ -230,7 +284,9 @@ function coordinator.approvePose(workerId)
     value.cells[newKey] = id
     worker.pose, worker.correctedPose = pose, nil
     worker.lastApprovedPose = pose
-    local slotPose = Geometry.startForSlot(worker.slot)
+    local slotPose = workerId == value.leaderId
+        and { x = -1, y = 0, z = 0, heading = 0 }
+        or Geometry.startForSlot(worker.slot)
     local z, side
     if worker.assignedBranch then
         z, side = worker.assignedBranch:match(":(%d+):([^:]+)$")
@@ -244,6 +300,11 @@ function coordinator.approvePose(workerId)
     elseif branchX and pose.x == branchX and pose.y == 0
         and pose.z == tonumber(z)
         and pose.heading == (side == "left" and 3 or 1) then
+        worker.status, worker.lastError = "at_branch", nil
+    elseif branchX and pose.y == 0 and pose.z == tonumber(z)
+        and pose.heading == (side == "left" and 3 or 1)
+        and pose.x * branchX >= 1
+        and pose.x * branchX <= value.branchLength then
         worker.status, worker.lastError = "at_branch", nil
     else
         worker.status = "needs_attention"
@@ -299,25 +360,98 @@ function coordinator.noteBranchReady(message, sender)
         or type(message.mainCompleted) ~= "number"
         or message.mainCompleted < z
         or type(message.leaderPose) ~= "table"
-        or message.leaderPose.x ~= -1 or message.leaderPose.y ~= 0
-        or message.leaderPose.z ~= 0 or message.leaderPose.heading ~= 0 then
+        or message.leaderPose.y ~= 0 or message.leaderPose.heading ~= 0 then
         return false, "Az ag helye vagy a foag haladasa ervenytelen."
     end
-    if not value.leaderParked then
-        local reserved, reserveReason = Traffic.reserveCell(value,
-            message.leaderPose, sender)
-        if not reserved then return false, reserveReason end
-        local released, releaseReason = Traffic.releaseCell(value,
-            "0,0,0", sender, message.leaderPose)
-        if not released then return false, releaseReason end
-        value.leaderParked = true
+    local parked = value.leaderParked
+        and message.leaderPose.x == -1 and message.leaderPose.z == 0
+    local safelyBehind = value.leaderTravel == "forward"
+        and message.leaderPose.x == 0 and message.leaderPose.z > z
+        and message.mainCompleted > z
+    if not parked and not safelyBehind then
+        return false, "A vezeto meg nem hagyta el biztonsagosan az aghelyet."
     end
+    value.leaderFrontier = math.max(value.leaderFrontier or 0,
+        message.mainCompleted)
     local key = value.jobId .. ":" .. z .. ":" .. message.side
     if value.branches and value.branches[key] then return true, nil, key end
     local ok, reason = Traffic.branchReady(value, key)
     if not ok then return false, reason end
     local saved, saveReason = Store.write(FILE, value)
     return saved, saveReason, saved and key or nil
+end
+
+-- A vezeto varatlan visszautja elott minden seged athaladasat kivarjuk.
+-- A mar elkezdett agban allo segedek tovabb ashatnak, de nem lephetnek
+-- a kozos folyosora, amig a vezeto vissza nem ert a munkapontra.
+function coordinator.requestLeaderRoute(message, sender)
+    local value = coordinator.load()
+    if not confirmedThisRun or not value or not value.active
+        or value.stopped or value.closing or sender ~= value.leaderId
+        or message.jobId ~= value.jobId or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId then
+        return false, "Ervenytelen vezetoi utvonal-keres."
+    end
+    if value.leaderTravel == "exclusive" then return true end
+    value.leaderTravel = "return_pending"
+    local saved, reason = Store.write(FILE, value)
+    if not saved then return false, reason end
+    if next(value.corridors or {}) or value.dockOwner then
+        return false, "A folyosot vagy a dokkot seged hasznalja."
+    end
+    value.leaderTravel = "exclusive"
+    return Store.write(FILE, value)
+end
+
+function coordinator.releaseLeaderRoute(message, sender)
+    local value = coordinator.load()
+    if confirmedThisRun and value and value.active
+        and sender == value.leaderId
+        and message.jobId == value.jobId and message.epoch == value.epoch
+        and message.coordinatorId == value.coordinatorId
+        and ((message.phase == "forward" and value.leaderTravel == "forward")
+            or (message.phase == "parked" and value.leaderTravel == "parked")) then
+        return true
+    end
+    if not confirmedThisRun or not value or not value.active
+        or sender ~= value.leaderId or message.jobId ~= value.jobId
+        or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId
+        or value.leaderTravel ~= "exclusive" then
+        return false, "Nincs feloldhato vezetoi utvonaljog."
+    end
+    local pose = message.pose
+    if type(pose) ~= "table" or pose.y ~= 0
+        or type(pose.heading) ~= "number"
+        or pose.heading < 0 or pose.heading > 3
+        or pose.heading ~= math.floor(pose.heading) then
+        return false, "Hibas vezetoi erkezesi pozicio."
+    end
+    if message.phase == "parked" then
+        if pose.x ~= -1 or pose.z ~= 0 or pose.heading ~= 0 then
+            return false, "A vezeto nincs a bal oldali varakozoban."
+        end
+        local reserved, reason = Traffic.reserveCell(value, pose, sender)
+        if not reserved then return false, reason end
+        local released, releaseReason = Traffic.releaseCell(value,
+            "0,0,0", sender, pose)
+        if not released then return false, releaseReason end
+        value.leaderParked = true
+        value.leaderTravel = "parked"
+        value.workers = value.workers or {}
+        value.workers[tostring(sender)] = {
+            slot = 1, status = "registered_no_motion",
+            pose = pose, registeredAt = os.epoch and os.epoch("utc") or 0,
+        }
+    elseif message.phase == "forward" then
+        if pose.x ~= 0 or pose.z < 1 or pose.z > value.mainLength then
+            return false, "A vezeto nincs az igazolt foagi munkaponton."
+        end
+        value.leaderTravel = "forward"
+    else
+        return false, "Ismeretlen vezetoi utvonalfazis."
+    end
+    return Store.write(FILE, value)
 end
 
 function coordinator.claimNextBranch(workerId)
@@ -366,6 +500,103 @@ function coordinator.claimNextBranch(workerId)
     return saved, saveReason, saved and key or nil
 end
 
+local function nearestReadyBranch(value, fromZ)
+    local choices = {}
+    for key, branch in pairs(value.branches or {}) do
+        if branch.status == "ready" then
+            local z = tonumber(key:match(":(%d+):[^:]+$"))
+            if z then choices[#choices + 1] = { key = key, z = z } end
+        end
+    end
+    table.sort(choices, function(a, b)
+        local distanceA, distanceB = math.abs(a.z - fromZ),
+            math.abs(b.z - fromZ)
+        if distanceA ~= distanceB then return distanceA < distanceB end
+        if a.z ~= b.z then return a.z < b.z end
+        return a.key < b.key
+    end)
+    return choices[1] and choices[1].key or nil
+end
+
+function coordinator.queryNextBranch(message, sender)
+    local value = coordinator.load()
+    local worker = value and value.workers and value.workers[tostring(sender)]
+    local current = worker and value.branches
+        and value.branches[worker.assignedBranch]
+    if not confirmedThisRun or not value or not value.active
+        or value.stopped or value.closing or not worker
+        or worker.status ~= "at_branch" or worker.transit
+        or not current or current.owner ~= tostring(sender)
+        or current.status ~= "claimed"
+        or message.jobId ~= value.jobId or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId
+        or message.workerId ~= sender
+        or message.branchKey ~= worker.assignedBranch then
+        return false, "Ervenytelen kovetkezoag-keres."
+    end
+    local fromZ = tonumber(worker.assignedBranch:match(":(%d+):[^:]+$"))
+    if not fromZ then return false, "Hibas aktualis ag." end
+    return true, nil, nearestReadyBranch(value, fromZ)
+end
+
+-- Az uj agat es a folyosot egyetlen tartos dontessel foglaljuk le.
+-- A regi ag csak az uj ag bejaratahoz kuldott fizikai erkezes utan lesz kesz.
+function coordinator.requestBranchTransfer(message, sender)
+    local value = coordinator.load()
+    local worker = value and value.workers and value.workers[tostring(sender)]
+    if not confirmedThisRun or not value or not value.active
+        or value.stopped or value.closing or not worker
+        or message.jobId ~= value.jobId or message.epoch ~= value.epoch
+        or message.coordinatorId ~= value.coordinatorId
+        or message.workerId ~= sender
+        or type(message.requestId) ~= "string"
+        or message.fromBranch ~= worker.assignedBranch then
+        return false, "Ervenytelen agvaltas-keres."
+    end
+    if worker.transit then
+        if worker.transit.phase == "transfer"
+            and worker.transit.requestId == message.requestId
+            and worker.transit.branchKey == message.targetBranch then
+            return true, nil, worker.transit
+        end
+        return false, "A turtle mar rendelkezik utvonaljoggal."
+    end
+    local source = value.branches and value.branches[message.fromBranch]
+    local target = value.branches and value.branches[message.targetBranch]
+    if worker.status ~= "at_branch" or not source
+        or source.status ~= "claimed" or source.owner ~= tostring(sender)
+        or not target or target.status ~= "ready" then
+        return false, "Az ag mar foglalt vagy nem jarhato."
+    end
+    local fromZ, fromSide = message.fromBranch:match(":(%d+):([^:]+)$")
+    local expectedX = fromSide == "left" and -1
+        or fromSide == "right" and 1
+    if not expectedX or type(message.pose) ~= "table"
+        or message.pose.x ~= expectedX or message.pose.y ~= 0
+        or message.pose.z ~= tonumber(fromZ)
+        or message.pose.heading ~= (fromSide == "left" and 3 or 1)
+        or message.pending == true then
+        return false, "A turtle nincs az ag igazolt bejaratanal."
+    end
+    if value.leaderTravel ~= "forward" and value.leaderTravel ~= "parked" then
+        return false, "A folyosot a vezeto hasznalja."
+    end
+    local ok, reason = Traffic.reserveCorridor(value, "entry", sender, "out")
+    if not ok then return false, reason end
+    ok, reason = Traffic.reserveCorridor(value, "trunk", sender, "out")
+    if not ok then return false, reason end
+    ok, reason = Traffic.claimBranch(value, message.targetBranch, sender)
+    if not ok then return false, reason end
+    worker.transit = {
+        phase = "transfer", requestId = message.requestId,
+        fromBranch = message.fromBranch,
+        branchKey = message.targetBranch,
+    }
+    worker.status = "transit_transfer"
+    local saved, saveReason = Store.write(FILE, value)
+    return saved, saveReason, saved and worker.transit or nil
+end
+
 function coordinator.acknowledgeAssignment(message, sender)
     local value = coordinator.load()
     local worker = value and value.workers and value.workers[tostring(sender)]
@@ -389,7 +620,7 @@ function coordinator.requestTransit(message, sender)
     local value = coordinator.load()
     local worker = value and value.workers and value.workers[tostring(sender)]
     if not confirmedThisRun or not value or not value.active or value.stopped
-        or not value.leaderParked or not worker
+        or not worker
         or message.jobId ~= value.jobId or message.epoch ~= value.epoch
         or message.coordinatorId ~= value.coordinatorId
         or message.workerId ~= sender
@@ -402,12 +633,19 @@ function coordinator.requestTransit(message, sender)
         or value.uncertain and value.uncertain[tostring(sender)] then
         return false, "A turtle helyzete ellenorizendo."
     end
+    if sender == value.leaderId and not value.leaderParked then
+        return false, "A vezeto meg a foagat epiti."
+    end
     if worker.transit then
         if worker.transit.requestId == message.requestId
             and worker.transit.phase == message.phase then
             return true, nil, worker.transit
         end
         return false, "A turtle mar rendelkezik masik utvonaljoggal."
+    end
+    if value.leaderTravel ~= "forward"
+        and value.leaderTravel ~= "parked" then
+        return false, "A folyosot a vezeto hasznalja."
     end
     if (message.phase == "outbound" and worker.status ~= "assigned_no_motion")
         or (message.phase == "inbound" and worker.status ~= "at_branch") then
@@ -497,10 +735,12 @@ function coordinator.confirmTransitArrival(message, sender)
     local pose = message.pose
     local z, side = transit.branchKey:match(":(%d+):([^:]+)$")
     local branchX = side == "left" and -1 or side == "right" and 1
-    local expected = transit.phase == "outbound"
+    local expected = (transit.phase == "outbound"
+        or transit.phase == "transfer")
         and { x = branchX, y = 0, z = tonumber(z), heading =
             side == "left" and 3 or 1 }
-        or { x = worker.slot - 1, y = 0, z = 0, heading = 0 }
+        or { x = sender == value.leaderId and -1 or worker.slot - 1,
+            y = 0, z = 0, heading = 0 }
     if not branchX or type(pose) ~= "table"
         or pose.x ~= expected.x or pose.y ~= expected.y
         or pose.z ~= expected.z or pose.heading ~= expected.heading then
@@ -524,12 +764,27 @@ function coordinator.confirmTransitArrival(message, sender)
                 transit.stationId, sender, transit.leaseId, true)
             if not released then return false, releaseReason end
         end
+    elseif transit.phase == "transfer" then
+        local previous = value.branches and value.branches[transit.fromBranch]
+        local nextBranch = value.branches and value.branches[transit.branchKey]
+        if not previous or previous.status ~= "claimed"
+            or previous.owner ~= tostring(sender)
+            or not nextBranch or nextBranch.status ~= "claimed"
+            or nextBranch.owner ~= tostring(sender) then
+            return false, "Az agvaltas foglalasa elter."
+        end
+        previous.status = "complete"
+        worker.lastCompletedBranch = transit.fromBranch
+        worker.assignedBranch = transit.branchKey
+        value.transferCount = (value.transferCount or 0) + 1
+        value.completedBranches = (value.completedBranches or 0) + 1
     end
     worker.pose = pose
     worker.transit = nil
     worker.lastArrivalRequest = message.requestId
     worker.lastArrivalPhase = message.phase
-    worker.status = transit.phase == "outbound"
+    worker.status = (transit.phase == "outbound"
+        or transit.phase == "transfer")
         and "at_branch" or "assigned_no_motion"
     local ok, reason = Store.write(FILE, value)
     return ok, reason, ok and worker.status or nil
@@ -555,6 +810,7 @@ function coordinator.completeBranch(message, sender)
         return false, "Az ag vagy a turtle nincs befejezheto allapotban."
     end
     branch.status = "complete"
+    value.completedBranches = (value.completedBranches or 0) + 1
     worker.lastCompletedBranch = message.branchKey
     worker.assignedBranch = nil
     worker.status = "registered_no_motion"

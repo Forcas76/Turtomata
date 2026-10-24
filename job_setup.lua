@@ -57,8 +57,11 @@ local function editCard(title, config, fields, summary)
         local choice = ui.menu(title, items)
         if not choice or choice == "back" then return nil end
         if choice == "start" then
-            local lines = summary(config)
-            if ui.confirm("FELADAT ATTEKINTES", lines, "ENTER = inditas") then
+            local lines, problem = summary(config)
+            if not lines then
+                ui.message("BEALLITASI HIBA", tostring(problem), "error")
+                ui.waitForEnter()
+            elseif ui.confirm("FELADAT ATTEKINTES", lines, "ENTER = inditas") then
                 return config, lines
             end
         else
@@ -112,10 +115,28 @@ function setup.branch(settings, existing)
         local mode = ui.choice("BRANCH MOD", { "Branch 1x2", "Branch 1x3", "Egyenes 3x3" },
             existing and existing.tunnelMode or 1)
         if not mode then return nil end
+        local shared = false
+        if mode ~= 3 then
+            local workMode = ui.choice("MUNKA MODJA", { "Egyeduli", "Kozos" },
+                existing and existing.sharedMode and 2 or 1)
+            if not workMode then return nil end
+            shared = workMode == 2
+            if shared then
+                local role = ui.choice("KOZOS BRANCH", {
+                    "Uj munka (vezeto)", "Csatlakozas (seged)",
+                    "Allapot / folytatas",
+                }, 1)
+                if not role then return nil end
+                if role == 2 then return "shared_join" end
+                if role == 3 then return "shared_manage" end
+            end
+        end
         local c = common({
-            tunnelMode = mode, autoResume = false, startMode = 1,
+            tunnelMode = mode, sharedMode = shared,
+            autoResume = false, startMode = 1,
             startOffset = 0, mainLength = 128, branchLength = 16,
             branchSpacing = 3, experimentalInventory = settings.inventory.experimental,
+            unloadMode = "auto",
             torchEnabled = settings.torches.enabledByDefault,
             mainTorchInterval = settings.torches.interval,
             branchTorchInterval = settings.torches.interval,
@@ -124,17 +145,31 @@ function setup.branch(settings, existing)
             oreScanMaxDepth = settings.ores.maxDepth,
             oreScanMaxBlocks = settings.ores.maxBlocks,
         }, settings)
-        if existing and existing.tunnelMode == mode then c = Store.clone(existing) end
+        if existing and existing.tunnelMode == mode then
+            c = Store.clone(existing)
+            c.sharedMode = shared
+        end
         local fields = {
-            boolField("Kezi kezdoeltolas", "manualStart"),
+            boolField("Kezi kezdoeltolas", "manualStart",
+                function() return not shared end),
             integerField("Kezdo tavolsag", "startOffset", 1,
-                function(v) return v.manualStart end),
+                function(v) return not shared and v.manualStart end),
             integerField("Fout hossza", "mainLength", 1),
             integerField("Oldalag hossza", "branchLength", 1,
                 function() return mode ~= 3 end),
             integerField("Agkoz", "branchSpacing", 1,
                 function() return mode ~= 3 end),
             boolField("Kiserleti inventory", "experimentalInventory"),
+            field("Lepakolas", function(v)
+                return v.unloadMode == "primary" and "csak kozos" or "auto"
+            end, function(v)
+                local selected = ui.choice("LEPAKOLAS", {
+                    "Automatikus lada", "Csak kozos lada",
+                }, v.unloadMode == "primary" and 2 or 1)
+                if selected then
+                    v.unloadMode = selected == 2 and "primary" or "auto"
+                end
+            end, function() return shared end),
             boolField("Faklyazas", "torchEnabled"),
             integerField("Fout faklya", "mainTorchInterval", 1,
                 function(v) return v.torchEnabled end),
@@ -156,17 +191,33 @@ function setup.branch(settings, existing)
         }
         addFields(fields, baseFields())
         local config, lines = editCard("BRANCH ADATLAP", c, fields, function(v)
+            if shared and v.oreScanEnabled and v.torchEnabled
+                and (v.branchTorchInterval or 0) > 0
+                and math.floor(v.branchLength / v.branchTorchInterval) > 64 then
+                return nil, "Kozos erc-visszauton legfeljebb 64 faklyapont lehet. Noveldd a tavolsagot."
+            end
+            if shared then v.manualStart = false end
             v.startMode = v.manualStart and 2 or 1
             if not v.manualStart then v.startOffset = 0 end
             if mode == 3 then v.branchLength, v.branchSpacing = 0, 0 end
+            if v.oreScanEnabled then
+                local profile = Store.read("ore_targets.txt")
+                v.oreTargets = type(profile) == "table"
+                    and Store.clone(profile.selected or {}) or {}
+            else
+                v.oreTargets = nil
+            end
             local lines = {
                 "Mod: " .. ({ "1x2", "1x3", "3x3" })[mode],
+                "Munka: " .. (v.sharedMode and "kozos" or "egyeduli"),
                 "Fout: " .. v.mainLength,
                 "Oldalag/koz: " .. v.branchLength .. "/" .. v.branchSpacing,
                 "Kezdoeltolas: " .. v.startOffset,
                 "Fuel: " .. v.fuelReserve,
                 "Faklya/erc/inv: " .. yn(v.torchEnabled) .. "/"
                     .. yn(v.oreScanEnabled) .. "/" .. yn(v.experimentalInventory),
+                "Lepakolas: " .. (v.unloadMode == "primary"
+                    and "kozos" or "automatikus"),
                 "Auto folytatas: " .. yn(v.resumeOnStartup),
             }
             return appendEstimate(lines, Estimator.branch(v,

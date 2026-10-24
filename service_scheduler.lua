@@ -21,7 +21,12 @@ end
 function scheduler.choose(state, workerId, request)
     local worker = state.workers and state.workers[tostring(workerId)]
     if not worker then return nil, "Ismeretlen turtle." end
-    if request.needsRefuel then return "D01", "primary_service" end
+    if state.workConfig and state.workConfig.unloadMode == "primary" then
+        return "D01", "primary_service"
+    end
+    if request.needsRefuel or request.needsTorch then
+        return "D01", "primary_service"
+    end
     local bestId, bestCost
     local primaryCost = math.abs(branchZ(worker))
         + (worker.slot - 1) + 4

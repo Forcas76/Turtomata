@@ -3,6 +3,8 @@
 local Protocol = require("remote_protocol")
 local SwarmProtocol = require("swarm_protocol")
 local SwarmCoordinator = require("swarm_coordinator")
+local SwarmEstimator = require("swarm_estimator")
+local StateStore = require("state_store")
 local Version = require("version")
 local Settings = require("settings")
 local Localization = require("localization")
@@ -147,7 +149,9 @@ local function dispatchAssignments()
     end
     table.sort(list, function(a, b) return a.slot < b.slot end)
     for _, worker in ipairs(list) do
-        if worker.status == "registered_no_motion" and not state.closing then
+        local seen = turtles[worker.id]
+        if worker.status == "registered_no_motion" and not state.closing
+            and seen and online(seen) then
             local ok, _, key = SwarmCoordinator.claimNextBranch(worker.id)
             if ok then worker.key, worker.status = key, "offered_no_motion" end
         end
@@ -176,6 +180,7 @@ local commands = {
     { label = "Adatok frissitese", command = "status", confirm = false },
     { label = "Kozos munka kezelese (kiserleti)", command = "swarm_claim", confirm = true },
     { label = "Kozos munka veszleallas", command = "swarm_stop", confirm = true },
+    { label = "Regi kozos mentes eldobasa", command = "swarm_legacy_clear", confirm = true },
     { label = "Lepakolas es folytatas", command = "service", confirm = true },
     { label = "Agvizsgalat kihagyasa (kiserleti)",
         command = "skip_ore_scan", confirm = true },
@@ -215,11 +220,12 @@ local function approveSelectedPose()
     feedback = ok and "Helyzet egyeztetve; nincs automatikus mozgas."
         or tostring(reason)
     if ok then
+        local updated = SwarmCoordinator.load().workers[tostring(worker.id)]
         rednet.send(worker.id, SwarmProtocol.message("pose_reconcile_ack", {
             jobId = state.jobId, epoch = state.epoch,
             coordinatorId = os.getComputerID(), workerId = worker.id,
-            accepted = true,
-            status = SwarmCoordinator.load().workers[tostring(worker.id)].status,
+            accepted = true, status = updated.status,
+            branchKey = updated.assignedBranch,
         }), SwarmProtocol.CHANNEL)
     end
 end
@@ -244,7 +250,9 @@ local function activateCommand()
     if not item then return end
     if item.confirm and armedCommand ~= item.command then
         armedCommand = item.command
-        feedback = tr("Megeroses: valaszd ki meg egyszer.")
+        feedback = item.command == "swarm_legacy_clear"
+            and tr("Csak ha minden regi turtle all! Enter ujra = mentes eldobasa.")
+            or tr("Megeroses: valaszd ki meg egyszer.")
         return
     end
     armedCommand = nil
@@ -253,13 +261,28 @@ local function activateCommand()
         feedback = ok and "Veszleallas mentve; a turtle-k helyben megallnak."
             or tostring(reason)
         if ok then swarmHeartbeat() end
+    elseif item.command == "swarm_legacy_clear" then
+        local legacy = StateStore.read("swarm_coordinator.txt")
+        if type(legacy) ~= "table" or legacy.version == 2 then
+            feedback = "Nincs eldobando regi koordinatormentes."
+        else
+            local ok, reason = StateStore.write("swarm_coordinator.txt", {
+                version = 2, active = false, status = "legacy_discarded",
+            })
+            feedback = ok and "Regi koordinatormentes eldobva. Csak allo turtle-kkel indits uj munkat."
+                or tostring(reason)
+        end
     elseif item.command == "swarm_claim" then
         local target = selectedTurtle()
         local swarm = target and target.swarm
         local existing = SwarmCoordinator.load()
+        local legacy = StateStore.read("swarm_coordinator.txt")
         if not target or not online(target) or not swarm
             or swarm.role ~= "leader" or not swarm.jobId then
             feedback = "Nincs elerheto kozosmunka-vezeto turtle."
+        elseif type(legacy) == "table" and legacy.active
+            and legacy.version ~= 2 then
+            feedback = "Regi koordinatormentes van: biztonsagos ellenorzes utan torold."
         elseif existing and existing.active and existing.jobId ~= swarm.jobId then
             feedback = "Ezen az eszkozon mar masik munka van mentve."
         elseif swarm.coordinatorId and swarm.coordinatorId ~= os.getComputerID() then
@@ -309,6 +332,17 @@ end
 
 online = function(value)
     return nowMs() - value.receivedAt <= Protocol.OFFLINE_AFTER * 1000
+end
+
+local function sharedEstimate(state)
+    local members = {}
+    for id, item in pairs(turtles) do
+        members[id] = {
+            online = online(item), swarm = item.swarm,
+            progressCurrent = item.progressCurrent,
+        }
+    end
+    return SwarmEstimator.shared(state, members, nowMs())
 end
 
 local function percent(value)
@@ -514,6 +548,14 @@ local function renderStatusBody(forceList)
     print(clip("TURTOMATA " .. Version.label .. " | " .. tr("MEGFIGYELO"), width))
     term.setTextColor(colors.lightGray)
     print(string.rep("-", math.min(width, 39)))
+    local shared = SwarmCoordinator.load()
+    local extraRows = 0
+    if shared and shared.active and width >= 25 then
+        local estimate = sharedEstimate(shared)
+        print(clip(tr("Kozos ido") .. ": " .. duration(estimate.elapsedMs)
+            .. " / " .. duration(estimate.remainingMs), width))
+        extraRows = 1
+    end
     if openModems() == 0 then
         term.setTextColor(colors.red)
         print(tr("Nincs wireless/Ender modem."))
@@ -524,7 +566,7 @@ local function renderStatusBody(forceList)
         print(tr("Bekapcsolas utan automatikusan megjelenik."))
     else
         print(clip(tr("Turtle | allapot | haladas"), width))
-        local maximum = math.max(1, height - 6)
+        local maximum = math.max(1, height - 6 - extraRows)
         statusListStart = math.max(1, math.min(selected,
             math.max(1, #list - maximum + 1)))
         statusListCount = math.min(maximum, #list - statusListStart + 1)
@@ -610,6 +652,13 @@ local function renderSwarmBody()
         line("Kezelo", "#" .. tostring(state.coordinatorId), width)
         line("Epoch", state.epoch, width)
         line("Allapot", state.status or "-", width)
+        local estimate = sharedEstimate(state)
+        line("Eltelt / hatra", duration(estimate.elapsedMs)
+            .. " / " .. duration(estimate.remainingMs), width)
+        line("Becsult osszes", duration(estimate.projectedTotalMs), width)
+        line("Foag / agak", estimate.mainDone .. "/" .. estimate.mainTotal
+            .. " | " .. estimate.completedBranches .. "/"
+            .. estimate.totalBranches, width)
         local ready, claimed = 0, 0
         for _, branch in pairs(state.branches or {}) do
             if branch.status == "ready" then ready = ready + 1
@@ -639,7 +688,7 @@ local function renderSwarmBody()
         print(clip("  #" .. state.leaderId .. " / 1 / leader", width))
         local list = orderedSwarmWorkers(state)
         swarmSelected = math.max(1, math.min(swarmSelected, #list))
-        for index = 1, math.min(#list, math.max(0, height - 11)) do
+        for index = 1, math.min(#list, math.max(0, height - 14)) do
             local worker = list[index]
             term.setTextColor(index == swarmSelected and colors.yellow or colors.white)
             print(clip((index == swarmSelected and "> " or "  ")
@@ -648,7 +697,7 @@ local function renderSwarmBody()
         end
         print("")
         term.setTextColor(colors.orange)
-        print(clip(tr("Ag kiosztas: automatikus; inditas: turtle menuben."), width))
+        print(clip(tr("Ag kiosztas es inditas: automatikus."), width))
         local worker = list[swarmSelected]
         if worker and state.workers then
             local detail = state.workers[tostring(worker.id)]
@@ -749,7 +798,7 @@ while true do
                 stationId = station and station.id,
                 accepted = accepted, reason = reason,
             }), SwarmProtocol.CHANNEL)
-            feedback = accepted and (station.id .. " ellenorizve; meg nincs automatikus dokkolas.")
+            feedback = accepted and (station.id .. " ellenorizve; auto dokkolas elerheto.")
                 or tostring(reason)
             render()
         elseif p2.type == "station_issue" then
@@ -769,14 +818,33 @@ while true do
                 branchKey = key, accepted = accepted, reason = reason,
             }), SwarmProtocol.CHANNEL)
             if accepted then render() end
+        elseif p2.type == "leader_route_request" then
+            local accepted, reason = SwarmCoordinator.requestLeaderRoute(p2, p1)
+            rednet.send(p1, SwarmProtocol.message("leader_route_ack", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(),
+                requestId = p2.requestId, accepted = accepted,
+                reason = reason,
+            }), SwarmProtocol.CHANNEL)
+            if accepted then render() end
+        elseif p2.type == "leader_route_release" then
+            local accepted, reason = SwarmCoordinator.releaseLeaderRoute(p2, p1)
+            rednet.send(p1, SwarmProtocol.message("leader_route_release_ack", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(),
+                requestId = p2.requestId, accepted = accepted,
+                reason = reason,
+            }), SwarmProtocol.CHANNEL)
+            if accepted then render() end
         elseif p2.type == "pose_correction" then
             local accepted, reason, phase = SwarmCoordinator.recordPoseCorrection(p2, p1)
             if accepted and phase == "approved" then
+                local updated = SwarmCoordinator.load().workers[tostring(p1)]
                 rednet.send(p1, SwarmProtocol.message("pose_reconcile_ack", {
                     jobId = p2.jobId, epoch = p2.epoch,
                     coordinatorId = os.getComputerID(), workerId = p1,
-                    accepted = true,
-                    status = SwarmCoordinator.load().workers[tostring(p1)].status,
+                    accepted = true, status = updated.status,
+                    branchKey = updated.assignedBranch,
                 }), SwarmProtocol.CHANNEL)
             elseif not accepted then
                 feedback = tostring(reason)
@@ -786,6 +854,38 @@ while true do
             local ok, reason = SwarmCoordinator.acknowledgeAssignment(p2, p1)
             if not ok then feedback = tostring(reason) end
             render()
+        elseif p2.type == "branch_next_query" then
+            local state = SwarmCoordinator.load()
+            local leader = state and turtles[state.leaderId]
+            local ok, reason, branchKey
+            if not leader or not online(leader) then
+                ok, reason = false, "A vezeto turtle nem elerheto."
+            else
+                ok, reason, branchKey = SwarmCoordinator.queryNextBranch(p2, p1)
+            end
+            rednet.send(p1, SwarmProtocol.message("branch_next_offer", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(), workerId = p1,
+                requestId = p2.requestId, accepted = ok,
+                reason = reason, branchKey = branchKey,
+            }), SwarmProtocol.CHANNEL)
+        elseif p2.type == "branch_transfer_request" then
+            local state = SwarmCoordinator.load()
+            local leader = state and turtles[state.leaderId]
+            local ok, reason, transit
+            if not leader or not online(leader) then
+                ok, reason = false, "A vezeto turtle nem elerheto."
+            else
+                ok, reason, transit = SwarmCoordinator.requestBranchTransfer(p2, p1)
+            end
+            rednet.send(p1, SwarmProtocol.message("branch_transfer_grant", {
+                jobId = p2.jobId, epoch = p2.epoch,
+                coordinatorId = os.getComputerID(), workerId = p1,
+                requestId = p2.requestId, accepted = ok,
+                reason = reason,
+                branchKey = transit and transit.branchKey,
+            }), SwarmProtocol.CHANNEL)
+            if ok then render() end
         elseif p2.type == "transit_request" then
             local state = SwarmCoordinator.load()
             local leader = state and turtles[state.leaderId]

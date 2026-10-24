@@ -208,14 +208,14 @@ function remote.snapshot()
             coordinatorOnline = swarm.lastHeartbeatAt
                 and nowMs() - swarm.lastHeartbeatAt <= 6000 or false,
         }
-        if swarm.role == "worker" and swarm.assignedBranch then
+        if swarm.assignedBranch then
             message.task = "Kozos oldalagat"
             message.activity = swarm.status
             message.position = swarm.pose
             message.progressCurrent = swarm.branchProgress or 0
             message.progressTotal = swarm.branchLength or 0
         end
-        if swarm.role == "worker" and type(swarm.collected) == "table" then
+        if type(swarm.collected) == "table" then
             message.collected = swarm.collected
         end
     end
@@ -290,7 +290,8 @@ local function publishSwarmOffer()
             }), SwarmProtocol.CHANNEL)
         return
     end
-    if session.role == "worker" and session.status == "needs_reconcile" then
+    if (session.role == "worker" or session.role == "leader")
+        and session.status == "needs_reconcile" then
         rednet.send(session.coordinatorId,
             SwarmProtocol.message("pose_correction", {
                 jobId = session.jobId, coordinatorId = session.coordinatorId,
@@ -299,7 +300,8 @@ local function publishSwarmOffer()
             }), SwarmProtocol.CHANNEL)
         return
     end
-    if session.role == "worker" and session.status == "needs_attention" then
+    if (session.role == "worker" or session.role == "leader")
+        and session.status == "needs_attention" then
         rednet.send(session.coordinatorId,
             SwarmProtocol.message("worker_attention", {
                 jobId = session.jobId, coordinatorId = session.coordinatorId,
@@ -326,25 +328,31 @@ local function publishSwarmOffer()
         branchLength = session.branchLength,
         branchSpacing = session.branchSpacing,
         tunnelMode = session.tunnelMode,
+        workConfig = session.workConfig,
     }), SwarmProtocol.CHANNEL)
     if not session.coordinatorId then return end
     local mined = StateStore.read("branch_miner_state.txt")
-    if type(mined) ~= "table" or mined.active ~= false
-        or mined.activity ~= "kesz" or type(mined.config) ~= "table"
+    if type(mined) ~= "table" or type(mined.config) ~= "table"
         or mined.config.swarmTrunkOnly ~= true
         or mined.config.swarmJobId ~= session.jobId
-        or not mined.position or mined.position.x ~= -1
-        or mined.position.y ~= 0 or mined.position.z ~= 0
-        or (mined.mainCompleted or 0) < session.mainLength then return end
+        or not mined.position or mined.position.y ~= 0
+        or (mined.mainCompleted or 0) < session.branchSpacing then return end
     local z = session.publishZ or session.branchSpacing
     if z > session.mainLength then return end
+    local parked = mined.active == false and mined.activity == "kesz"
+        and mined.position.x == -1 and mined.position.z == 0
+    local ahead = mined.active == true and mined.activity == "fotengely"
+        and mined.position.x == 0 and mined.position.z > z
+        and (mined.mainCompleted or 0) > z
+    if not parked and not ahead then return end
     local side = session.publishSide or "left"
     rednet.send(session.coordinatorId,
         SwarmProtocol.message("branch_ready", {
             jobId = session.jobId, leaderId = session.leaderId,
             coordinatorId = session.coordinatorId, epoch = session.epoch,
             z = z, side = side, mainCompleted = mined.mainCompleted,
-            leaderPose = { x = -1, y = 0, z = 0, heading = 0 },
+            leaderPose = { x = mined.position.x, y = mined.position.y,
+                z = mined.position.z, heading = mined.heading },
         }), SwarmProtocol.CHANNEL)
 end
 
@@ -397,6 +405,7 @@ function remote.handleSwarm(sender, message)
             branchLength = state and state.branchLength,
             branchSpacing = state and state.branchSpacing,
             tunnelMode = state and state.tunnelMode,
+            workConfig = state and state.workConfig,
         }), SwarmProtocol.CHANNEL)
     elseif message.type == "join_ack"
         and message.workerId == os.getComputerID() then
@@ -436,7 +445,8 @@ function remote.handleSwarm(sender, message)
     elseif message.type == "pose_reconcile_ack"
         and message.workerId == os.getComputerID() then
         local state = SwarmSession.load()
-        if state and state.role == "worker" and state.active
+        if state and (state.role == "worker" or state.role == "leader")
+            and state.active
             and state.status == "needs_reconcile"
             and state.jobId == message.jobId
             and state.coordinatorId == sender and state.epoch == message.epoch
@@ -446,6 +456,21 @@ function remote.handleSwarm(sender, message)
                     and "assigned_no_motion"
                 or message.status == "registered_no_motion"
                     and "registered_no_motion" or "needs_attention"
+            if state.status == "at_branch"
+                and type(message.branchKey) == "string"
+                and message.branchKey ~= state.assignedBranch then
+                local z, side = message.branchKey:match(":(%d+):([^:]+)$")
+                if z and (side == "left" or side == "right") then
+                    state.assignedBranch = message.branchKey
+                    state.assignmentZ, state.assignmentSide = tonumber(z), side
+                    state.branchProgress = 0
+                    state.oreScan, state.oreScanComplete = nil, nil
+                    state.torchOutcomes, state.torchRequired = nil, nil
+                else
+                    state.status = "needs_attention"
+                    state.lastError = "Hibas agvaltas-visszaigazolas."
+                end
+            end
             if state.status ~= "needs_attention" then
                 state.transit = nil
                 -- A koordinatortol visszaigazolt kezi egyeztetes mar
@@ -455,7 +480,19 @@ function remote.handleSwarm(sender, message)
             state.navigation = {
                 pose = state.pose, path = {}, pending = nil, anchors = {},
             }
-            state.lastError = nil
+            if type(state.oreScan) == "table" and state.oreScan.active then
+                local sign = state.assignmentSide == "left" and -1 or 1
+                if state.pose.x == sign * state.branchLength
+                    and state.pose.y == 0
+                    and state.pose.z == state.assignmentZ then
+                    state.oreScan = nil
+                    state.oreScanComplete = nil
+                else
+                    state.status = "needs_attention"
+                    state.lastError = "Az erckitero utan a fizikai agcsucsra kell visszaallitani."
+                end
+            end
+            if state.status ~= "needs_attention" then state.lastError = nil end
             SwarmSession.update(state)
         end
     elseif message.type == "branch_ready_ack" then
@@ -481,7 +518,8 @@ function remote.handleSwarm(sender, message)
         and message.workerId == os.getComputerID() then
         local state = SwarmSession.load()
         local accepted, reason = false, "Nincs fogadhato segedmunkamenet."
-        if state and state.active and state.role == "worker"
+        if state and state.active
+            and (state.role == "worker" or state.role == "leader")
             and state.jobId == message.jobId
             and state.coordinatorId == sender
             and message.coordinatorId == sender

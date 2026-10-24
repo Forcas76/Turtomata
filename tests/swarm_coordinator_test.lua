@@ -57,18 +57,26 @@ conflict.physicalConfirmed = true
 assert(Coordinator.registerWorker(conflict, 32))
 local ready = {
     jobId = request.jobId, leaderId = 10, coordinatorId = 25,
-    epoch = 1, z = 3, side = "left", mainCompleted = 3,
-    leaderPose = { x = -1, y = 0, z = 0, heading = 0 },
+    epoch = 1, z = 3, side = "left", mainCompleted = 4,
+    leaderPose = { x = 0, y = 0, z = 4, heading = 0 },
 }
 assert(Coordinator.noteBranchReady(ready, 10))
-assert(Coordinator.load().leaderParked == true)
-assert(Coordinator.load().cells["-1,0,0"] == "10")
-assert(Coordinator.load().cells["0,0,0"] == nil)
+assert(Coordinator.load().leaderParked ~= true)
+assert(Coordinator.load().cells["0,0,0"] == "10")
 assert(Coordinator.noteBranchReady(ready, 10))
 assert(not Coordinator.noteBranchReady(ready, 11))
 ready.z = 4
 assert(not Coordinator.noteBranchReady(ready, 10))
 ready.z = 3
+local leaderRoute = { jobId = request.jobId, epoch = 1,
+    coordinatorId = 25, pose = { x = -1, y = 0, z = 0, heading = 0 },
+    phase = "parked" }
+assert(Coordinator.requestLeaderRoute(leaderRoute, 10))
+assert(Coordinator.releaseLeaderRoute(leaderRoute, 10))
+assert(Coordinator.load().leaderParked == true)
+assert(Coordinator.load().cells["-1,0,0"] == "10")
+assert(Coordinator.load().cells["0,0,0"] == nil)
+ready.leaderPose = leaderRoute.pose
 local claimed, claimReason, branchKey = Coordinator.claimNextBranch(31)
 assert(claimed, claimReason)
 assert(branchKey == "10-12345:3:left")

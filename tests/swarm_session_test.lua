@@ -25,7 +25,8 @@ assert(Session.load().epoch == 1)
 files["swarm_session.txt"] = nil
 assert(Session.observeOffer({ jobId = leader.jobId, leaderId = 10,
     coordinatorId = 25, epoch = 1, mainLength = 20,
-    branchLength = 4, branchSpacing = 3, tunnelMode = 1 }))
+    branchLength = 4, branchSpacing = 3, tunnelMode = 1,
+    workConfig = { torchEnabled = true } }))
 local offer = Session.offers()[1]
 assert(offer.jobId == leader.jobId)
 assert(Session.join(offer, 1) == false)
@@ -33,6 +34,7 @@ local joined, joinReason, worker = Session.join(offer, 3)
 assert(joined, joinReason)
 assert(worker.pose.x == 2 and worker.pose.z == 0)
 assert(worker.status == "join_pending" and worker.coordinatorId == 25)
+assert(worker.workConfig.torchEnabled == true)
 assert(Session.forgetOffer(leader.jobId))
 assert(#Session.offers() == 0)
 

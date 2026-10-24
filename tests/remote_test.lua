@@ -128,7 +128,7 @@ Remote.handleSwarm(25, SwarmProtocol.message("swarm_stop", {
 assert(Session.load().status == "emergency_stop")
 
 swarmSaved = {
-    version = 1, active = true, role = "worker", jobId = "10-12345",
+    version = 2, active = true, role = "worker", jobId = "10-12345",
     leaderId = 10, coordinatorId = 25, epoch = 1, slot = 2,
     status = "registered_no_motion", mainLength = 12,
     branchLength = 4, branchSpacing = 3, tunnelMode = 1,

@@ -13,6 +13,9 @@ end
 mock.confirm = function()
     return table.remove(confirmations, 1)
 end
+local setupErrors = 0
+mock.message = function() setupErrors = setupErrors + 1 end
+mock.waitForEnter = function() end
 package.loaded["ui"] = mock
 package.loaded["job_setup"] = nil
 local Setup = require("job_setup")
@@ -26,14 +29,30 @@ local settings = {
         coordinateMode = "open", coordinateAxisOrder = { "y", "x", "z" } },
 }
 
-queue = { 1, 2, 20, "start", "back", nil }
+queue = { 1, 1, 2, 20, "start", "back", nil }
 confirmations = { false }
 assert(Setup.branch(settings) == nil, "Visszalepes nem indithat feladatot.")
 
-queue = { 1, 2, 20, "start" }
+queue = { 1, 1, 2, 20, "start" }
 confirmations = { true }
 local config, lines = Setup.branch(settings)
 assert(config and config.mainLength == 20 and #lines > 0)
+
+queue = { 1, 2, 1, "start" }
+confirmations = { true }
+local shared = Setup.branch(settings)
+assert(shared and shared.sharedMode == true and shared.tunnelMode == 1)
+
+settings.torches.enabledByDefault, settings.torches.interval = true, 1
+settings.ores.enabledByDefault = true
+queue = { 1, 2, 1, 2, 65, "start", "back", nil }
+assert(Setup.branch(settings) == nil)
+assert(setupErrors == 1, "A tul hosszu kozos erc-faklyazas nem indulhat.")
+settings.torches.enabledByDefault, settings.torches.interval = false, 8
+settings.ores.enabledByDefault = false
+
+queue = { 1, 2, 2 }
+assert(Setup.branch(settings) == "shared_join")
 
 queue = { 1, "start" }
 confirmations = { true }

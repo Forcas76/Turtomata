@@ -150,4 +150,14 @@ assert(skipped[1] == "right:2" and skipped[2] == "right:1")
 assert(torchSteps[1] == "right:2" and torchSteps[2] == "right:1")
 assert(pose.x == 0 and pose.y == 0 and pose.z == 0)
 
+-- Kozos agban a scanner nem lephet vissza a foagi cellaba utvonaljog nelkul.
+pose = { x = 2, y = 0, z = 0, heading = 1 }
+world, inspectedAt, torchSteps = {}, {}, {}
+api.stopBeforeAnchor = true
+api.shouldSkipScan = nil
+scanned, scanReason = Scanner.scanReturnBranch("right", 2, 1, api)
+assert(scanned, scanReason)
+assert(pose.x == 1 and pose.y == 0 and pose.z == 0)
+api.stopBeforeAnchor = nil
+
 return true

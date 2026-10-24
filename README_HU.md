@@ -2,13 +2,23 @@
 
 [English documentation](README.md)
 
-## Közös munka – kísérleti párosítás
+## Közös branch mining – kísérleti
 
-Az 1-es turtle a leadóláda előtt, a főág felé néz; a segédek tőle jobbra, egymástól egy-egy blokkra, ugyanabba az irányba nézve állnak. A sorszámot a segéd saját menüjében kell helyben megerősíteni; ez nem GPS-mérés. Az 1-es turtle meghirdeti a munkát, majd a kiválasztott computer/tablet Parancsok oldalán kézzel elfogadod a koordinátori szerepet. A segédek a saját menüjükből csatlakoznak. Élő koordinátorjel után az 1-es **csak a főágat** ássa ki, a bázistól balra egy blokkra félreáll, és visszaigazolással hirdeti a kész ághelyeket. A kiosztott segédet helyben indíthatod; a koordinátor a szűk főfolyosó és a közös láda forgalmát sorosítja, miközben a segédek külön oldalágakon párhuzamosan dolgozhatnak. Lepakolás/tankolás után a segéd visszatér saját sorhelyére.
+Indítás: `Branch mining → Branch 1×2/1×3 → Közös → Új munka (vezető) → feladatlap → Áttekintés / indítás`. A közös mód ugyanazon a feladatlapon állítja a főágat, oldalágat, fáklyázást, érckeresést, inventoryt és lepakolást. Az 1-es turtle a leadóláda előtt, a főág felé néz; a segédek tőle jobbra, azonos irányba nézve sorakoznak. Az 1-es meghirdeti a munkát; a kiválasztott computer/tablet `Parancsok` oldalán a `Közös munka kezelése` parancsot kétszer kiválasztva elfogadod a koordinátori szerepet. A főág ásása az élő jel után automatikusan indul. Segéd csatlakoztatása: `Branch mining → azonos 1×2/1×3 mód → Közös → Csatlakozás (segéd)`, majd a tényleges sorhely sorszámának helyi megerősítése. A sorszám nem GPS-mérés.
 
-Az első változat csak **1×2/1×3 oldalágat** kezel; közös módban érckeresés és fáklyázás még nincs. A segédeknek az első ládás kiszolgálásig elegendő kezdő fuel kell (vagy éghető tárgy az 1-es slotban). Kapcsolatvesztés, bizonytalan lépés vagy helyi leállítás esetén a foglalások megmaradnak, nincs vak hazatérés: a valós pozíciót a turtle-n kell javítani és a koordinátoron jóváhagyni. A függő jelentkezés csak koordinátori visszaigazolással vonható vissza; a szabad segéd a saját sorhelyéről kiléphet, majd az 1-es turtle lezárhatja a munkát, ha minden segéd kilépett. A kezelő Parancsok oldalán a megerősített közös vészleállítás minden résztvevőt helyben állít meg, nem indít közös hazatérést. **Játékon belül még nem ellenőrzött, kísérleti rendszer:** először két turtle-lel, veszteségmentesen tesztelhető területen próbáld. A koordinátor újraindítása után új vezetői visszaigazolás kell a további engedélyekhez.
+Amint a vezető elhagy egy kész kereszteződést, a koordinátor már kioszthatja annak oldalágait; **nem várja meg a teljes főág végét**. Az ágakat a szabad turtle-k automatikusan elkezdik, újabb helyi Enter nélkül. A vezető a főág elkészülte után lepakol, balra félreáll, és maga is kaphat oldalágat. A közös keskeny folyosó és a dokk forgalma sorosított, miközben külön ágakban párhuzamos ásás folyhat. A fő turtle váratlan hazatérése előtt kizárólagos útvonaljogot kér, és megvárja a folyosón lévő segédet.
 
-Az opcionális segédládát a szabad segéd saját „Közös munka” menüjében lehet
+Egy ág elkészültekor a turtle előbb az ág bejáratához tér. Ha van már kész, szabad következő ág, maradt inventory-helye, elegendő fáklyája és a következő ág *plusz a hazatérés* számára elég fuelje, a koordinátor lefoglalja az új ágat és a folyosót, majd a turtle közvetlenül átvonul. Az előző ág csak az új ág bejáratához érkezés igazolása után válik befejezetté. Ha nincs megfelelő ág vagy készlet, a megszokott lepakolási/tankolási út következik. Félbeszakadt átvonuláskor a foglalások megmaradnak; kézi helyzetellenőrzés után a régi vagy az új ág bejáratánál lehet egyeztetni.
+
+A koordinátor a teljes közös munkára becsült eltelt és hátralévő időt is kijelzi a megfigyelő listáján és a közös munka oldalán. A főág és a hátralévő oldalágak becsült műveleteiből, az alapértelmezett műveletidőből és az elérhető turtle-k számából minden frissítéskor újraszámol. **Ez becslés:** a váratlan érc-kitérők, várakozás, ládahiba és kapcsolatvesztés eltéríthetik.
+
+A közös mód jelenleg csak **1×2/1×3** ágat kezel. Az érclista a vezető munkabeállításából kerül át a segédekhez; az oldalágban előre talált ércet rögtön követik, a többi érchez visszaúton térnek ki. Az érc-kitérő a saját ág elkülönített sávjában marad. Fáklyázásnál a 2-es slot fenntartott, és a fáklyaláda a fuel-láda fölött kell legyen. A segédeknek az első kiszolgálásig elegendő kezdő fuel kell az 1-es slotban vagy már betankolva; fáklyázás esetén kezdő fáklyát is tegyél a 2-es slotba. A sikertelen fáklyalerakás nem szakítja meg az ág ásását.
+
+Ha az oldalágon elfogy a fáklya, a turtle a D01-nél próbál újratölteni. Érckereséssel kombinált közös munkánál a visszaúti fáklyázási pontok száma legfeljebb 64 lehet; ennél sűrűbb beállítást az indító menü nem enged elindítani.
+
+Kapcsolatvesztés, bizonytalan lépés vagy helyi leállítás esetén a foglalások megmaradnak, nincs vak hazatérés. A pozíciót a turtle-n kell ellenőrizni és a koordinátoron jóváhagyni. A közös vészleállítás helyben állít meg, nem küld mindenkit egyszerre haza. **Játékon belül még nem ellenőrzött, kísérleti rendszer:** először két turtle-lel, értéktelen területen teszteld. A koordinátor újraindítása után ugyanazon az eszközön ismét jóvá kell hagyni a kezelői szerepet. A v1.4-es közös mentés nem kompatibilis a v1.5-ös protokollal; a program figyelmeztet, és csak helyszíni ellenőrzés után szabad eldobni a régi munkát. A koordinátoron ehhez a `Régi közös mentés eldobása` parancs használható, kizárólag ha minden régi turtle már áll. Minden résztvevőt és a koordinátort azonos verzióra frissíts.
+
+Az opcionális segédládát a szabad segéd `Branch mining → Közös → Állapot / folytatás` menüjében lehet
 regisztrálni; a láda közvetlenül a sorhelye mögött álljon. A turtle helyben
 megfordul, ellenőrzi, majd koordinátori ACK-ra vár. A visszatérő segéd másik
 segéd ellenőrzött, szabad ládájába is pakolhat, ha annak tulajdonosa igazoltan
@@ -25,8 +35,8 @@ A ládaellenőrzés közbeni újraindulás után az irányt helyben kell igazoln
 Az önálló branch munka visszaúti ércvizsgálata a megfigyelő Parancsok oldalán
 kijelölt turtle-nél kísérleti módon kihagyható. A kérés a következő ágcella
 határán lép életbe; a turtle továbbra is visszajárja az ágat és kezeli a
-fáklyapontokat. A kihagyott vizsgálat nem számít ércmentesnek. Közös segédágban
-még nincs ércvizsgálat, így ott ez a parancs nem használható.
+fáklyapontokat. A kihagyott vizsgálat nem számít ércmentesnek. A parancs
+jelenleg csak az önálló branch vizsgálatára vonatkozik, a közös segédágra nem.
 
 ## V2 kiserleti funkciok
 
@@ -60,7 +70,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.4.1**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.5.1**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 

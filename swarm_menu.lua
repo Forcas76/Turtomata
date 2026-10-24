@@ -25,35 +25,6 @@ local function activeSoloJob()
     return type(state) == "table" and state.active == true
 end
 
-local function openLeader()
-    if activeSoloJob() then
-        notice("Aktiv egyturtle-os feladat mellett nem nyithato kozos munka.", "error")
-        return
-    end
-    local mainLength = ui.integer("KOZOS MUNKA", "Foag hossza", 64, 1)
-    if not mainLength then return end
-    local branchLength = ui.integer("KOZOS MUNKA", "Oldalag hossza", 16, 1)
-    if not branchLength then return end
-    local branchSpacing = ui.integer("KOZOS MUNKA", "Agkoz", 3, 1)
-    if not branchSpacing then return end
-    local mode = ui.choice("ALAGUT MAGASSAGA", { "1x2", "1x3" }, 1)
-    if not mode then return end
-    if not ui.confirm("KOZOS MUNKA - TESZT", {
-        "Ez meg csak hirdetes es parositas.",
-        "Az asast kulon inditod a menuben.",
-        "Vezeto: 1-es sorszam, lada mogotte.",
-        "Foag: " .. mainLength .. ", oldal: " .. branchLength,
-        "Agkoz: " .. branchSpacing,
-    }, "ENTER = munka hirdetese") then return end
-    local ok, reason, state = Session.openLeader({
-        mainLength = mainLength, branchLength = branchLength,
-        branchSpacing = branchSpacing, tunnelMode = mode,
-    })
-    notice(ok and { "Munka: " .. state.jobId,
-        "A kezelo eszkozon kezzel fogadd el.", "A turtle helyben varakozik." }
-        or tostring(reason), ok and nil or "error")
-end
-
 local function joinWorker()
     if activeSoloJob() then
         notice("Aktiv feladat mellett nem lehet csatlakozni.", "error")
@@ -75,16 +46,24 @@ local function joinWorker()
     if not offer then return end
     local slot = ui.integer("SORHELY", "Sorszam (jobbra)", 2, 2)
     if not slot then return end
-    if not ui.confirm("HELYI ELLENORZES", {
+    local checks = {
         "Azonos iranyba nezz, mint a vezeto.",
         "Jobbra allj " .. (slot - 1) .. " blokkra.",
         "Kozos start: " .. (slot - 1) .. ",0,0",
         "Ez csak regisztracio; nincs mozgas.",
-    }, "ENTER = jelentkezes") then return end
+        "Fuel: 1-es slot vagy mar feltoltve.",
+    }
+    if offer.workConfig and offer.workConfig.torchEnabled then
+        checks[#checks + 1] = "Faklya: 2-es slot; lada a fuel lada folott."
+    end
+    if not ui.confirm("HELYI ELLENORZES", checks,
+        "ENTER = jelentkezes") then return end
     local ok, reason = Session.join(offer, slot)
     notice(ok and "Jelentkezes mentve; kezelo ACK-ra var." or tostring(reason),
         ok and nil or "error")
 end
+
+menu.joinWorker = joinWorker
 
 local function correctPose(state)
     local pose = state.pose or { x = 0, y = 0, z = 0, heading = 0 }
@@ -167,8 +146,6 @@ function menu.run()
         local linkAlive = state and state.lastHeartbeatAt
             and os.epoch and os.epoch("utc") - state.lastHeartbeatAt <= 6000
         local choice = ui.menu("KOZOS MUNKA - KISERLETI", {
-            { label = "Munka hirdetese (vezeto)", value = "open",
-                enabled = not state or not state.active },
             { label = "Csatlakozas (seged)", value = "join",
                 enabled = (not state or not state.active) and #offers > 0 },
             { label = "Foag asasa / folytatasa", value = "trunk",
@@ -177,13 +154,6 @@ function menu.run()
                     and state.coordinatorId and linkAlive
                     and ((not savedTrunk and not activeSoloJob())
                         or (savedTrunk and branch.active))) },
-            { label = "Kiosztott oldalagat asasa", value = "worker",
-                enabled = available(state and state.active and state.role == "worker"
-                    and not state.stationCheckPending
-                    and state.assignedBranch and not state.transit
-                    and linkAlive
-                    and (state.status == "assigned_no_motion"
-                        or state.status == "at_branch")) },
             { label = "Allapot", value = "status" },
             { label = "Sajat leadolada regisztralasa", value = "station",
                 enabled = available(state and state.active and not state.transit
@@ -196,7 +166,9 @@ function menu.run()
             { label = "Ladaellenorzes iranyanak tisztazasa", value = "station_fix",
                 enabled = available(state and state.active and state.stationCheckPending) },
             { label = "Pozicio javitasa", value = "correct",
-                enabled = available(state and state.active and state.role == "worker"
+                enabled = available(state and state.active
+                    and (state.role == "worker" or state.role == "leader"
+                        and state.assignedBranch)
                     and state.status ~= "join_pending") },
             { label = "Seged kilepese", value = "leave",
                 enabled = available(state and state.active and state.role == "worker"
@@ -216,12 +188,11 @@ function menu.run()
             { label = "Vissza", value = "back" },
         })
         if not choice or choice == "back" then return
-        elseif choice == "open" then openLeader()
         elseif choice == "join" then joinWorker()
         elseif choice == "trunk" then
             if savedTrunk and branch.active then
                 if ui.confirm("KOZOS FOAG FOLYTATASA", {
-                    "A segedek tovabbra sem mozognak.",
+                    "A kesz agakra a segedek elindulhatnak.",
                     "Kezelo #" .. state.coordinatorId,
                     "Mentett haladas: " .. (branch.mainCompleted or 0)
                         .. "/" .. state.mainLength,
@@ -229,23 +200,12 @@ function menu.run()
                     return { action = "resume_trunk" }
                 end
             elseif ui.confirm("KOZOS FOAG INDULAS", {
-                "Csak a vezeto turtle as.",
-                "A segedek varakoznak.",
+                "A vezeto a foagat epiti.",
+                "A kesz agakra a segedek elindulnak.",
                 "Foag: " .. state.mainLength .. " blokk",
                 "Kezelo #" .. state.coordinatorId,
             }, "ENTER = foag inditasa") then
                 return { action = "start_trunk", session = state }
-            end
-        elseif choice == "worker" then
-            if not state or not state.assignedBranch then
-                notice("Meg nincs kiosztott oldalagad. Varj a kezelo kiosztasara.")
-            elseif ui.confirm("SEGED OLDALAG - KISERLETI", {
-                "Ag: " .. state.assignedBranch,
-                "Csak 1x2/1x3; nincs erc/faklya.",
-                "Folyoso es dokk: kezelo foglalja.",
-                "Kapcsolatvesztesnel helyben megall.",
-            }, "ENTER = seged inditasa") then
-                return { action = "start_worker" }
             end
         elseif choice == "station" then registerLocalStation(state)
         elseif choice == "station_fix" then

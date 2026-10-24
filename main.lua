@@ -19,6 +19,7 @@ local currentSettings = Settings.load()
 Localization.setLanguage(currentSettings.general.language)
 local remoteOk, Remote = pcall(require, "remote")
 local REMOTE_ACTIVE_FILE = ".remote_active_job"
+local sharedWorkerRunning = false
 local V12_MARKER = ".turtomata_12_ready"
 if fs.exists(REMOTE_ACTIVE_FILE) then fs.delete(REMOTE_ACTIVE_FILE) end
 
@@ -303,6 +304,11 @@ end
 
 local function launch(task, program, action, config, summary, options)
     options = options or {}
+    if sharedWorkerRunning then
+        ui.message("KOZOS MUNKA", "Az oldalagat dolgozik; masik mozgast nem inditok.", "error")
+        ui.waitForEnter()
+        return
+    end
     local swarm = SwarmSession.load()
     if swarm and swarm.active and not options.swarmLeader then
         ui.message("KOZOS MUNKA", "Aktiv parositas mellett onallo feladat nem indul.", "error")
@@ -686,25 +692,59 @@ local function runSwarmMenu()
     local requested = SwarmMenu.run()
     if requested and requested.action == "start_trunk" then
         local session = requested.session
-        launch("branch_miner", "branch_miner", "new", {
-            swarmTrunkOnly = true, swarmJobId = session.jobId,
-            tunnelMode = session.tunnelMode,
-            mainLength = session.mainLength,
-            branchLength = 0, branchSpacing = session.branchSpacing,
-            startMode = 1, startOffset = 0,
-            torchEnabled = false, oreScanEnabled = false,
-            experimentalInventory = false, fuelReserve = 5,
-        }, {}, { confirmed = true, swarmLeader = true })
+        local config = stateStore.clone(session.workConfig or {})
+        config.swarmTrunkOnly = true
+        config.swarmJobId = session.jobId
+        launch("branch_miner", "branch_miner", "new", config, {},
+            { auto = true, confirmed = true, swarmLeader = true })
     elseif requested and requested.action == "resume_trunk" then
         launch("branch_miner", "branch_miner", "resume", {}, {},
-            { confirmed = true, swarmLeader = true })
-    elseif requested and requested.action == "start_worker" then
-        if programExists("swarm_worker") then
-            shell.run("swarm_worker")
-            ui.waitForEnter("ENTER = vissza a fomenube")
-        else
-            ui.message("Hianyzo program", "swarm_worker.lua", "error")
-            ui.waitForEnter()
+            { auto = true, confirmed = true, swarmLeader = true })
+    end
+end
+
+local function startSharedBranch(config)
+    local previous = SwarmSession.load()
+    if previous and previous.active then
+        ui.message("KOZOS BRANCH", "Mar van aktiv kozos munka ezen a turtle-n.", "error")
+        ui.waitForEnter()
+        return
+    end
+    local owner = WorkRegistry.load()
+    local saved = owner and stateStore.read(owner.stateFile or "")
+    if saved and saved.active then
+        ui.message("KOZOS BRANCH", "Aktiv egyturtle-os munka mellett nem indulhat.", "error")
+        ui.waitForEnter()
+        return
+    end
+    local ok, reason, session = SwarmSession.openLeader(config)
+    if not ok then
+        ui.message("KOZOS BRANCH", tostring(reason), "error")
+        ui.waitForEnter()
+        return
+    end
+    ui.message("KOZOS BRANCH", {
+        "Hirdetes aktiv: " .. session.jobId,
+        "A megfigyelo eszkozon fogadd el a kezelest.",
+        "Az asas az ACK es elojel utan magatol indul.",
+        "Esc = vissza a menube, a hirdetes megmarad.",
+    })
+    while true do
+        local current = SwarmSession.load()
+        if not current or not current.active then return end
+        local now = os.epoch and os.epoch("utc") or 0
+        if current.coordinatorId and current.lastHeartbeatAt
+            and now - current.lastHeartbeatAt <= 6000 then
+            config.swarmTrunkOnly = true
+            config.swarmJobId = current.jobId
+            launch("branch_miner", "branch_miner", "new", config, {},
+                { auto = true, confirmed = true, swarmLeader = true })
+            return
+        end
+        local timer = os.startTimer(0.5)
+        local event, key = os.pullEventRaw()
+        if event == "key" and (key == keys.escape or key == keys.backspace) then
+            return
         end
     end
 end
@@ -868,8 +908,61 @@ local function checkLegacyJobs()
 end
 
 local function menuLoop()
+    local legacySwarm = stateStore.read("swarm_session.txt")
+    if type(legacySwarm) == "table" and legacySwarm.active
+        and legacySwarm.version ~= 2 then
+        if not ui.confirm("REGI KOZOS MUNKA", {
+            "A regi kozos mentes nem kompatibilis a v1.5-tel.",
+            "Csak akkor folytasd, ha a turtle fizikailag biztonsagban van.",
+            "A regi branch mentes kulon torolheto a Munka kezeleseben.",
+        }, "ENTER = regi parositas eldobasa") then return end
+        local cleared, clearReason = stateStore.write("swarm_session.txt", {
+            version = 2, active = false, status = "legacy_discarded",
+        })
+        if not cleared then
+            ui.message("Menteshiba", tostring(clearReason), "error")
+            ui.waitForEnter()
+            return
+        end
+    end
     if not checkLegacyJobs() then return end
     local swarm = SwarmSession.load()
+    if swarm and swarm.active and swarm.role == "leader"
+        and not swarm.assignedBranch and type(swarm.workConfig) == "table"
+        and swarm.workConfig.sharedMode
+        and swarm.workConfig.resumeOnStartup then
+        local savedTrunk = stateStore.read("branch_miner_state.txt")
+        local sameTrunk = type(savedTrunk) == "table"
+            and type(savedTrunk.config) == "table"
+            and savedTrunk.config.swarmJobId == swarm.jobId
+        if not sameTrunk or savedTrunk.active then
+            ui.message("KOZOS AUTO FOLYTATAS", {
+                "A kezelo eletjelere varok (legfeljebb 15 mp).",
+                "Nincs vak indulas vagy hazateres.",
+            })
+            local deadline = os.epoch("utc") + 15000
+            while os.epoch("utc") < deadline do
+                local current = SwarmSession.load()
+                local now = os.epoch("utc")
+                if current and current.active and current.coordinatorId
+                    and current.lastHeartbeatAt
+                    and now - current.lastHeartbeatAt <= 6000 then
+                    if sameTrunk then
+                        launch("branch_miner", "branch_miner", "resume", {}, {},
+                            { auto = true, swarmLeader = true })
+                    else
+                        local config = stateStore.clone(current.workConfig)
+                        config.swarmTrunkOnly = true
+                        config.swarmJobId = current.jobId
+                        launch("branch_miner", "branch_miner", "new", config, {},
+                            { auto = true, confirmed = true, swarmLeader = true })
+                    end
+                    break
+                end
+                sleep(0.5)
+            end
+        end
+    end
     local auto = not (swarm and swarm.active) and WorkRegistry.autoCandidate()
     if auto then
         local programs = {
@@ -887,7 +980,6 @@ local function menuLoop()
     while true do
         local choice = ui.menu("TURTOMATA " .. Version.label, {
             { label = "Branch mining", value = "branch" },
-            { label = "Kozos munka", suffix = "KISERLETI PAROSITAS", value = "swarm" },
             { label = "Terulet kiasasa", suffix = "KISERLETI", value = "excavator" },
             { label = "Utvonal keszites", value = "nether" },
             { label = "Koordinatara navigalas", suffix = "KISERLETI", value = "coordinate" },
@@ -899,18 +991,20 @@ local function menuLoop()
             { label = "Diagnosztika", value = "diagnostics" },
             { label = "Program frissitese", value = "update" },
             { label = "Kilepes", value = "exit" },
-        }, { allowBack = false, onRefresh = function(items)
-            local session = SwarmSession.load()
-            local offers = SwarmSession.offers()
-            items[2].suffix = session and session.active and session.status
-                or (#offers > 0 and ("ELERHETO: " .. #offers)
-                    or "KISERLETI PAROSITAS")
-        end })
-        if choice == "branch" then
+        }, { allowBack = false })
+        if sharedWorkerRunning then
+            ui.message("KOZOS MUNKA", {
+                "Az automatikus oldalagas dolgozik.",
+                "Uj feladat, frissites vagy kilepes most nem indithato.",
+            })
+            ui.waitForEnter()
+        elseif choice == "branch" then
             local config, summary = JobSetup.branch(currentSettings)
-            if config then launch("branch_miner", "branch_miner", "new",
+            if config == "shared_join" then SwarmMenu.joinWorker()
+            elseif config == "shared_manage" then runSwarmMenu()
+            elseif config and config.sharedMode then startSharedBranch(config)
+            elseif config then launch("branch_miner", "branch_miner", "new",
                 config, summary, { confirmed = true }) end
-        elseif choice == "swarm" then runSwarmMenu()
         elseif choice == "excavator" then
             local config, summary = JobSetup.excavator(currentSettings)
             if config then launch("excavator", "excavator", "new",
@@ -941,8 +1035,38 @@ local function menuLoop()
     end
 end
 
+local function automaticSharedWorker()
+    while true do
+        local state = SwarmSession.load()
+        local now = os.epoch and os.epoch("utc") or 0
+        if state and state.active and state.assignedBranch
+            and (state.role == "worker" or state.role == "leader")
+            and (state.status == "assigned_no_motion"
+                or state.status == "at_branch")
+            and not state.transit and not state.stationCheckPending
+            and state.lastHeartbeatAt
+            and now - state.lastHeartbeatAt <= 6000
+            and not fs.exists(REMOTE_ACTIVE_FILE) then
+            local branchKey = state.assignedBranch
+            sharedWorkerRunning = true
+            local ok = shell.run("swarm_worker")
+            sharedWorkerRunning = false
+            local latest = SwarmSession.load()
+            if not ok and latest and latest.active
+                and latest.assignedBranch == branchKey
+                and (latest.status == "assigned_no_motion"
+                    or latest.status == "at_branch") then
+                latest.status = "needs_attention"
+                latest.lastError = "Az automatikus oldalagas program nem indult."
+                SwarmSession.update(latest)
+            end
+        end
+        sleep(1)
+    end
+end
+
 if remoteOk and Remote and parallel then
-    parallel.waitForAny(menuLoop, Remote.run)
+    parallel.waitForAny(menuLoop, Remote.run, automaticSharedWorker)
 else
     menuLoop()
 end

@@ -18,6 +18,8 @@ for name in (
     "pickup_ledger_test.lua",
     "swarm_session_test.lua",
     "swarm_coordinator_test.lua",
+    "swarm_dynamic_test.lua",
+    "swarm_estimator_test.lua",
     "swarm_traffic_test.lua",
     "swarm_worker_test.lua",
     "swarm_menu_test.lua",

@@ -27,11 +27,11 @@ local function enabled(value)
     for _, item in ipairs(itemsSeen) do
         if item.value == value then return item.enabled end
     end
-    error("Missing menu item: " .. value)
+    return nil
 end
 
 menu.run()
-assert(enabled("worker") == false)
+assert(enabled("worker") == nil)
 assert(enabled("trunk") == false)
 assert(enabled("station") == false)
 
@@ -40,13 +40,13 @@ state = {
     coordinatorId = 42, lastHeartbeatAt = 9000,
 }
 menu.run()
-assert(enabled("worker") == false)
+assert(enabled("worker") == nil)
 assert(enabled("station") == true)
 
 state.assignedBranch = 5
 state.status = "assigned_no_motion"
 menu.run()
-assert(enabled("worker") == true)
+assert(enabled("worker") == nil)
 assert(enabled("station") == false)
 
 package.loaded.ui = oldUi
