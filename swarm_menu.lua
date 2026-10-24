@@ -4,6 +4,7 @@ local Session = require("swarm_session")
 local WorkRegistry = require("work_registry")
 local Store = require("state_store")
 local Stations = require("station_registry")
+local tr = require("localization").text
 local menu = {}
 
 -- A hianyzo allapotmezo Lua-ban nil, amit az ui.menu alapbol engedelyezettnek
@@ -25,14 +26,60 @@ local function activeSoloJob()
     return type(state) == "table" and state.active == true
 end
 
-local function joinWorker()
+local function joinWorker(radioError)
     if activeSoloJob() then
         notice("Aktiv feladat mellett nem lehet csatlakozni.", "error")
         return
     end
+    local current = Session.load()
+    if current and current.active then
+        notice({
+            "Ezen a turtle-n mar van aktiv kozos munkamenet.",
+            "Munka: " .. tostring(current.jobId),
+            "Allapot: " .. tostring(current.status),
+            "Az Allapot / folytatas menuben ellenorizd.",
+        }, "error")
+        return
+    end
     local offers = Session.offers()
+    local modems = 0
+    if #offers == 0 and peripheral and rednet then
+        for _, name in ipairs(peripheral.getNames()) do
+            local ok, wireless = pcall(peripheral.call, name, "isWireless")
+            if ok and wireless and rednet.isOpen(name) then
+                modems = modems + 1
+            end
+        end
+    end
+    if #offers == 0 and modems > 0 then
+        local deadline = os.epoch("utc") + 15000
+        while #offers == 0 and os.epoch("utc") < deadline do
+            ui.message("MUNKAHIRDETES KERESESE", {
+                "Friss, kezelohoz rendelt munkara varok...",
+                tr("Aktiv helyi modem") .. ": " .. modems,
+                "Esc/Backspace = vissza",
+            })
+            local timer = os.startTimer(1)
+            while true do
+                local event, key = os.pullEvent()
+                if event == "key"
+                    and (key == keys.escape or key == keys.backspace) then
+                    return
+                end
+                if event == "timer" and key == timer then break end
+            end
+            offers = Session.offers()
+        end
+    end
     if #offers == 0 then
-        notice("Nincs friss, kezelohoz rendelt munkahirdetes.")
+        local lines = {
+            "Nincs friss, kezelohoz rendelt munkahirdetes.",
+            tr("Aktiv helyi modem") .. ": " .. modems,
+            "Ellenorizd: vezeto hirdetese, kezeloi ACK,",
+            "azonos verzio es a seged radiofolyamata.",
+        }
+        if radioError then lines[#lines + 1] = "Radio hiba: " .. radioError end
+        notice(lines)
         return
     end
     local choices = {}

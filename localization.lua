@@ -21,6 +21,27 @@ local english = {
     ["Eltelt / hatra"] = "Elapsed / left",
     ["Becsult osszes"] = "Est. total",
     ["Foag / agak"] = "Trunk / branches",
+    ["HIBA RESZLETEI"] = "ERROR DETAILS",
+    ["H/katt: teljes hiba"] = "H/click: full error",
+    ["H: teljes hiba | Enter: lista"] = "H: full error | Enter: list",
+    ["Fel/le: gorget | Enter/katt: vissza"] =
+        "Up/down: scroll | Enter/click: back",
+    ["RADIO HIBA"] = "RADIO ERROR",
+    ["A kozos munka radiofolyamata nem indult."] =
+        "Shared-job radio did not start.",
+    ["A seged nem fogad munkahirdetest."] =
+        "The helper cannot receive job offers.",
+    ["MUNKAHIRDETES KERESESE"] = "SEARCHING FOR JOB OFFERS",
+    ["Friss, kezelohoz rendelt munkara varok..."] =
+        "Waiting for a recent coordinated job...",
+    ["Aktiv helyi modem"] = "Active local modem",
+    ["Esc/Backspace = vissza"] = "Esc/Backspace = back",
+    ["Nincs friss, kezelohoz rendelt munkahirdetes."] =
+        "No recent coordinated job offer.",
+    ["Ellenorizd: vezeto hirdetese, kezeloi ACK,"] =
+        "Check the leader offer and coordinator ACK,",
+    ["azonos verzio es a seged radiofolyamata."] =
+        "matching versions and helper radio.",
     ["Regi kozos mentes eldobasa"] = "Discard old shared save",
     ["Csak ha minden regi turtle all! Enter ujra = mentes eldobasa."] =
         "Only if all old turtles are stopped! Enter again = discard save.",

@@ -130,6 +130,7 @@ local function saveState()
         version = 2,
         active = runtime.active,
         activity = runtime.activity,
+        lastError = runtime.lastError,
         mainCompleted = runtime.mainCompleted,
         branchesCompletedAt = runtime.branchesCompletedAt,
         branchProgress = runtime.branchProgress,
@@ -1791,12 +1792,17 @@ local function runMining()
         if not torchOk then stopReason = torchReason break end
     end
 
-    if stopReason then printError("A banyaszat leallt: " .. stopReason)
+    if stopReason then
+        runtime.lastError = "A banyaszat leallt: " .. tostring(stopReason)
+        saveState()
+        printError(runtime.lastError)
     else print("A beallitott banyaszati szakasz elkeszult.") end
 
     if config.swarmTrunkOnly and not swarmLinkAlive() then
         setActivity("needs_attention")
-        printError("Kapcsolatvesztes: a turtle helyben marad. Ne indits vak hazaterest.")
+        runtime.lastError = "Kapcsolatvesztes: a turtle helyben marad. Ne indits vak hazaterest."
+        saveState()
+        printError(runtime.lastError)
         return
     end
 
@@ -1806,13 +1812,16 @@ local function runMining()
         local recovered, recoverReason = oreScanner.recover(
             runtime.oreScan, buildOreApi())
         if not recovered then
-            printError("Erc-utvonal miatt nem indulok vakon haza: "
-                .. tostring(recoverReason))
+            runtime.lastError = "Erc-utvonal miatt nem indulok vakon haza: "
+                .. tostring(recoverReason)
+            saveState()
+            printError(runtime.lastError)
             return
         end
     end
 
-    if returnHome() then
+    local homeOk, homeReason = returnHome()
+    if homeOk then
         local finalOk, finalReason = serviceHome(config.fuelReserve)
         if finalOk then
             if not stopReason and config.swarmTrunkOnly then
@@ -1822,6 +1831,7 @@ local function runMining()
         if finalOk then
             if not stopReason then
                 runtime.active = false
+                runtime.lastError = nil
                 setActivity("kesz")
             else
                 setActivity("megallitva_otthon")
@@ -1829,7 +1839,15 @@ local function runMining()
             print(config.swarmTrunkOnly and
                 "Kesz: a vezeto a bazistol balra, biztonsagos varakozohelyen all."
                 or "Kesz: a turtle otthon van, az inventory ures.")
-        else printError("Hazaertem, de a lada-kiszolgalas sikertelen: " .. finalReason) end
+        else
+            runtime.lastError = "Hazaertem, de a lada-kiszolgalas sikertelen: "
+                .. tostring(finalReason)
+            saveState()
+            printError(runtime.lastError)
+        end
+    else
+        runtime.lastError = "A hazateres elakadt: " .. tostring(homeReason)
+        saveState()
     end
 end
 
@@ -1837,6 +1855,8 @@ local function miningTask()
     local ok, errorMessage = pcall(runMining)
     if not ok then
         printError("Programhiba: " .. tostring(errorMessage))
+        runtime.lastError = "Programhiba: " .. tostring(errorMessage)
+        pcall(saveState)
         if distanceHome() > 0 and swarmLinkAlive() then returnAndService() end
     end
     miningFinished = true

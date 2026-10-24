@@ -70,7 +70,7 @@ jelenleg csak a bazisrol indithato, tavoli adapteruk meg nincs kesz.
 A koordinatas farm utvonala akadalymentes, ismert jarohelyeket igenyel;
 a jatekbeli probat a valodi farmon el kell vegezni.
 
-Aktuális rendszerverzió: **v1.5.1**. A verzió központilag a `version.lua`
+Aktuális rendszerverzió: **v1.5.2**. A verzió központilag a `version.lua`
 fájlban található, és megjelenik a turtle főmenüjében, a megfigyelő állapot- és
 parancsoldalán, valamint a downloader telepítési menüjében.
 
@@ -80,6 +80,12 @@ listájában turtle-nként rövid tevékenység látszik; Enterrel külön rész
 nyílik, a csatlakoztatott monitoron továbbra is a lista marad. A 2-es slot
 fáklyatöltése csak a hiányzó darabszámot kéri. Sikeres frissítés után a downloader
 a verziót és az UTC-időpontot `.turtomata_update.txt` fájlba menti, és Enterre vár.
+
+A megfigyelő részletes lapján hosszú `Hiba` üzenetnél `H`-val vagy a hibasorra
+kattintva külön, görgethető teljes hibalap nyílik. Ha a turtle `NEM ELÉRHETŐ`,
+csak a korábban beérkezett állapot látszik. A vezető új munkahirdetését a segédek
+csak akkor találják meg, ha a vezető programja és vezeték nélküli modemje működik,
+és a koordinátor már elfogadta a munkát.
 
 Aktív branch, területásó vagy útvonalkészítő munkánál az ásással ténylegesen
 felvett tárgyakat itemazonosító szerint összesíti. A megfigyelő részletes

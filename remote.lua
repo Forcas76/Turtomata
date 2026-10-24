@@ -651,8 +651,15 @@ function remote.run()
     while true do
         local event, p1, message, messageProtocol = os.pullEventRaw()
         if event == "timer" and p1 == timer then
-            remote.publish()
-            publishSwarmOffer()
+            local statusOk, statusReason = pcall(remote.publish)
+            local offerOk, offerReason = pcall(publishSwarmOffer)
+            if not statusOk or not offerOk then
+                remote.lastError = not statusOk
+                    and ("Allapotkuldes: " .. tostring(statusReason))
+                    or ("Munkahirdetes: " .. tostring(offerReason))
+            else
+                remote.lastError = nil
+            end
             timer = os.startTimer(Protocol.HEARTBEAT_INTERVAL)
         elseif event == "rednet_message" and messageProtocol == Protocol.CONTROL
             and Protocol.valid(message, "discover") then

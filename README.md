@@ -2,9 +2,11 @@
 
 Modular [CC:Tweaked](https://tweaked.cc/) software for mining, route building, farming, and live monitoring with Minecraft turtles. The central turtle program is `main.lua`; a Pocket Computer or regular Computer can run `remote_monitor.lua` to watch turtles and issue commands over Rednet.
 
-**Current version:** v1.5.1 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
+**Current version:** v1.5.2 (defined in `version.lua`). The version appears in the turtle menu, the monitor's status and command pages, and the downloader menu.
 
 The saved-job menu is always openable. It includes an active shared job and explains when no valid resumable save exists. The monitor's status page shows a compact one-word activity per turtle; Enter opens the selected turtle's detail page, while an attached monitor keeps showing the list. Torch refills request only the missing count in slot 2. After a successful update, the downloader saves its version and UTC time in `.turtomata_update.txt` and waits for Enter acknowledgement.
+
+On the monitor's detail page, press `H` or click the error row to open the complete, scrollable error. An offline turtle shows only its last received status. Helpers can discover a shared job only while the leader program is running, its wireless modem is online, and the coordinator has accepted the job.
 
 During an active branch, area-excavation, or route-building job, the turtle records items actually picked up by digging, grouped by item ID. On the monitor's selected-turtle detail page, press `I` or click to open the scrollable item list. Counts remain after unloading; they are forgotten when the job is completed or its save is deleted.
 

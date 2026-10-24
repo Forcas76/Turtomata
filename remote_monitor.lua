@@ -15,7 +15,10 @@ local turtles = {}
 local selected = 1
 local statusDetail = false
 local statusInventoryView = false
+local statusErrorView = false
 local inventoryScroll = 1
+local errorScroll = 1
+local detailErrorRow = nil
 local statusListStart = 1
 local statusListCount = 0
 local opened = {}
@@ -446,6 +449,33 @@ local function printWrapped(value, width, maximumLines)
     if lineText ~= "" and printed < maximumLines then print(clip(lineText, width)) end
 end
 
+local function errorLines(value, width)
+    local lines = {}
+    width = math.max(1, width)
+    for paragraph in (tostring(value or "") .. "\n"):gmatch("(.-)\n") do
+        if paragraph == "" then lines[#lines + 1] = "" end
+        local current = ""
+        for word in paragraph:gmatch("%S+") do
+            local piece = word
+            while #piece > width do
+                if current ~= "" then
+                    lines[#lines + 1], current = current, ""
+                end
+                lines[#lines + 1] = piece:sub(1, width)
+                piece = piece:sub(width + 1)
+            end
+            if current == "" then current = piece
+            elseif #current + #piece + 1 <= width then
+                current = current .. " " .. piece
+            else
+                lines[#lines + 1], current = current, piece
+            end
+        end
+        if current ~= "" then lines[#lines + 1] = current end
+    end
+    return lines
+end
+
 local function orderedDrops(item)
     local drops = {}
     for name, count in pairs(item and item.collected or {}) do
@@ -485,10 +515,37 @@ local function renderInventoryDetail()
     write(clip(tr("Fel/le: lista | I/katt: reszletek | Enter: vissza"), width))
 end
 
+local function renderErrorDetail()
+    local width, height = term.getSize()
+    local item = ordered()[selected]
+    local wrapped = errorLines(item and item.lastError
+        or "Nincs tarolt hiba.", width)
+    clear()
+    term.setTextColor(colors.red)
+    print(clip("TURTOMATA " .. Version.label .. " | " .. tr("HIBA RESZLETEI"), width))
+    term.setTextColor(colors.lightGray)
+    print(string.rep("-", math.min(width, 39)))
+    if item then
+        line("Teknos", "#" .. item.turtleId .. " " .. (item.label or ""), width)
+        line("Kapcsolat", tr(online(item) and "ELERHETO" or "NEM ELERHETO"), width)
+    end
+    print("")
+    local visible = math.max(1, height - 7)
+    errorScroll = math.max(1, math.min(errorScroll,
+        math.max(1, #wrapped - visible + 1)))
+    for index = errorScroll, math.min(#wrapped, errorScroll + visible - 1) do
+        print(wrapped[index])
+    end
+    term.setCursorPos(1, height)
+    write(clip(tr("Fel/le: gorget | Enter/katt: vissza"), width))
+end
+
 local function renderSelectedDetail()
+    if statusErrorView then return renderErrorDetail() end
     if statusInventoryView then return renderInventoryDetail() end
     local width, height = term.getSize()
     local item = ordered()[selected]
+    detailErrorRow = nil
     clear()
     term.setTextColor(colors.cyan)
     print(clip("TURTOMATA " .. Version.label .. " | " .. tr("RESZLETEK"), width))
@@ -531,11 +588,18 @@ local function renderSelectedDetail()
                 print(clip(tr("I/katt: targylista"), width))
             end
         end
-        if item.lastError then line("Hiba", item.lastError, width) end
+        if item.lastError then
+            local _, row = term.getCursorPos()
+            detailErrorRow = row
+            line("Hiba", item.lastError, width)
+            print(clip(tr("H/katt: teljes hiba"), width))
+        end
     end
     term.setTextColor(colors.lightGray)
     term.setCursorPos(1, height)
-    write(clip(tr("Enter/Backspace: lista | Bal/jobb: oldal"), width))
+    write(clip(tr(item and item.lastError
+        and "H: teljes hiba | Enter: lista"
+        or "Enter/Backspace: lista | Bal/jobb: oldal"), width))
 end
 
 local function renderStatusBody(forceList)
@@ -968,17 +1032,21 @@ while true do
         elseif p1 == keys.left then
             statusDetail = false
             statusInventoryView = false
+            statusErrorView = false
             pageIndex = pageIndex == 1 and #pages or pageIndex - 1
             page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.right then
             statusDetail = false
             statusInventoryView = false
+            statusErrorView = false
             pageIndex = pageIndex == #pages and 1 or pageIndex + 1
             page = pages[pageIndex]
             armedCommand = nil
         elseif p1 == keys.up then
-            if page == "status" and statusDetail and statusInventoryView then
+            if page == "status" and statusDetail and statusErrorView then
+                errorScroll = math.max(1, errorScroll - 1)
+            elseif page == "status" and statusDetail and statusInventoryView then
                 inventoryScroll = math.max(1, inventoryScroll - 1)
             elseif page == "commands" then
                 commandSelected = math.max(1, commandSelected - 1)
@@ -990,7 +1058,9 @@ while true do
                 armedReconcile = nil
             else selected = math.max(1, selected - 1) end
         elseif p1 == keys.down then
-            if page == "status" and statusDetail and statusInventoryView then
+            if page == "status" and statusDetail and statusErrorView then
+                errorScroll = errorScroll + 1
+            elseif page == "status" and statusDetail and statusInventoryView then
                 inventoryScroll = inventoryScroll + 1
             elseif page == "commands" then
                 commandSelected = math.min(#commands, commandSelected + 1)
@@ -1005,15 +1075,29 @@ while true do
         elseif p1 == keys.enter and page == "commands" then
             activateCommand()
         elseif p1 == keys.enter and page == "status" then
-            statusDetail = not statusDetail
-            statusInventoryView = false
+            if statusErrorView then statusErrorView = false
+            else
+                statusDetail = not statusDetail
+                statusInventoryView = false
+            end
+        elseif p1 == keys.h and page == "status" and statusDetail then
+            local item = ordered()[selected]
+            if item and item.lastError then
+                statusErrorView = not statusErrorView
+                statusInventoryView = false
+                errorScroll = 1
+            end
         elseif p1 == keys.i and page == "status" and statusDetail then
             statusInventoryView = not statusInventoryView
+            statusErrorView = false
             inventoryScroll = 1
         elseif (p1 == keys.backspace or p1 == keys.escape)
             and page == "status" then
-            statusDetail = false
-            statusInventoryView = false
+            if statusErrorView then statusErrorView = false
+            else
+                statusDetail = false
+                statusInventoryView = false
+            end
         elseif p1 == keys.enter and page == "settings" then
             local selectedLanguage = Localization.languages()[settingsSelected]
             monitorSettings.general.language = selectedLanguage.code
@@ -1041,15 +1125,30 @@ while true do
                 Localization.setLanguage(selectedLanguage.code)
             end
         elseif page == "status" and statusDetail then
-            statusInventoryView = not statusInventoryView
-            inventoryScroll = 1
+            if statusErrorView then
+                statusErrorView = false
+            else
+                local item = ordered()[selected]
+                if item and item.lastError and detailErrorRow
+                    and (p3 == detailErrorRow or p3 == detailErrorRow + 1
+                        or p3 == height) then
+                    statusErrorView = true
+                    statusInventoryView = false
+                    errorScroll = 1
+                else
+                    statusInventoryView = not statusInventoryView
+                    inventoryScroll = 1
+                end
+            end
         elseif page == "status" and p3 >= 4
             and p3 < 4 + math.max(1, height - 6) then
             local count = math.max(1, height - 6)
             local start = math.max(1, math.min(selected,
                 math.max(1, #ordered() - count + 1)))
             local clicked = start + p3 - 4
-            if selected == clicked then statusDetail = true
+            if selected == clicked then
+                statusDetail = true
+                statusErrorView = false
             else selected = math.min(#ordered(), clicked) end
         end
         render()

@@ -364,7 +364,9 @@ local function launch(task, program, action, config, summary, options)
         WorkRegistry.update("needs_supplies", saved.lastError)
     else
         WorkRegistry.update("needs_attention",
-            success and "A feladat aktiv mentesben maradt." or "A program hibaval tert vissza.")
+            saved and saved.lastError or (success
+                and "A feladat aktiv mentesben maradt."
+                or "A program hibaval tert vissza."))
     end
     if not options.auto then ui.waitForEnter("ENTER = vissza a fomenube") end
 end
@@ -704,6 +706,14 @@ local function runSwarmMenu()
 end
 
 local function startSharedBranch(config)
+    if not remoteOk or not parallel then
+        ui.message("RADIO HIBA", {
+            "A kozos munka radiofolyamata nem indult.",
+            tostring(remoteOk and "Hianyzik a parallel API." or Remote),
+        }, "error")
+        ui.waitForEnter()
+        return
+    end
     local previous = SwarmSession.load()
     if previous and previous.active then
         ui.message("KOZOS BRANCH", "Mar van aktiv kozos munka ezen a turtle-n.", "error")
@@ -1000,7 +1010,14 @@ local function menuLoop()
             ui.waitForEnter()
         elseif choice == "branch" then
             local config, summary = JobSetup.branch(currentSettings)
-            if config == "shared_join" then SwarmMenu.joinWorker()
+            if config == "shared_join" then
+                if not remoteOk or not parallel then
+                    ui.message("RADIO HIBA", {
+                        "A seged nem fogad munkahirdetest.",
+                        tostring(remoteOk and "Hianyzik a parallel API." or Remote),
+                    }, "error")
+                    ui.waitForEnter()
+                else SwarmMenu.joinWorker(Remote.lastError) end
             elseif config == "shared_manage" then runSwarmMenu()
             elseif config and config.sharedMode then startSharedBranch(config)
             elseif config then launch("branch_miner", "branch_miner", "new",
